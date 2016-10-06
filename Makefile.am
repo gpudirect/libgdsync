@@ -18,7 +18,7 @@ EXTRA_DIST += scripts/expose_libmlx5_headers/libmlx_expose_headers scripts/expos
 
 src_libgdsync_la_CFLAGS = $(AM_CFLAGS)
 src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp
-src_libgdsync_la_LDFLAGS = -version-info 1
+src_libgdsync_la_LDFLAGS = -version-info 1:0:0
 
 noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/utils.hpp
 
@@ -26,8 +26,8 @@ noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/ut
 
 if TEST_ENABLE
 
-bin_PROGRAMS = 
-noinst_PROGRAMS = tests/gds_kernel_latency tests/rstest
+bin_PROGRAMS = tests/gds_kernel_latency tests/rstest
+noinst_PROGRAMS = 
 
 tests_gds_kernel_latency_SOURCES = tests/gds_kernel_latency.c tests/gpu.c tests/gpu_kernels.cu tests/pingpong.c tests/cycles.c
 tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lmpi -lcuda -lcudart
