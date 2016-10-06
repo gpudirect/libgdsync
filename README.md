@@ -1,42 +1,43 @@
-GPUDirect Sync
+GPUDirect Async
 ========
 
 Introduction
 ===
+libgdsync implements GPUDirect Async support for Infiniband verbs.
 
-GPUDirect Sync (aka PeerSync) is all about moving control logic from
-third-party devices to the GPU.
+GPUDirect Async is all about moving control logic from third-party devices
+to the GPU.
 
-The CPU is taken off the control path, replaced by the GPU which is now
-able to schedule both computation and network communication tasks
-seamlessly. There are substantial improvements for both time-to-solution
-(40% less latency) and power-to-solution (45% less CPU load) scenarios.
+libgdsync provides APIs which are similar to Infiniband verbs but
+synchronous to CUDA streams.
 
 
 Requirements
 ===
-
 This prototype has been tested on RHEL 6.x only.
 
 A recent display driver, i.e. r361, r367 or later, is required.
 
-A recent CUDA Toolkit is required, minimally 8.0, because of the CUDA driver MemOP APIs.
+A recent CUDA Toolkit is required, minimally 8.0, because of the CUDA
+driver MemOP APIs.
 
-Mellanox OFED 2.5 or newer is required, because of the peer-direct verbs extensions.
+Mellanox OFED 3.5 or newer is required, because of the peer-direct verbs
+extensions.
+
+Peer-direct verbs are only supported on the libmlx5 low-level plug-in
+module, so either Connect-IB or ConnectX-4 HCAs are required.
 
 The GDRCopy library (https://github.com/drossetti/gdrcopy) is necessary to
 create CPU-side user-space mappings of GPU memory, currently used when
-allocating a CQ on GPU memory.
-
+allocating verbs objects on GPU memory.
 
 
 Caveats
 ===
-
 Tests have been done using Mellanox Connect-IB. Any HCA driven by mlx5
 driver should work.
 
-Kepler and Maxwell Tesla/Quadro GPUs are required for RDMA.
+Kepler or newer Tesla/Quadro GPUs are required because of GPUDirect RDMA.
 
 A special HCA firmware is currently necessary in combination with GPUs
 prior to Pascal.
@@ -44,7 +45,6 @@ prior to Pascal.
 
 Build
 ===
-
 Git repository does not include autotools files. The first time the directory
 must be configured by running autogen.sh
 
