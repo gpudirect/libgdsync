@@ -27,12 +27,21 @@
  ****/
 
 #pragma once
-
-#define GDS_API_MAJOR_VERSION    1
-#define GDS_API_MINOR_VERSION    0
-#define GDS_API_VERSION          ((GDS_API_MAJOR_VERSION << 16) | GDS_API_MINOR_VERSION)
-
 // don't include directly this header, use gdsync.h always
+
+#define GDS_API_MAJOR_VERSION    1U
+#define GDS_API_MINOR_VERSION    0U
+#define GDS_API_VERSION          ((GDS_API_MAJOR_VERSION << 16) | GDS_API_MINOR_VERSION)
+#define GDS_API_VERSION_COMPATIBLE(v) \
+    ( ((((v) & 0xffff0000U) >> 16) == GDS_API_MAJOR_VERSION) &&   \
+      ((((v) & 0x0000ffffU) >> 0 ) >= GDS_API_MINOR_VERSION) )
+
+typedef enum gds_param {
+    GDS_PARAM_VERSION,
+    GDS_NUM_PARAMS
+} gds_param_t;
+
+int gds_query_param(gds_param_t param, int *value);
 
 enum gds_create_qp_flags {
     GDS_CREATE_QP_DEFAULT      = 0,

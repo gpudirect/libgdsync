@@ -1522,6 +1522,25 @@ int gds_destroy_qp(struct gds_qp *qp)
 
 //-----------------------------------------------------------------------------
 
+int gds_query_param(gds_param_t param, int *value)
+{
+        int ret = 0;
+        if (!value)
+                return EINVAL;
+
+        switch (param) {
+        case GDS_PARAM_VERSION:
+                *value = (GDS_API_MAJOR_VERSION << 16)|GDS_API_MINOR_VERSION;
+                break;
+        default:
+                ret = EINVAL;
+                break;
+        };
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 /*
  * Local variables:
  *  c-indent-level: 8
