@@ -72,13 +72,21 @@ see https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2015-5053.
 In fact, unless the PeerMappingOverride registry of the NVIDIA
 kernel-mode driver is enabled, only root user can use that feature.
 
-One way to enable GPU peer mappings for all users is:
+To enable GPU peer mappings for all users, the PeerMappingOverride registry
+must be set to 1:
 ```shell
 $ cat /etc/modprobe.d/nvidia.conf
 options nvidia NVreg_RegistryDwords="PeerMappingOverride=1;"
+```
+
+After that, either reboot or manually unload then load the NVIDIA kernel
+module:
+```shell
 # unload all kernel modules which depends on nvidia.ko
 $ service gdrcopy stop
 $ service nv_peer_mem stop
 $ modprobe -r nvidia_uvm
 $ modprobe -r nvidia
+$ modprobe nvidia
+...
 ```
