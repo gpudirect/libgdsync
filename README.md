@@ -79,7 +79,7 @@ $ cat /etc/modprobe.d/nvidia.conf
 options nvidia NVreg_RegistryDwords="PeerMappingOverride=1;"
 ```
 
-After that, either reboot or manually unload then load the NVIDIA kernel
+After that, either reboot or manually reload the NVIDIA kernel
 module:
 ```shell
 # unload all kernel modules which depends on nvidia.ko
