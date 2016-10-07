@@ -27,7 +27,7 @@ extensions.
 Peer-direct verbs are only supported on the libmlx5 low-level plug-in
 module, so either Connect-IB or ConnectX-4 HCAs are required.
 
-The GDRCopy library (https://github.com/drossetti/gdrcopy) is necessary to
+The GDRCopy library (https://github.com/NVIDIA/gdrcopy) is necessary to
 create CPU-side user-space mappings of GPU memory, currently used when
 allocating verbs objects on GPU memory.
 
