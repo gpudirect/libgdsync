@@ -29,7 +29,7 @@ if TEST_ENABLE
 bin_PROGRAMS = tests/gds_kernel_latency tests/rstest
 noinst_PROGRAMS = 
 
-tests_gds_kernel_latency_SOURCES = tests/gds_kernel_latency.c tests/gpu.c tests/gpu_kernels.cu tests/pingpong.c tests/cycles.c
+tests_gds_kernel_latency_SOURCES = tests/gds_kernel_latency.c tests/gpu_kernels.cu tests/pingpong.c tests/gpu.cpp
 tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lmpi -lcuda -lcudart
 
 tests_rstest_SOURCES = tests/rstest.cpp

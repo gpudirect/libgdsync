@@ -15,7 +15,9 @@ if [ ! -e Makefile ]; then
         --with-libibverbs=$PREFIX \
         --with-cuda=$CUDA \
         --with-gdrcopy=$PREFIX \
-        --with-mpi=$MPI_HOME
+        --with-mpi=$MPI_HOME \
+        --enable-test
+
 fi
 
-make clean all
+make clean all install
