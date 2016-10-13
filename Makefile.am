@@ -14,10 +14,13 @@ ACLOCAL_AMFLAGS = -Iconfig
 AM_CFLAGS = -g -Wall
 
 EXTRA_DIST = autogen.sh
-EXTRA_DIST += scripts/expose_libmlx5_headers/libmlx_expose_headers scripts/expose_libmlx5_headers/defines.txt scripts/expose_libmlx5_headers/structures.txt scripts/expose_libmlx5_headers/enumerations.txt
+
+include_HEADERS = include/gdsync.h
+libgdsyncincludedir = $(includedir)/gdsync
+libgdsyncinclude_HEADERS = include/gdsync/core.h include/gdsync/device.cuh  include/gdsync/mlx5.h include/gdsync/tools.h
 
 src_libgdsync_la_CFLAGS = $(AM_CFLAGS)
-src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp
+src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp include/gdsync.h 
 src_libgdsync_la_LDFLAGS = -version-info 1:0:0
 
 noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/utils.hpp
