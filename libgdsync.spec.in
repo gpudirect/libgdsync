@@ -1,0 +1,97 @@
+Name: libgdsync
+Version: @VERSION@
+Release: 1
+Summary: libgdsync implements GPUDirect Async support for Infiniband verbs.
+Group: System Environment/Libraries
+License: BSD
+Url: http://github.org/gpudirect/libgdsync
+Source: libibverbs-%{version}.tar.gz
+Requires(post): /sbin/ldconfig
+Requires(postun): /sbin/ldconfig
+BuildRequires: libnl-devel
+
+%description
+libgdsync implements GPUDirect Async support for Infiniband verbs.
+
+GPUDirect Async is all about moving control logic from third-party devices
+to the GPU.
+
+libgdsync provides APIs which are similar to Infiniband verbs but
+synchronous to CUDA streams.
+
+%package devel
+Summary: Development files for the libgdsync library
+Group: System Environment/Libraries
+Requires: %{name} = %{version}-%{release}
+#Provides: %{_prefix}/include/gdsync.h
+
+%description devel
+Header files for the libgdsync library.
+
+%package devel-static
+Summary: Static development files for the libgdsync library
+Group: System Environment/Libraries
+
+%description devel-static
+Static libraries for the libgdsync library.
+
+%package utils
+Summary: Examples for the libgdsync library
+Group: System Environment/Libraries
+Requires: %{name} = %{version}-%{release}
+
+%description utils
+Useful libgdsync1 example programs such as ibv_devinfo, which
+displays information about RDMA devices.
+
+%prep
+%setup -q -n %{name}-@VERSION@
+
+%build
+%if %{_with_valgrind}
+%configure %{configure_options} --libdir=%{_libdir}/mlnx_ofed/valgrind --with-valgrind
+make %{?_smp_mflags}
+make DESTDIR=$RPM_BUILD_DIR/%{name}-%{version}/valgrind install
+rm -f $RPM_BUILD_DIR/%{name}-%{version}/valgrind/%{_libdir}/mlnx_ofed/valgrind/*.*a
+make clean
+%endif
+
+%configure %{configure_options}
+make %{?_smp_mflags}
+
+%install
+rm -rf $RPM_BUILD_ROOT
+make DESTDIR=%{buildroot} install
+%if %{_with_valgrind}
+mkdir -p %{buildroot}/%{_libdir}/mlnx_ofed
+cp -a $RPM_BUILD_DIR/%{name}-%{version}/valgrind/%{_libdir}/mlnx_ofed/valgrind %{buildroot}/%{_libdir}/mlnx_ofed
+%endif
+# remove unpackaged files from the buildroot
+rm -f $RPM_BUILD_ROOT%{_libdir}/*.la
+
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+%post -p /sbin/ldconfig
+%postun -p /sbin/ldconfig
+
+%files
+%defattr(-,root,root,-)
+%{_libdir}/libgdsync*.so.*
+%doc AUTHORS COPYING ChangeLog README
+
+%files devel
+%defattr(-,root,root,-)
+%{_libdir}/libgdsync*.so
+%{_includedir}/*
+%{_mandir}/man3/*
+%{_mandir}/man7/*
+
+%files devel-static
+%defattr(-,root,root,-)
+%{_libdir}/libgdsync*.a
+
+%changelog
+* Wed Oct 5 2016 Davide Rossetti <drossetti@nvidia.com> - 1.0.0-1
+- New upstream release
+
