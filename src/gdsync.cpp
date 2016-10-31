@@ -39,8 +39,7 @@
 #include "memmgr.hpp"
 #include "mem.hpp"
 #include "objs.hpp"
-
-#include <archutils.h>
+#include "archutils.h"
 
 //-----------------------------------------------------------------------------
 
