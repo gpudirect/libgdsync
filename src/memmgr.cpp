@@ -134,6 +134,7 @@ int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t type, CUdevi
         size_t len = ROUND_UP(size + page_off, GDS_HOST_PAGE_SIZE);
         CUdeviceptr page_dev_ptr = 0;
         unsigned int flags = CU_MEMHOSTREGISTER_DEVICEMAP | CU_MEMHOSTREGISTER_PORTABLE;
+        bool cuda_registered = false;
 
         switch (type) {
         case GDS_MEMORY_GPU:
@@ -155,6 +156,7 @@ int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t type, CUdevi
         }
         else if (res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) {
                 gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
+                cuda_registered = true;
         }
         else if (res == CUDA_ERROR_NOT_INITIALIZED) {
                 gds_err("CUDA driver not initialized\n");
@@ -181,8 +183,11 @@ int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t type, CUdevi
                 range_set::insert_result res = rset.insert(r);
                 if (!res.second) {
                         range r = *res.first;
-                        gds_err("range overlaps with existing\n");
-                        return EEXIST;
+                        gds_dbg("range overlaps with existing\n");
+                        if (!cuda_registered) {
+                                gds_err("overlapping range not tracked by CUDA\n");
+                                return EEXIST;
+                        }
                 }
         }
 
