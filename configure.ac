@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.57)
-AC_INIT(libgdsync, 1.0.0, gpudirect@github.com)
+AC_INIT(libgdsync, 1.1, gpudirect@github.com)
 AC_CONFIG_SRCDIR([src/mem.hpp])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_HEADER(config.h)
@@ -51,14 +51,19 @@ fi
 AC_ARG_WITH([mpi],
     AC_HELP_STRING([--with-mpi], [ Set path to mpi installation ]))
 if test x$with_mpi = x || test x$with_mpi = xno; then
-    want_mpi=no
+    # assuming system location
+    mpi_home=/usr
+    MPICC=$with_home/bin/mpicc
+    MPICXX=$with_home/bin/mpic++
 else
-    want_mpi=yes
     if test -d $with_mpi; then
-        MPICC=$with_mpi/bin/mpicc
-        MPICXX=$with_mpi/bin/mpic++
-        CPPFLAGS="$CPPFLAGS -I$with_mpi/include"
-        LDFLAGS="$LDFLAGS -L$with_mpi/lib -L$with_mpi/lib64"
+        mpi_home=$with_mpi
+        MPICC=${mpi_home}/bin/mpicc
+        MPICXX=${mpi_home}/bin/mpic++
+        CPPFLAGS="$CPPFLAGS -I${mpi_home}/include"
+        LDFLAGS="$LDFLAGS -L${mpi_home}/lib -L${mpi_home}/lib64"
+    else
+        echo "MPI dir does not exist"
     fi
 fi
 

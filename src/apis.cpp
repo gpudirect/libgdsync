@@ -149,7 +149,13 @@ int gds_prepare_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr,
         assert(qp->qp);
         ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
         if (ret) {
-                gds_err("error %d in ibv_exp_post_send\n", ret);
+
+                if (ret == ENOMEM) {
+                        // out of space error can happen too often to report
+                        gds_dbg("ENOMEM error %d in ibv_exp_post_send\n", ret);
+                } else {
+                        gds_err("error %d in ibv_exp_post_send\n", ret);
+                }
                 goto out;
         }
         
@@ -381,6 +387,19 @@ int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
         abort_ctx.peek_id = request->peek.peek_id;
         abort_ctx.comp_mask = 0;
         return ibv_exp_peer_abort_peek_cq(cq->cq, &abort_ctx);
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, int cond_flags, int flags, gds_value32_descriptor_t *desc)
+{
+        int ret = 0;
+        assert(desc);
+        desc->ptr = ptr;
+        desc->value = value;
+        desc->flags = flags;
+        desc->cond_flags = cond_flags;
+        return ret;
 }
 
 //-----------------------------------------------------------------------------

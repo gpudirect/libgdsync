@@ -26,6 +26,7 @@
  */
 
 #pragma once
+#define __GDSYNC_H__
 
 /*
  * Dependencies & Verbs adaptation layer

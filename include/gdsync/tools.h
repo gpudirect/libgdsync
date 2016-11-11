@@ -26,8 +26,9 @@
  */
 
 #pragma once
-
-// don't include directly this header, use gdsync.h always
+#ifndef __GDSYNC_H__
+#error "don't include directly this header, use gdsync.h always"
+#endif
 
 // low-level APIs
 // for testing purposes mainly

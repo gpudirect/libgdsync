@@ -114,7 +114,7 @@ static bool gds_enable_write64()
                         gds_disable_write64 = !!atoi(env);
                 else
                         gds_disable_write64 = 0;
-                gds_info("GDS_DISABLE_WRITE64=%d\n", gds_disable_write64);
+                gds_dbg("GDS_DISABLE_WRITE64=%d\n", gds_disable_write64);
         }
         return gds_has_write64 && !gds_disable_write64;
 }
@@ -128,7 +128,7 @@ static bool gds_enable_inlcpy()
                         gds_disable_inlcpy = !!atoi(env);
                 else
                         gds_disable_inlcpy = 0;
-                gds_info("GDS_DISABLE_INLINECOPY=%d\n", gds_disable_inlcpy);
+                gds_dbg("GDS_DISABLE_INLINECOPY=%d\n", gds_disable_inlcpy);
         }
         return gds_has_inlcpy && !gds_disable_inlcpy;
 }
@@ -142,7 +142,7 @@ static bool gds_simulate_write64()
                         gds_simulate_write64 = !!atoi(env);
                 else
                         gds_simulate_write64 = 0; // default
-                gds_info("GDS_SIMULATE_WRITE64=%d\n", gds_simulate_write64);
+                gds_dbg("GDS_SIMULATE_WRITE64=%d\n", gds_simulate_write64);
 
                 if (gds_simulate_write64 && gds_enable_inlcpy()) {
                         gds_warn("INLINECOPY has priority over SIMULATE_WRITE64, using the former\n");
@@ -162,7 +162,7 @@ static bool gds_enable_membar()
                         gds_disable_membar = !!atoi(env);
                 else
                         gds_disable_membar = 0;
-                gds_info("GDS_DISABLE_MEMBAR=%d\n", gds_disable_membar);
+                gds_dbg("GDS_DISABLE_MEMBAR=%d\n", gds_disable_membar);
         }
         return gds_has_membar && !gds_disable_membar;
 }
@@ -176,7 +176,7 @@ static bool gds_enable_weak_consistency()
                     gds_disable_weak_consistency = !!atoi(env);
             else
                     gds_disable_weak_consistency = 1; // disable by default
-            gds_info("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
+            gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
         }
         return gds_has_weak_consistency && !gds_disable_weak_consistency;
 }
@@ -426,7 +426,7 @@ out:
         return retcode;
 }
 
-static int gds_fill_poll(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags)
+int gds_fill_poll(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
@@ -568,12 +568,15 @@ static inline uint32_t gds_qword_hi(uint64_t v) {
         return (uint32_t)(v >> 32);
 }
 
-static int gds_post_ops(CUstream stream, size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *params, int &idx)
+int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *params, int &idx)
 {
         int retcode = 0;
         size_t n = 0;
         bool prev_was_fence = false;
         bool use_inlcpy_for_dword = false;
+
+        gds_dbg("n_ops=%zu idx=%d\n", n_ops, idx);
+
         // divert the request to the same engine handling 64bits
         // to avoid out-of-order execution
         // caveat: can't use membar if inlcpy is used for 4B writes (to simulate 8B writes)
@@ -819,7 +822,7 @@ int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_
 
 	for (int j=0; j<count; j++) {
                 gds_dbg("peer_commit:%d idx=%d\n", j, idx);
-                retcode = gds_post_ops(stream, info[j].commit.entries, info[j].commit.storage, params, idx);
+                retcode = gds_post_ops(info[j].commit.entries, info[j].commit.storage, params, idx);
                 if (retcode) {
                         goto out;
                 }
@@ -1144,7 +1147,7 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
 
 	for (int j=0; j<count; j++) {
                 gds_dbg("peek request:%d\n", j);
-                retcode = gds_post_ops(stream, request[j].peek.entries, request[j].peek.storage, params, idx);
+                retcode = gds_post_ops(request[j].peek.entries, request[j].peek.storage, params, idx);
                 if (retcode) {
                         goto out;
                 }
@@ -1218,6 +1221,10 @@ static uint64_t gds_register_va(void *start, size_t length, uint64_t peer_id, st
         else {
                 // register as SYSMEM
                 range = peer->register_range(start, length, GDS_MEMORY_HOST);
+        }
+        if (!range) {
+                gds_err("error while registering range, returning 0 as error value\n");
+                return 0;
         }
         return range_to_id(range);
 }
@@ -1446,8 +1453,8 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
 
         qp = ibv_create_qp_ex(context, qp_attr);
         if (!qp)  {
-                ret = errno;
-                gds_err("error %d in ibv_create_qp_ex\n", ret);
+                ret = EINVAL;
+                gds_err("error in ibv_create_qp_ex\n");
                 goto err_free_cqs;
 	}
 
@@ -1535,6 +1542,103 @@ int gds_query_param(gds_param_t param, int *value)
                 ret = EINVAL;
                 break;
         };
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs)
+{
+        size_t i;
+        int idx = 0;
+        int ret = 0;
+        int retcode = 0;
+        size_t n_mem_ops = 0;
+
+        for(i = 0; i < n_descs; ++i) {
+                gds_descriptor_t *desc = descs + i;
+                switch(desc->tag) {
+                case GDS_TAG_SEND:
+                        n_mem_ops += desc->send->commit.entries + 2; // extra space, ugly
+                        break;
+                case GDS_TAG_WAIT:
+                        n_mem_ops += desc->wait->peek.entries + 2; // ditto
+                        break;
+                case GDS_TAG_WAIT_VALUE32:
+                case GDS_TAG_WRITE_VALUE32:
+                        n_mem_ops += 2; // ditto
+                        break;
+                default:
+                        gds_err("invalid tag\n");
+                        ret = EINVAL;
+                        goto out;
+                }
+        }
+        gds_dbg("n_descs=%zu n_mem_ops=%zu\n", n_descs, n_mem_ops);
+
+        CUstreamBatchMemOpParams params[n_mem_ops];
+
+        for(i = 0; i < n_descs; ++i) {
+                gds_descriptor_t *desc = descs + i;
+                switch(desc->tag) {
+                case GDS_TAG_SEND: {
+                        gds_send_request_t *sreq = desc->send;
+                        retcode = gds_post_ops(sreq->commit.entries, sreq->commit.storage, params, idx);
+                        if (retcode) {
+                                gds_err("error %d in gds_post_ops\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        // TODO: fix late checking
+                        //assert(idx <= n_mem_ops);
+                        if (idx >= n_mem_ops) {
+                                gds_err("idx=%d is past allocation (%zu)\n", idx, n_mem_ops);
+                                assert(!"corrupted heap");
+                        }
+                        break;
+                }
+                case GDS_TAG_WAIT: {
+                        gds_wait_request_t *wreq = desc->wait;
+                        retcode = gds_post_ops(wreq->peek.entries, wreq->peek.storage, params, idx);
+                        if (retcode) {
+                                gds_err("error %d in gds_post_ops\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        // TODO: fix late checking
+                        assert(idx <= n_mem_ops);
+                        break;
+                }
+                case GDS_TAG_WAIT_VALUE32:
+                        retcode = gds_fill_poll(params+idx, desc->value32.ptr, desc->value32.value, desc->value32.cond_flags, desc->value32.flags);
+                        if (retcode) {
+                                gds_err("error %d in gds_fill_poll\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        ++idx;
+                        break;
+                case GDS_TAG_WRITE_VALUE32:
+                        retcode = gds_fill_poke(params+idx, desc->value32.ptr, desc->value32.value, desc->value32.flags);
+                        if (retcode) {
+                                gds_err("error %d in gds_fill_poll\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        ++idx;
+                        break;
+                default:
+                        assert(0);
+                        break;
+                }
+        }
+        retcode = gds_stream_batch_ops(stream, idx, params, 0);
+        if (retcode) {
+                gds_err("error in batch_ops\n");
+                goto out;
+        }
+
+out:
         return ret;
 }
 

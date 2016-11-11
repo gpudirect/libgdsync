@@ -10,6 +10,7 @@ aclocal.m4
 config/*
 libgdsync.spec
 libtool
+.depend*
 
 # Object files
 *.o

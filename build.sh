@@ -20,4 +20,4 @@ if [ ! -e Makefile ]; then
 
 fi
 
-make clean all install
+make V=1 clean all install

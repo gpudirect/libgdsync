@@ -27,10 +27,13 @@
  ****/
 
 #pragma once
-// don't include directly this header, use gdsync.h always
+
+#ifndef __GDSYNC_H__
+#error "don't include directly this header, use gdsync.h always"
+#endif
 
 #define GDS_API_MAJOR_VERSION    1U
-#define GDS_API_MINOR_VERSION    0U
+#define GDS_API_MINOR_VERSION    1U
 #define GDS_API_VERSION          ((GDS_API_MAJOR_VERSION << 16) | GDS_API_MINOR_VERSION)
 #define GDS_API_VERSION_COMPATIBLE(v) \
     ( ((((v) & 0xffff0000U) >> 16) == GDS_API_MAJOR_VERSION) &&   \
@@ -113,19 +116,36 @@ enum {
         GDS_WAIT_INFO_MAX_OPS = 32
 };
 
-struct gds_send_request {
+typedef struct gds_send_request {
         struct ibv_exp_peer_commit commit;
         struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
-};
+} gds_send_request_t;
 
-struct gds_wait_request {
+typedef struct gds_wait_request {
         struct ibv_exp_peer_peek peek;
         struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
-};
+} gds_wait_request_t;
 
-typedef struct gds_send_request gds_send_request_t;
-typedef struct gds_wait_request gds_wait_request_t;
-typedef struct gds_dummy_recv_request {} gds_recv_request_t;
+typedef struct gds_value32_descriptor { 
+        uint32_t  *ptr;
+        uint32_t   value;
+        int        cond_flags; // don't care for GDS_TAG_WRITE_VALUE32
+        int        flags;
+} gds_value32_descriptor_t;
+
+typedef enum gds_tag { GDS_TAG_SEND, GDS_TAG_WAIT, GDS_TAG_WAIT_VALUE32, GDS_TAG_WRITE_VALUE32 } gds_tag_t;
+
+typedef struct gds_descriptor {
+        gds_tag_t tag;
+        union {
+                gds_send_request_t      *send;
+                gds_wait_request_t      *wait;
+                gds_value32_descriptor_t value32;
+        };
+} gds_descriptor_t;
+
+int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, int cond_flags, int flags, gds_value32_descriptor_t *desc);
+int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs);
 
 int gds_prepare_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
@@ -140,6 +160,7 @@ int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *
 //int gds_stream_post_wait_cq_all_ex(CUstream stream, int count, gds_wait_request_t request, uint32_t *dw, uint32_t val);
 int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val);
 
+
 /* \brief CPU-synchronously enable polling on request
  *
  * Unblock calls to ibv_poll_cq. CPU will do what is necessary to make the corresponding
@@ -147,3 +168,12 @@ int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val);
  *
  */
 int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
+
+/*
+ * Local variables:
+ *  c-indent-level: 8
+ *  c-basic-offset: 8
+ *  tab-width: 8
+ *  indent-tabs-mode: nil
+ * End:
+ */
