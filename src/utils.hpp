@@ -86,6 +86,7 @@ int gds_dbg_enabled();
 
 #define gds_warn(FMT, ARGS...) gds_msg(GDS_MSG_WARN,  "WARN ", FMT, ## ARGS)
 #define gds_warnc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gds_warn(FMT, ## ARGS); } while(0)
+#define gds_warn_once(FMT, ARGS...) gds_warnc(1, FMT, ## ARGS)
 
 #define gds_err(FMT, ARGS...)  gds_msg(GDS_MSG_ERROR, "ERR  ", FMT, ##ARGS)
 
