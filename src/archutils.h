@@ -1,6 +1,8 @@
+// TODO: ADD LICENCE HERE
+
 #pragma once
 
-// from Linux kernel
+// freely inspired from Linux kernel x86/inclide/asm/processor.h et al
 
 #if defined(__x86_64__) || defined (__i386__)
 
@@ -34,3 +36,12 @@ static void rmb(void)
 #else
 #error "platform not supported"
 #endif
+
+/*
+ * Local variables:
+ *  c-indent-level: 8
+ *  c-basic-offset: 8
+ *  tab-width: 8
+ *  indent-tabs-mode: nil
+ * End:
+ */
