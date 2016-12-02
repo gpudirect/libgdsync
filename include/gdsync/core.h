@@ -80,16 +80,20 @@ int gds_destroy_qp(struct gds_qp *qp);
 //int gds_register_peer(struct ibv_context *context, unsigned gpu_id, struct ibv_exp_peer_direct_attr **p_attr);
 int gds_register_peer(struct ibv_context *context, unsigned gpu_id);
 
-/* \brief: CPU-synchronous send for peer QP
- * Note: this API is lower-perf than ibv_post_send
+/* \brief: CPU-synchronous post send for peer QPs
+ *
+ * Notes:
+ * - this API might have higher overhead than ibv_post_send. 
+ * - It is provided for convenience only.
  */
-
 int gds_post_send(struct gds_qp *qp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr);
-int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
 
-/* \brief: GPU stream-synchronous send for peer QP
- * Note: this API is lower-perf than ibv_post_send
+/* \brief: CPU-synchronous post recv for peer QPs
+ *
+ * Notes:
+ * - there is no GPU-synchronous version of this because there is not a use case for it.
  */
+int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
 
 // forward decls
 enum gds_wait_cq_flags {
@@ -102,10 +106,20 @@ int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags);
 // same as above, plus writing a trailing flag word efficiently
 int gds_stream_wait_cq_ex(CUstream stream, struct gds_cq *cq, int flags, uint32_t *dw, uint32_t val);
 
+/* \brief: GPU stream-synchronous send for peer QPs
+ *
+ * Notes:
+ * - execution of the send operation happens in CUDA stream order
+ */
 int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr);
 // same as above, plus writing a trailing flag word efficiently
 int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, uint32_t *dw, uint32_t val);
-// TBD
+
+/* \brief GPU stream-synchronous post recv
+ * Notes:
+ * - this is not implemented and returns an error
+ *   see notes for gds_post_recv
+ */
 int gds_stream_queue_recv(CUstream stream, struct gds_qp *qp, struct ibv_recv_wr *p_ewr, struct ibv_recv_wr **bad_ewr);
 
 
