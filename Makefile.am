@@ -23,7 +23,7 @@ src_libgdsync_la_CFLAGS = $(AM_CFLAGS)
 src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp include/gdsync.h 
 src_libgdsync_la_LDFLAGS = -version-info 2:0:1
 
-noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/utils.hpp
+noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/utils.hpp src/archutils.h src/mlnxutils.h
 
 # if enabled at configure time
 
