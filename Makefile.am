@@ -3,10 +3,10 @@ CUDA_PATH = @CUDA_PATH@
 AM_CPPFLAGS  = -I$(srcdir)
 AM_CPPFLAGS += -I$(srcdir)/include
 AM_CPPFLAGS += -I$(srcdir)/src
-AM_CPPFLAGS += -I$(CUDA_PATH)/include
+#AM_CPPFLAGS += -I$(CUDA_PATH)/include
 AM_CPPFLAGS += -D__STDC_FORMAT_MACROS
 
-AM_LDFLAGS   = -L$(CUDA_PATH)/lib64
+#AM_LDFLAGS   = -L$(CUDA_PATH)/lib64
 
 lib_LTLIBRARIES = src/libgdsync.la
 

@@ -68,10 +68,16 @@ else
 fi
 
 dnl Specify CUDA Location
-AC_ARG_WITH(cuda,
-  AC_HELP_STRING([--with-cuda=CUDADIR], [ Specify CUDA installation directory (default: /usr/local/cuda)]),
+AC_ARG_WITH(cuda-toolkit,
+  AC_HELP_STRING([--with-cuda-toolkit=CUDATKDIR], [ Specify CUDA toolkit installation directory (default: /usr/local/cuda)]),
   [ cuda_home=${withval} ],
   [ cuda_home=/usr/local/cuda ]
+)
+
+AC_ARG_WITH(cuda-driver,
+  AC_HELP_STRING([--with-cuda-driver=CUDADRVDIR], [ Specify CUDA driver installation directory (default: /usr/local/cuda)]),
+  [ cuda_drv_home=${withval} ],
+  [ cuda_drv_home=/usr/local/cuda ]
 )
 
 dnl Specify GPU Arch
@@ -105,7 +111,10 @@ AC_CHECK_SIZEOF(long)
 
 dnl Output Substitutions
 AC_MSG_NOTICE([Setting CUDA_PATH = ${cuda_home} ])
-AC_SUBST( CUDA_PATH, [${cuda_home} ])
+AC_SUBST( CUDA_PATH, [${cuda_home}])
+
+AC_MSG_NOTICE([Setting CUDA_DRV_PATH = ${cuda_drv_home} ])
+AC_SUBST( CUDA_DRV_PATH, [${cuda_drv_home}])
 
 AC_MSG_NOTICE([Setting GPU_ARCH = ${gpu_arch} ])
 AC_SUBST( GPU_ARCH, [${gpu_arch}] )
@@ -115,14 +124,32 @@ AC_SUBST( MPI_PATH, [${mpi_home} ])
 AC_SUBST( MPICC, [${MPICC} ])
 AC_SUBST( MPICXX, [${MPICXX} ])
 
+CPPFLAGS="$CPPFLAGS -I$CUDA_DRV_PATH/include -I$CUDA_PATH/include"
+LDFLAGS="$LDFLAGS -L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64 -L$CUDA_PATH/lib"
 NVCCFLAGS="$NVCCFLAGS"
 CUDA_CFLAGS="$CUDA_CFLAGS -arch=${gpu_arch}"
-CUDA_CFLAGS="$CUDA_CFLAGS -I$CUDA_PATH/include"
-CUDA_LDFLAGS="-L$CUDA_INSTALL_PATH/lib64"
+CUDA_CFLAGS="$CUDA_CFLAGS -I$CUDA_DRV_PATH/include -I$CUDA_PATH/include"
+CUDA_LDFLAGS="-L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64 -L$CUDA_PATH/lib"
 CUDA_LIBS="-lcuda -lcudart -lcufft"
 NVCCFLAGS="$NVCCFLAGS $CUDA_CFLAGS $CUDA_LDFLAGS $CUDA_LIBS"
 AC_SUBST(NVCC, [nvcc])
 AC_SUBST(NVCCFLAGS)
+
+
+dnl AC_CHECK_MEMBER([union CUstreamBatchMemOpParams_union.flushRemoteWrites],
+dnl   [AC_SUBST( HAS_CUDA_MEMOP_FLUSH_REMOTE_WRITES, 1 )],
+dnl   [AC_MSG_NOTICE([flushRemoteWrites is not defined])],
+dnl   [[#include <cuda.h>]])
+
+dnl Checks for CUDA >= 8.0
+AC_CHECK_LIB(cuda, cuStreamBatchMemOp, [],
+    AC_MSG_ERROR([cuStreamBatchMemOp() not found.  libgdsync requires CUDA 8.0 or later.]))
+
+AC_CHECK_DECLS([CU_STREAM_MEM_OP_INLINE_COPY],    [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_STREAM_MEM_OP_MEMORY_BARRIER], [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_STREAM_MEM_OP_WRITE_VALUE_64], [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK], [], [], [[#include <cuda.h>]])
+
 
 AC_CONFIG_FILES([Makefile libgdsync.spec])
 AC_OUTPUT
