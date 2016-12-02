@@ -40,6 +40,7 @@
 #include "mem.hpp"
 #include "objs.hpp"
 #include "archutils.h"
+#include "mlnxutils.h"
 
 //-----------------------------------------------------------------------------
 
@@ -61,28 +62,28 @@ int gds_dbg_enabled()
 //-----------------------------------------------------------------------------
 // detect Async APIs
 
-#if defined(CU_HAS_STREAM_WRITE_64)
+#if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_VALUE_64
 #warning "enabling write_64 extensions"
 #define GDS_HAS_WRITE64     1
 #else 
 #define GDS_HAS_WRITE64     0
 #endif
 
-#if defined(CU_HAS_STREAM_INLINE_COPY)
+#if HAVE_DECL_CU_STREAM_MEM_OP_INLINE_COPY
 #warning "enabling inline_copy extensions"
 #define GDS_HAS_INLINE_COPY 1
 #else 
 #define GDS_HAS_INLINE_COPY 0
 #endif
 
-#if defined(CU_HAS_CONSISTENCY_WEAK)
+#if HAVE_DECL_CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK
 #warning "enabling consistency extensions"
 #define GDS_HAS_WEAK_API    1
 #else
 #define GDS_HAS_WEAK_API    0
 #endif
 
-#if defined(CU_HAS_STREAM_MEMORY_BARRIER)
+#if HAVE_DECL_CU_STREAM_MEM_OP_MEMORY_BARRIER
 #warning "enabling memory barrier extensions"
 #define GDS_HAS_MEMBAR      1
 #else
@@ -96,15 +97,16 @@ const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
 //-----------------------------------------------------------------------------
 
 // Note: inlcpy has precedence
-bool gds_has_inlcpy = GDS_HAS_INLINE_COPY;
-bool gds_has_write64 = GDS_HAS_WRITE64;
-bool gds_has_weak_consistency = GDS_HAS_WEAK_API;
-bool gds_has_membar = GDS_HAS_MEMBAR;
+//bool gds_has_inlcpy = GDS_HAS_INLINE_COPY;
+//bool gds_has_write64 = GDS_HAS_WRITE64;
+//bool gds_has_weak_consistency = GDS_HAS_WEAK_API;
+//bool gds_has_membar = GDS_HAS_MEMBAR;
 
 static bool gpu_does_support_nor(gds_peer *peer) { return false; }
 
 //-----------------------------------------------------------------------------
 
+// BUG: this feature is GPU device dependent
 static bool gds_enable_write64()
 {
         static int gds_disable_write64 = -1;
@@ -116,7 +118,7 @@ static bool gds_enable_write64()
                         gds_disable_write64 = 0;
                 gds_dbg("GDS_DISABLE_WRITE64=%d\n", gds_disable_write64);
         }
-        return gds_has_write64 && !gds_disable_write64;
+        return GDS_HAS_WRITE64 && !gds_disable_write64;
 }
 
 static bool gds_enable_inlcpy()
@@ -130,7 +132,7 @@ static bool gds_enable_inlcpy()
                         gds_disable_inlcpy = 0;
                 gds_dbg("GDS_DISABLE_INLINECOPY=%d\n", gds_disable_inlcpy);
         }
-        return gds_has_inlcpy && !gds_disable_inlcpy;
+        return GDS_HAS_INLINE_COPY && !gds_disable_inlcpy;
 }
 
 static bool gds_simulate_write64()
@@ -150,7 +152,7 @@ static bool gds_simulate_write64()
                 }
         }
         // simulate 64-bits writes with inlcpy
-        return gds_has_inlcpy && gds_simulate_write64;
+        return GDS_HAS_INLINE_COPY && gds_simulate_write64;
 }
 
 static bool gds_enable_membar()
@@ -164,7 +166,7 @@ static bool gds_enable_membar()
                         gds_disable_membar = 0;
                 gds_dbg("GDS_DISABLE_MEMBAR=%d\n", gds_disable_membar);
         }
-        return gds_has_membar && !gds_disable_membar;
+        return GDS_HAS_MEMBAR && !gds_disable_membar;
 }
 
 static bool gds_enable_weak_consistency()
@@ -178,23 +180,37 @@ static bool gds_enable_weak_consistency()
                     gds_disable_weak_consistency = 1; // disable by default
             gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
         }
-        return gds_has_weak_consistency && !gds_disable_weak_consistency;
+        return GDS_HAS_WEAK_API && !gds_disable_weak_consistency;
 }
 
 //-----------------------------------------------------------------------------
+
+static bool gds_enable_dump_memops()
+{
+        static int gds_enable_dump_memops = -1;
+        if (-1 == gds_enable_dump_memops) {
+            const char *env = getenv("GDS_ENABLE_DUMP_MEMOPS");
+            if (env)
+                    gds_enable_dump_memops = !!atoi(env);
+            else
+                    gds_enable_dump_memops = 1; // disable by default
+            gds_dbg("GDS_ENABLE_DUMP_MEMOPS=%d\n", gds_enable_dump_memops);
+        }
+        return gds_enable_dump_memops;
+}
 
 void gds_dump_param(CUstreamBatchMemOpParams *param)
 {
         switch(param->operation) {
         case CU_STREAM_MEM_OP_WAIT_VALUE_32:
-                gds_dbg("WAIT32 addr:%p value:%08x flags:%08x\n",
+                gds_info("WAIT32 addr:%p value:%08x flags:%08x\n",
                         (void*)param->waitValue.address,
                         param->waitValue.value,
                         param->waitValue.flags);
                 break;
 
         case CU_STREAM_MEM_OP_WRITE_VALUE_32:
-                gds_dbg("WRITE32 addr:%p value:%08x flags:%08x\n",
+                gds_info("WRITE32 addr:%p value:%08x flags:%08x\n",
                         (void*)param->writeValue.address,
                         param->writeValue.value,
                         param->writeValue.flags);
@@ -206,7 +222,7 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
 
 #if GDS_HAS_INLINE_COPY
         case CU_STREAM_MEM_OP_INLINE_COPY:
-                gds_dbg("INLINECOPY addr:%p src:%p len=%zu flags:%08x\n",
+                gds_info("INLINECOPY addr:%p src:%p len=%zu flags:%08x\n",
                         (void*)param->inlineCopy.address,
                         (void*)param->inlineCopy.srcData,
                         param->inlineCopy.byteCount,
@@ -216,7 +232,7 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
 
 #if GDS_HAS_MEMBAR
         case CU_STREAM_MEM_OP_MEMORY_BARRIER:
-                gds_dbg("MEMORY_BARRIER flags:%08x\n",
+                gds_info("MEMORY_BARRIER flags:%08x\n",
                         param->memoryBarrier.flags);
                 break;
 #endif
@@ -232,7 +248,7 @@ void gds_dump_params(unsigned int nops, CUstreamBatchMemOpParams *params)
 {
         for (unsigned int n = 0; n < nops; ++n) {
                 CUstreamBatchMemOpParams *param = params + n;
-                gds_dbg("param[%d]:\n", n);
+                gds_info("param[%d]:\n", n);
                 gds_dump_param(param);
         }
 }
@@ -455,6 +471,10 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
         cuflags |= gds_enable_weak_consistency() ? CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK : 0;
 #endif
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
+
+        if (gds_enable_dump_memops())
+                gds_dump_params(nops, params);
+        
         result = cuStreamBatchMemOp(stream, nops, params, cuflags);
 	if (CUDA_SUCCESS != result) {
                 const char *err_str = NULL;
@@ -585,8 +605,10 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                         use_inlcpy_for_dword = true; // F
         }
         if (gds_simulate_write64()) {
-                if (!gds_enable_membar())
+                if (!gds_enable_membar()) {
+                        gds_warn_once("enabling use_inlcpy_for_dword\n");
                         use_inlcpy_for_dword = true; // D
+                }
         }
 
         for (; op && n < n_ops; op = op->next, ++n) {
@@ -909,11 +931,15 @@ static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
                         break;
                 }
                 case IBV_PEER_OP_COPY_BLOCK: {
-                        gds_err("copy block is not supported\n");
-                        retcode = EINVAL;
+                        uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.copy_op.target_id)->va + op->wr.copy_op.offset);
+                        uint64_t *src = (uint64_t*)op->wr.copy_op.src;
+                        size_t n_bytes = op->wr.copy_op.len;
+                        gds_bf_copy(ptr, src, n_bytes);
+                        gds_dbg("%p <- %p len=%zu\n", ptr, src, n_bytes);
                         break;
                 }
                 case IBV_PEER_OP_POLL_AND_DWORD:
+                case IBV_PEER_OP_POLL_GEQ_DWORD:
                 case IBV_PEER_OP_POLL_NOR_DWORD: {
                         gds_err("polling is not supported\n");
                         retcode = EINVAL;
