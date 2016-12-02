@@ -178,15 +178,11 @@ int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, struct ibv_exp_
 
         ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
         if (ret) {
-                gds_err("error %d in gds_prepare_send\n", ret);
-                //gds_wait_kernel();
                 goto out;
         }
 
         ret = gds_post_pokes(stream, 1, &send_info, dw, val);
         if (ret) {
-                gds_err("error %d in gds_post_pokes\n", ret);
-                //gds_wait_kernel();
                 goto out;
         }
 out:
