@@ -177,7 +177,7 @@ static bool gds_enable_weak_consistency()
             if (env)
                     gds_disable_weak_consistency = !!atoi(env);
             else
-                    gds_disable_weak_consistency = 1; // disable by default
+                    gds_disable_weak_consistency = 1; // disabled by default
             gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
         }
         return GDS_HAS_WEAK_API && !gds_disable_weak_consistency;
@@ -193,7 +193,7 @@ static bool gds_enable_dump_memops()
             if (env)
                     gds_enable_dump_memops = !!atoi(env);
             else
-                    gds_enable_dump_memops = 1; // disable by default
+                    gds_enable_dump_memops = 0; // disabled by default
             gds_dbg("GDS_ENABLE_DUMP_MEMOPS=%d\n", gds_enable_dump_memops);
         }
         return gds_enable_dump_memops;
