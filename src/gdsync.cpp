@@ -472,9 +472,11 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
 #endif
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
 
-        if (gds_enable_dump_memops())
+        if (gds_enable_dump_memops()) {
+                gds_info("nops=%d flags=%08x\n", nops, cuflags);
                 gds_dump_params(nops, params);
-        
+        }
+
         result = cuStreamBatchMemOp(stream, nops, params, cuflags);
 	if (CUDA_SUCCESS != result) {
                 const char *err_str = NULL;
@@ -588,7 +590,11 @@ static inline uint32_t gds_qword_hi(uint64_t v) {
         return (uint32_t)(v >> 32);
 }
 
-int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *params, int &idx)
+enum {
+        GDS_POST_OPS_DISCARD_WAIT_FLUSH = 1<<0
+};
+
+static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *params, int &idx, int post_flags = 0)
 {
         int retcode = 0;
         size_t n = 0;
@@ -758,7 +764,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                         size_t len = op->wr.copy_op.len;
                         void *src = op->wr.copy_op.src;
                         int flags = 0;
-
+                        gds_dbg("OP_COPY_BLOCK dev_ptr=%"PRIx64" src=%p len=%zu\n", dev_ptr, src, len);
                         // catching any other size here
                         if (!gds_enable_inlcpy()) {
                                 gds_err("inline copy is not supported\n");
@@ -782,7 +788,9 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
                         // TODO: properly handle a following fence instead of blidly flushing
-                        int flags = GDS_POLL_POST_FLUSH;
+                        int flags = 0;
+                        if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
+                                flags |= GDS_POLL_POST_FLUSH;
 
                         gds_dbg("OP_POLL_DWORD dev_ptr=%"PRIx64" data=%"PRIx64"\n", dev_ptr, data);
 
@@ -1573,14 +1581,57 @@ int gds_query_param(gds_param_t param, int *value)
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs)
+static bool no_network_descs_after_entry(size_t n_descs, gds_descriptor_t *descs, size_t idx)
 {
+        bool ret = true;
         size_t i;
-        int idx = 0;
-        int ret = 0;
-        int retcode = 0;
-        size_t n_mem_ops = 0;
+        for(i = idx+1; i < n_descs; ++i) {
+                gds_descriptor_t *desc = descs + i;
+                switch(desc->tag) {
+                case GDS_TAG_SEND:
+                case GDS_TAG_WAIT:
+                        ret = false;
+                        goto out;
+                case GDS_TAG_WAIT_VALUE32:
+                case GDS_TAG_WRITE_VALUE32:
+                        break;
+                default:
+                        gds_err("invalid tag\n");
+                        ret = EINVAL;
+                        goto out;
+                }
+        }
+out:
+        return ret;
+}
 
+static int get_wait_info(size_t n_descs, gds_descriptor_t *descs, size_t &n_waits, size_t &last_wait)
+{
+        int ret = 0;
+        size_t i;
+        for(i = 0; i < n_descs; ++i) {
+                gds_descriptor_t *desc = descs + i;
+                switch(desc->tag) {
+                case GDS_TAG_WAIT:
+                        ++n_waits;
+                        last_wait = i;
+                        break;
+                case GDS_TAG_SEND:
+                case GDS_TAG_WAIT_VALUE32:
+                case GDS_TAG_WRITE_VALUE32:
+                        break;
+                default:
+                        gds_err("invalid tag\n");
+                        ret = EINVAL;
+                }
+        }
+        return ret;
+}
+
+static size_t calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs)
+{
+        size_t n_mem_ops = 0;
+        size_t i;
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
                 switch(desc->tag) {
@@ -1596,11 +1647,33 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 default:
                         gds_err("invalid tag\n");
-                        ret = EINVAL;
-                        goto out;
                 }
         }
-        gds_dbg("n_descs=%zu n_mem_ops=%zu\n", n_descs, n_mem_ops);
+        return n_mem_ops;
+}
+
+int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs)
+{
+        size_t i;
+        int idx = 0;
+        int ret = 0;
+        int retcode = 0;
+        size_t n_mem_ops = 0;
+        size_t n_waits = 0;
+        size_t last_wait = 0;
+        bool move_flush = false;
+
+        n_mem_ops = calc_n_mem_ops(n_descs, descs);
+        get_wait_info(n_descs, descs, n_waits, last_wait);
+
+        gds_dbg("n_descs=%zu n_waits=%zu n_mem_ops=%zu\n", n_descs, n_waits, n_mem_ops);
+
+        // move flush to last wait in the whole batch
+        if (n_waits && no_network_descs_after_entry(n_descs, descs, last_wait)) {
+                gds_dbg("optimizing FLUSH to last wait i=%zu\n", last_wait);
+                move_flush = true;
+        }
+        // alternatively, remove flush for wait is next op is a wait too
 
         CUstreamBatchMemOpParams params[n_mem_ops];
 
@@ -1625,7 +1698,10 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 }
                 case GDS_TAG_WAIT: {
                         gds_wait_request_t *wreq = desc->wait;
-                        retcode = gds_post_ops(wreq->peek.entries, wreq->peek.storage, params, idx);
+                        int flags = 0;
+                        if (move_flush && i != last_wait)
+                                flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
+                        retcode = gds_post_ops(wreq->peek.entries, wreq->peek.storage, params, idx, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
