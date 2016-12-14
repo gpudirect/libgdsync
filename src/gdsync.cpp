@@ -676,7 +676,7 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
                         int flags = 0;
-                        gds_dbg("OP_STORE_DWORD dev_ptr=%"PRIx64" data=%08x\n", dev_ptr, data);
+                        gds_dbg("OP_STORE_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
                         if (use_inlcpy_for_dword) { // F || D
                                 // membar may be out of order WRT inlcpy
                                 if (gds_enable_membar()) {
@@ -713,7 +713,7 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                                 op->wr.qword_va.offset;
                         uint64_t data = op->wr.qword_va.data;
                         int flags = 0;
-                        gds_dbg("OP_STORE_QWORD dev_ptr=%"PRIx64" data=%"PRIx64"\n", dev_ptr, data);
+                        gds_dbg("OP_STORE_QWORD dev_ptr=%llx data=%"PRIx64"\n", dev_ptr, data);
                         // C || D
                         if (gds_enable_write64()) {
                                 gds_err("write64 is not supported\n");
@@ -764,7 +764,7 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                         size_t len = op->wr.copy_op.len;
                         void *src = op->wr.copy_op.src;
                         int flags = 0;
-                        gds_dbg("OP_COPY_BLOCK dev_ptr=%"PRIx64" src=%p len=%zu\n", dev_ptr, src, len);
+                        gds_dbg("OP_COPY_BLOCK dev_ptr=%llx src=%p len=%zu\n", dev_ptr, src, len);
                         // catching any other size here
                         if (!gds_enable_inlcpy()) {
                                 gds_err("inline copy is not supported\n");
@@ -792,7 +792,7 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                         if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
                                 flags |= GDS_POLL_POST_FLUSH;
 
-                        gds_dbg("OP_POLL_DWORD dev_ptr=%"PRIx64" data=%"PRIx64"\n", dev_ptr, data);
+                        gds_dbg("OP_POLL_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
 
                         switch(op->type) {
                         case IBV_PEER_OP_POLL_NOR_DWORD:
