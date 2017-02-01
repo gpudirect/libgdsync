@@ -135,11 +135,13 @@ int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t type, CUdevi
         CUdeviceptr page_dev_ptr = 0;
         unsigned int flags = CU_MEMHOSTREGISTER_DEVICEMAP | CU_MEMHOSTREGISTER_PORTABLE;
         bool cuda_registered = false;
+        bool need_cuda_registration = true;
 
         switch (type) {
         case GDS_MEMORY_GPU:
-                gds_err("can't register GPU memory\n");
-                return EINVAL;
+                gds_dbg("GPU memory, no CUDA registration\n");
+                need_cuda_registration = false;
+                break;
         case GDS_MEMORY_IO:
                 flags |= CU_MEMHOSTREGISTER_IOMEMORY;
                 break;
@@ -149,29 +151,33 @@ int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t type, CUdevi
                 gds_err("invalid mem type\n");
                 return EINVAL;
         }
-
-        CUresult res = cuMemHostRegister((void*)page_addr, len, flags);
-        if (res == CUDA_SUCCESS) {
-                // we are good here
-        }
-        else if (res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) {
-                gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
-                cuda_registered = true;
-        }
-        else if (res == CUDA_ERROR_NOT_INITIALIZED) {
-                gds_err("CUDA driver not initialized\n");
-                return EAGAIN;
+        if (need_cuda_registration) {
+                CUresult res = cuMemHostRegister((void*)page_addr, len, flags);
+                if (res == CUDA_SUCCESS) {
+                        // we are good here
+                }
+                else if (res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) {
+                        gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
+                        cuda_registered = true;
+                }
+                else if (res == CUDA_ERROR_NOT_INITIALIZED) {
+                        gds_err("CUDA driver not initialized\n");
+                        return EAGAIN;
+                }
+                else {
+                        //CUCHECK(res);
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
+                        gds_err("Error %d (%s) while register address=%p size=%llu flags=%08x\n", 
+                                res, err_str, (void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
+                        // TODO: handle ENOPERM
+                        return EINVAL;
+                }
+                CUCHECK(cuMemHostGetDevicePointer(&page_dev_ptr, (void *)page_addr, 0));
         }
         else {
-                //CUCHECK(res);
-                const char *err_str = NULL;
-                cuGetErrorString(res, &err_str);
-                gds_err("Error %d (%s) while register address=%p size=%llu flags=%08x\n", 
-                        res, err_str, (void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
-                // TODO: handle ENOPERM
-                return EINVAL;
+                page_dev_ptr = (CUdeviceptr)page_addr;
         }
-        CUCHECK(cuMemHostGetDevicePointer(&page_dev_ptr, (void *)page_addr, 0));
         gds_dbg("page_ptr=%lx page_dev_ptr=%lx\n", page_addr, (unsigned long)page_dev_ptr);
 
         if (dev_ptr)
