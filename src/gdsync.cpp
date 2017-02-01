@@ -477,6 +477,11 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
                 gds_dump_params(nops, params);
         }
 
+        if (nops >= 256) {
+                gds_err("batch size too big, stream=%p nops=%d params=%p flags=%08x\n", stream, nops, params, flags);
+                return EINVAL;
+        }
+
         result = cuStreamBatchMemOp(stream, nops, params, cuflags);
 	if (CUDA_SUCCESS != result) {
                 const char *err_str = NULL;
