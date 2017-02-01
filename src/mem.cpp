@@ -171,7 +171,7 @@ static int gds_alloc_gdr_memory(gds_mem_desc_t *desc, size_t size, int flags)
         gds_dbg("allocated GPU polling buffer d_buf=%p\n", (void*)d_buf);
         //CUCHECK(cuMemsetD8(d_buf, 0, buf_size));
 
-        ret = gds_map_gdr_memory(desc, d_buf, size, flags);
+        ret = gds_map_gdr_memory(desc, d_buf, buf_size, flags);
         if (ret) {
                 gds_err("error %d while mapping gdr memory\n", ret);
                 CUCHECK(cuMemFree(d_buf));
