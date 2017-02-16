@@ -10,11 +10,11 @@ __global__ void void_kernel()
 {
 }
 
-int gpu_launch_void_kernel()
+int gpu_launch_void_kernel_on_stream(CUstream s)
 {
         const int nblocks = 1;
         const int nthreads = 1;
-	void_kernel<<<nblocks, nthreads, 0, gpu_stream>>>();
+	void_kernel<<<nblocks, nthreads, 0, s>>>();
         CUDACHECK(cudaGetLastError());
         return 0;
 }
@@ -58,7 +58,7 @@ __global__ void calc_kernel(int n, float c, float *in, float *out)
                 out[i] = in[i] * c;
 }
 
-int gpu_launch_calc_kernel(size_t size)
+int gpu_launch_calc_kernel_on_stream(size_t size, CUstream s)
 {
         const int nblocks = over_sub_factor * gpu_num_sm;
         const int nthreads = 32*2;
@@ -69,7 +69,7 @@ int gpu_launch_calc_kernel(size_t size)
                 in = (float*)gpu_malloc(4096, size);
                 out = (float*)gpu_malloc(4096, size);
         }
-	calc_kernel<<<nblocks, nthreads, 0, gpu_stream>>>(n, 1.0f, in, out);
+	calc_kernel<<<nblocks, nthreads, 0, s>>>(n, 1.0f, in, out);
         CUDACHECK(cudaGetLastError());
         return 0;
 }

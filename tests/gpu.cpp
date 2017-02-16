@@ -61,6 +61,8 @@ static int gpu_blocking_sync_mode = 0;
 int gpu_num_sm = 0;
 int gpu_clock_rate = 0;
 CUstream gpu_stream;
+CUstream gpu_stream_server;
+CUstream gpu_stream_client;
 #define num_tracking_events 4
 static int next_acquire = 0, next_release = 0, next_wait = 0;
 static CUevent gpu_tracking_event[num_tracking_events];
@@ -120,6 +122,10 @@ int gpu_init(int gpu_id, int sched_mode)
 
 	CUCHECK(cuStreamCreate(&gpu_stream, 0));
         printf("created main test CUDA stream %p\n", gpu_stream);
+	CUCHECK(cuStreamCreate(&gpu_stream_server, 0));
+        printf("created stream server CUDA stream %p\n", gpu_stream_server);
+	CUCHECK(cuStreamCreate(&gpu_stream_client, 0));
+        printf("created stream cliebt CUDA stream %p\n", gpu_stream_client);
 
         {
                 int n;
@@ -151,6 +157,8 @@ int gpu_finalize()
         for (n=0; n<num_tracking_events; ++n)
                 CUCHECK(cuEventDestroy(gpu_tracking_event[n]));
 	CUCHECK(cuStreamDestroy(gpu_stream));
+	CUCHECK(cuStreamDestroy(gpu_stream_server));
+	CUCHECK(cuStreamDestroy(gpu_stream_client));
         CUCHECK(cuDevicePrimaryCtxRelease(gpu_device));
 
 	return 0;
@@ -190,16 +198,21 @@ int gpu_register_host_mem(void *ptr, size_t size)
         return 0;
 }
 
-int gpu_launch_calc_kernel(size_t size);
-int gpu_launch_void_kernel(void);
+int gpu_launch_calc_kernel_on_stream(size_t size, CUstream s);
+int gpu_launch_void_kernel_on_stream(CUstream s);
 
 int gpu_launch_kernel(size_t size, int is_peersync)
 {
+        return gpu_launch_kernel_on_stream(size, is_peersync, gpu_stream);
+}
+
+int gpu_launch_kernel_on_stream(size_t size, int is_peersync, CUstream s)
+{
         int ret = 0;
         if (0 == size)
-                gpu_launch_void_kernel();
+                gpu_launch_void_kernel_on_stream(s);
         else
-                gpu_launch_calc_kernel(size);
+                gpu_launch_calc_kernel_on_stream(size, s);
         assert(cudaSuccess == cudaGetLastError());
         return ret;
 }

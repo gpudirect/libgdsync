@@ -91,6 +91,8 @@ enum gpu_msg_level {
 // oversubscribe SM by factor 2
 static const int over_sub_factor = 2;
 extern CUstream gpu_stream;
+extern CUstream gpu_stream_server;
+extern CUstream gpu_stream_client;
 extern int gpu_num_sm;
 
 BEGIN_C_DECLS
@@ -106,6 +108,7 @@ int gpu_memset(void *ptr, const unsigned char c, size_t size);
 int gpu_register_host_mem(void *ptr, size_t size);
 
 int gpu_launch_kernel(size_t size, int is_peersync);
+int gpu_launch_kernel_on_stream(size_t size, int is_peersync, CUstream s);
 void gpu_post_release_tracking_event();
 int gpu_wait_tracking_event(int tmout_us);
 
