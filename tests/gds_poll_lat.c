@@ -250,9 +250,9 @@ int main(int argc, char *argv[])
                 //        ret = gpu_poll_pokes();
                 //else
                 //        ret = gpu_poll_poke();
-                us_t tout = 100;
-                us_t start = gds_get_time_us();
-                us_t tmout = start + tout;
+                gds_us_t tout = 100;
+                gds_us_t start = gds_get_time_us();
+                gds_us_t tmout = start + tout;
                 while(1) {
                         uint32_t value = ACCESS_ONCE(*poke_ptrs[n_pokes-1]);
                         gpu_dbg("h_poke[%zu]=%x\n", n_pokes-1, value);
