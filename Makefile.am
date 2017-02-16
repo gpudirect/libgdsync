@@ -29,7 +29,7 @@ noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/ut
 
 if TEST_ENABLE
 
-bin_PROGRAMS = tests/gds_kernel_latency tests/rstest tests/gds_poll_lat
+bin_PROGRAMS = tests/gds_kernel_latency tests/rstest tests/gds_poll_lat tests/gds_kernel_loopback_latency
 noinst_PROGRAMS = 
 
 tests_gds_kernel_latency_SOURCES = tests/gds_kernel_latency.c tests/gpu_kernels.cu tests/pingpong.c tests/gpu.cpp
@@ -38,8 +38,12 @@ tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lmpi
 tests_rstest_SOURCES = tests/rstest.cpp
 tests_rstest_LDADD = 
 
+tests_gds_poll_lat_CFLAGS = -DUSE_PROF
 tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernels.cu
-tests_gds_poll_lat_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lmpi -lcuda -lcudart
+tests_gds_poll_lat_LDADD = $(top_builddir)/src/libgdsync.la -lgdstools -lgdrapi -lmpi -lcuda -lcudart
+
+tests_gds_kernel_loopback_latency_SOURCES = tests/gds_kernel_loopback_latency.c tests/pingpong.c tests/gpu.cpp tests/gpu_kernels.cu
+tests_gds_kernel_loopback_latency_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lmpi -lcuda -lcudart
 
 
 SUFFIXES= .cu
