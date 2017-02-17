@@ -38,7 +38,7 @@ tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lmpi
 tests_rstest_SOURCES = tests/rstest.cpp
 tests_rstest_LDADD = 
 
-tests_gds_poll_lat_CFLAGS = -DUSE_PROF
+#tests_gds_poll_lat_CFLAGS = -DUSE_PROF
 tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernels.cu
 tests_gds_poll_lat_LDADD = $(top_builddir)/src/libgdsync.la -lgdstools -lgdrapi -lmpi -lcuda -lcudart
 
