@@ -84,10 +84,13 @@ gds_buf *gds_peer::buf_alloc_cq(size_t length, uint32_t dir, uint32_t alignment,
                 // on SYSMEM for the near future
                 // GPU does a store to the 'busy' field as part of the peek_cq task
                 // CPU polls on that field
-                gds_dbg("allocating CQ peer buf\n");
+                gds_dbg("allocating CQ peer buf on Host mem\n");
+                break;
+        case (IBV_PEER_DIRECTION_FROM_PEER|IBV_PEER_DIRECTION_TO_HCA):
+                gds_dbg("allocating CQ dbrec on Host mem\n");
                 break;
         default:
-                gds_err("unexpected dir %x\n", dir);
+                gds_err("unexpected dir 0x%x\n", dir);
                 break;
         }
         return buf;
