@@ -23,8 +23,9 @@ driver MemOP APIs.
 
 Note that GPU peer mappings must be explicitly enabled, more on this below.
 
-Mellanox OFED 3.5 or newer is required, because of the peer-direct verbs
-extensions.
+Mellanox OFED (MOFED) 4.0 or newer is required, because of the peer-direct verbs
+extensions. As an alternative, it is possible to use MOFED 3.4 and replace the stock libmlx5 
+with the one at https://github.com/gpudirect/libmlx5/tree/fixes.
 
 Peer-direct verbs are only supported on the libmlx5 low-level plug-in
 module, so either Connect-IB or ConnectX-4 HCAs are required.
