@@ -118,7 +118,9 @@ static bool gds_enable_write64()
                         gds_disable_write64 = 0;
                 gds_dbg("GDS_DISABLE_WRITE64=%d\n", gds_disable_write64);
         }
-        return GDS_HAS_WRITE64 && !gds_disable_write64;
+        // BUG: need to query device property for write64 capability
+        //return GDS_HAS_WRITE64 && !gds_disable_write64;
+        return false;
 }
 
 static bool gds_enable_inlcpy()
