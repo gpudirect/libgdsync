@@ -205,15 +205,17 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
 {
         switch(param->operation) {
         case CU_STREAM_MEM_OP_WAIT_VALUE_32:
-                gds_info("WAIT32 addr:%p value:%08x flags:%08x\n",
+                gds_info("WAIT32 addr:%p alias:%p value:%08x flags:%08x\n",
                         (void*)param->waitValue.address,
+                        (void*)param->writeValue.alias,
                         param->waitValue.value,
                         param->waitValue.flags);
                 break;
 
         case CU_STREAM_MEM_OP_WRITE_VALUE_32:
-                gds_info("WRITE32 addr:%p value:%08x flags:%08x\n",
+                gds_info("WRITE32 addr:%p alias:%p value:%08x flags:%08x\n",
                         (void*)param->writeValue.address,
+                        (void*)param->writeValue.alias,
                         param->writeValue.value,
                         param->writeValue.flags);
                 break;
@@ -224,8 +226,9 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
 
 #if GDS_HAS_INLINE_COPY
         case CU_STREAM_MEM_OP_INLINE_COPY:
-                gds_info("INLINECOPY addr:%p src:%p len=%zu flags:%08x\n",
+                gds_info("INLINECOPY addr:%p alias:%p src:%p len=%zu flags:%08x\n",
                         (void*)param->inlineCopy.address,
+                        (void*)param->writeValue.alias,
                         (void*)param->inlineCopy.srcData,
                         param->inlineCopy.byteCount,
                         param->inlineCopy.flags);
@@ -473,12 +476,13 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
         cuflags |= gds_enable_weak_consistency() ? CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK : 0;
 #endif
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
-
+#if 0
+        // temporarily disabled, see below
         if (gds_enable_dump_memops()) {
                 gds_info("nops=%d flags=%08x\n", nops, cuflags);
                 gds_dump_params(nops, params);
         }
-
+#endif
         if (nops >= 256) {
                 gds_err("batch size too big, stream=%p nops=%d params=%p flags=%08x\n", stream, nops, params, flags);
                 return EINVAL;
@@ -493,6 +497,12 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
                 gds_err("nops=%d flags=%08x\n", nops, cuflags);
                 gds_dump_params(nops, params);
 	}
+        // moved here to be able to dump .alias field too
+        if (gds_enable_dump_memops()) {
+                gds_info("nops=%d flags=%08x\n", nops, cuflags);
+                gds_dump_params(nops, params);
+        }
+        
         return retcode;
 }
 
