@@ -228,7 +228,7 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
         case CU_STREAM_MEM_OP_INLINE_COPY:
                 gds_info("INLINECOPY addr:%p alias:%p src:%p len=%zu flags:%08x\n",
                         (void*)param->inlineCopy.address,
-                        (void*)param->writeValue.alias,
+                        (void*)param->inlineCopy.alias,
                         (void*)param->inlineCopy.srcData,
                         param->inlineCopy.byteCount,
                         param->inlineCopy.flags);
