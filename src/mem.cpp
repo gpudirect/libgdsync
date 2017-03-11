@@ -345,7 +345,7 @@ int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdevi
         int gpu_id = peer_id;
         CUcontext gpu_ctx;
         CUdevice gpu_device;
-        size_t size = ROUND_TO(req_size, GDR_GPU_PAGE_SIZE);
+        size_t size = ROUND_TO(req_size, GDS_GPU_PAGE_SIZE);
 
         gds_dbg("GPU%u: malloc req_size=%zu size=%zu\n", gpu_id, req_size, size);
 
