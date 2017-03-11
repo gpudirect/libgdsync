@@ -89,7 +89,7 @@ int prof_idx = 0;
 
 //-----------------------------------------------------------------------------
 
-#if 1
+#if 0
 #define dbg(FMT, ARGS...)  do {} while(0)
 #else
 #define dbg_msg(FMT, ARGS...)   fprintf(stderr, "DBG [%s] " FMT, __FUNCTION__ ,##ARGS)
@@ -185,182 +185,6 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 	}
 
 	return 0;
-}
-
-static struct pingpong_dest *pp_client_exch_dest(const char *servername, int port,
-						 const struct pingpong_dest *my_dest)
-{
-	struct addrinfo *res, *t;
-	struct addrinfo hints = {
-		.ai_family   = AF_UNSPEC,
-		.ai_socktype = SOCK_STREAM
-	};
-	char *service;
-	char msg[sizeof "0000:000000:000000:00000000000000000000000000000000"];
-	int n;
-	int sockfd = -1;
-	struct pingpong_dest *rem_dest = NULL;
-	char gid[33];
-
-	if (asprintf(&service, "%d", port) < 0)
-		return NULL;
-
-	n = getaddrinfo(servername, service, &hints, &res);
-
-	if (n < 0) {
-		fprintf(stderr, "%s for %s:%d\n", gai_strerror(n), servername, port);
-		free(service);
-		return NULL;
-	}
-
-        MPI_Barrier(MPI_COMM_WORLD);
-        // WAR: give time for the server socket to be really ready
-        usleep(100);
-	for (t = res; t; t = t->ai_next) {
-		sockfd = socket(t->ai_family, t->ai_socktype, t->ai_protocol);
-		if (sockfd >= 0) {
-			if (!connect(sockfd, t->ai_addr, t->ai_addrlen))
-				break;
-			close(sockfd);
-			sockfd = -1;
-		}
-	}
-
-	freeaddrinfo(res);
-	free(service);
-
-	if (sockfd < 0) {
-		fprintf(stderr, "Couldn't connect to %s:%d\n", servername, port);
-		return NULL;
-	}
-
-	gid_to_wire_gid(&my_dest->gid, gid);
-	sprintf(msg, "%04x:%06x:%06x:%s", my_dest->lid, my_dest->qpn,
-							my_dest->psn, gid);
-	if (write(sockfd, msg, sizeof msg) != sizeof msg) {
-		fprintf(stderr, "Couldn't send local address\n");
-		goto out;
-	}
-
-	if (read(sockfd, msg, sizeof msg) != sizeof msg) {
-		perror("client read");
-		fprintf(stderr, "Couldn't read remote address\n");
-		goto out;
-	}
-
-	write(sockfd, "done", sizeof "done");
-
-	rem_dest = malloc(sizeof *rem_dest);
-	if (!rem_dest)
-		goto out;
-
-	sscanf(msg, "%x:%x:%x:%s", &rem_dest->lid, &rem_dest->qpn,
-							&rem_dest->psn, gid);
-	wire_gid_to_gid(gid, &rem_dest->gid);
-
-out:
-	close(sockfd);
-	return rem_dest;
-}
-
-static struct pingpong_dest *pp_server_exch_dest(struct pingpong_context *ctx,
-						 int ib_port, int port, int sl,
-						 const struct pingpong_dest *my_dest,
-						 int sgid_idx)
-{
-	struct addrinfo *res, *t;
-	struct addrinfo hints = {
-		.ai_flags    = AI_PASSIVE,
-		.ai_family   = AF_UNSPEC,
-		.ai_socktype = SOCK_STREAM
-	};
-	char *service;
-	char msg[sizeof "0000:000000:000000:00000000000000000000000000000000"];
-	int n;
-	int sockfd = -1, connfd;
-	struct pingpong_dest *rem_dest = NULL;
-	char gid[33];
-
-	if (asprintf(&service, "%d", port) < 0)
-		return NULL;
-
-	n = getaddrinfo(NULL, service, &hints, &res);
-
-	if (n < 0) {
-		fprintf(stderr, "%s for port %d\n", gai_strerror(n), port);
-		free(service);
-		return NULL;
-	}
-
-	for (t = res; t; t = t->ai_next) {
-		sockfd = socket(t->ai_family, t->ai_socktype, t->ai_protocol);
-		if (sockfd >= 0) {
-			n = 1;
-
-			setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &n, sizeof n);
-
-			if (!bind(sockfd, t->ai_addr, t->ai_addrlen))
-				break;
-			close(sockfd);
-			sockfd = -1;
-		}
-	}
-        MPI_Barrier(MPI_COMM_WORLD);
-
-	freeaddrinfo(res);
-	free(service);
-
-	if (sockfd < 0) {
-		fprintf(stderr, "Couldn't listen to port %d\n", port);
-		return NULL;
-	}
-
-	listen(sockfd, 1);
-	connfd = accept(sockfd, NULL, 0);
-	close(sockfd);
-	if (connfd < 0) {
-		fprintf(stderr, "accept() failed\n");
-		return NULL;
-	}
-
-	n = read(connfd, msg, sizeof msg);
-	if (n != sizeof msg) {
-		perror("server read");
-		fprintf(stderr, "%d/%d: Couldn't read remote address\n", n, (int) sizeof msg);
-		goto out;
-	}
-
-	rem_dest = malloc(sizeof *rem_dest);
-	if (!rem_dest)
-		goto out;
-
-	sscanf(msg, "%x:%x:%x:%s", &rem_dest->lid, &rem_dest->qpn,
-							&rem_dest->psn, gid);
-	wire_gid_to_gid(gid, &rem_dest->gid);
-
-	if (pp_connect_ctx(ctx, ib_port, my_dest->psn, sl, rem_dest,
-								sgid_idx)) {
-		fprintf(stderr, "Couldn't connect to remote QP\n");
-		free(rem_dest);
-		rem_dest = NULL;
-		goto out;
-	}
-
-	gid_to_wire_gid(&my_dest->gid, gid);
-	sprintf(msg, "%04x:%06x:%06x:%s", my_dest->lid, my_dest->qpn,
-							my_dest->psn, gid);
-	if (write(connfd, msg, sizeof msg) != sizeof msg) {
-		fprintf(stderr, "Couldn't send local address\n");
-		free(rem_dest);
-		rem_dest = NULL;
-		goto out;
-	}
-
-	read(connfd, msg, sizeof msg);
-
-out:
-	close(connfd);
-	return rem_dest;
 }
 
 static inline unsigned long align_to(unsigned long val, unsigned long pow2)
@@ -482,10 +306,6 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 .qp_type = IBV_QPT_UD,
         };
 
-        if (my_rank == 1) {
-                printf("sleeping 2s\n");
-                sleep(2);
-        }
         ctx->gds_qp = gds_create_qp(ctx->pd, ctx->context, &attr, gpu_id, gds_flags);
 
         if (!ctx->gds_qp)  {
@@ -765,9 +585,9 @@ int main(int argc, char *argv[])
 	struct ibv_device	*ib_dev;
 	struct pingpong_context *ctx;
 	struct pingpong_dest     my_dest;
-	struct pingpong_dest    *rem_dest;
+	struct pingpong_dest    *rem_dest = NULL;
 	struct timeval           rstart, start, end;
-	char                    *ib_devname = NULL;
+	const char              *ib_devname = NULL;
 	char                    *servername = NULL;
 	int                      port = 18515;
 	int                      ib_port = 1;
@@ -980,10 +800,22 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+        if (!ib_devname) {
+                // old env var, for compatibility
+                const char *value = getenv("USE_IB_HCA"); 
+                if (value != NULL) {
+                        printf("[%d] USE_IB_HCA: <%s>\n", my_rank, value);
+                        ib_devname = value;
+                }
+        } else {
+                printf("[%d] requested IB device: <%s>\n", my_rank, ib_devname);
+        }
+
 	if (!ib_devname) {
+                printf("[%d] picking 1st available device\n", my_rank);
 		ib_dev = *dev_list;
 		if (!ib_dev) {
-			fprintf(stderr, "No IB devices found\n");
+			fprintf(stderr, "[%d] No IB devices found\n", my_rank);
 			return 1;
 		}
 	} else {
@@ -1013,7 +845,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	my_dest.lid = ctx->portinfo.lid;
-
 	my_dest.qpn = ctx->qp->qp_num;
 	my_dest.psn = lrand48() & 0xffffff;
 
@@ -1026,31 +857,61 @@ int main(int argc, char *argv[])
 	} else
 		memset(&my_dest.gid, 0, sizeof my_dest.gid);
 
+	printf("[%d]  local address:  LID 0x%04x, QPN 0x%06x, PSN 0x%06x: GID %s\n",
+	       my_rank, my_dest.lid, my_dest.qpn, my_dest.psn, gid);
 	inet_ntop(AF_INET6, &my_dest.gid, gid, sizeof gid);
-	printf("  local address:  LID 0x%04x, QPN 0x%06x, PSN 0x%06x: GID %s\n",
-	       my_dest.lid, my_dest.qpn, my_dest.psn, gid);
 
-	if (servername)
-		rem_dest = pp_client_exch_dest(servername, port, &my_dest);
-	else
-		rem_dest = pp_server_exch_dest(ctx, ib_port, port, sl,
-							&my_dest, gidx);
-
-	if (!rem_dest) {
-                fprintf(stderr, "Could not exchange destination\n");
-		ret = 1;
-                goto out;
-        }
-
+	struct pingpong_dest all_dest[4] = {{0,}};
+        all_dest[my_rank] = my_dest;
+        MPI_CHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, 
+                                all_dest, sizeof(all_dest[0]), MPI_CHAR, MPI_COMM_WORLD));
+        rem_dest = &all_dest[my_rank?0:1];
 	inet_ntop(AF_INET6, &rem_dest->gid, gid, sizeof gid);
-	printf("  remote address: LID 0x%04x, QPN 0x%06x, PSN 0x%06x, GID %s\n",
-	       rem_dest->lid, rem_dest->qpn, rem_dest->psn, gid);
 
-	if (servername) {
-		if (pp_connect_ctx(ctx, ib_port, my_dest.psn, sl, rem_dest, gidx))
-			return 1;
-                //sleep(1);
+	printf("[%d] remote address: LID 0x%04x, QPN 0x%06x, PSN 0x%06x, GID %s\n",
+	       my_rank, rem_dest->lid, rem_dest->qpn, rem_dest->psn, gid);
+
+        {
+                struct ibv_qp_attr attr = {
+                        .qp_state		= IBV_QPS_RTR
+                };
+
+                if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
+                        fprintf(stderr, "Failed to modify QP to RTR\n");
+                        return 1;
+                }
+
+                MPI_Barrier(MPI_COMM_WORLD);
+
+                attr.qp_state	    = IBV_QPS_RTS;
+                attr.sq_psn	    = my_dest.psn;
+
+                if (ibv_modify_qp(ctx->qp, &attr,
+                                  IBV_QP_STATE              |
+                                  IBV_QP_SQ_PSN)) {
+                        fprintf(stderr, "Failed to modify QP to RTS\n");
+                        return 1;
+                }
+
+                MPI_Barrier(MPI_COMM_WORLD);
+
+                struct ibv_ah_attr ah_attr = {
+                        .is_global     = 0,
+                        .dlid          = rem_dest->lid,
+                        .sl            = sl,
+                        .src_path_bits = 0,
+                        .port_num      = ib_port
+                };
+
+                ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
+                if (!ctx->ah) {
+                        fprintf(stderr, "Failed to create AH\n");
+                        return 1;
+                }
+
         }
+
+        MPI_Barrier(MPI_COMM_WORLD);
 
 	if (gettimeofday(&start, NULL)) {
 		perror("gettimeofday");
@@ -1276,7 +1137,7 @@ int main(int argc, char *argv[])
 		ret = 1;
 
 	ibv_free_device_list(dev_list);
-	free(rem_dest);
+	//free(rem_dest);
 
         MPI_Barrier(MPI_COMM_WORLD);
         MPI_Finalize();
