@@ -67,6 +67,9 @@ static struct {
         CUdeviceptr   dev_addr;
 } last_pinned = { 0, 0 };
 
+static int gds_register_mem_internal(void *ptr, size_t size, gds_poll_memory_type_t type, CUdeviceptr *dev_ptr);
+
+
 // map whole pages contained in [ptr,ptr+size)
 // return the CUdeviceptr corresponding to ptr
 // BUG: after destroying a GPU context, all the GPU mappings will be invalidated 
@@ -92,7 +95,7 @@ int gds_map_mem(void *ptr, size_t size, gds_poll_memory_type_t mem_type, CUdevic
         range_set::find_result res = rset.find(r);
         switch(res.second) {
         case range_set::not_found:
-                return gds_register_mem(ptr, size, mem_type, dev_ptr);
+                return gds_register_mem_internal(ptr, size, mem_type, dev_ptr);
                 break;
         case range_set::partial_overlap:
                 gds_err("partial overlap, buffer already registered?\n");
@@ -124,7 +127,14 @@ int gds_map_mem(void *ptr, size_t size, gds_poll_memory_type_t mem_type, CUdevic
 
 //-----------------------------------------------------------------------------
 
-int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t type, CUdeviceptr *dev_ptr)
+int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t mem_type, CUdeviceptr *dev_ptr)
+{
+        return gds_map_mem(ptr, size, mem_type, dev_ptr);
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_register_mem_internal(void *ptr, size_t size, gds_poll_memory_type_t type, CUdeviceptr *dev_ptr)
 {
         gds_dbg("ptr=%p size=%zu memtype=%d\n", ptr, size, type);
 
