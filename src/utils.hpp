@@ -59,6 +59,11 @@
 #define GDS_HOST_PAGE_OFF  (GDS_HOST_PAGE_SIZE-1)
 #define GDS_HOST_PAGE_MASK (~(GDS_HOST_PAGE_OFF))
 
+#define GDS_GPU_PAGE_BITS 16
+#define GDS_GPU_PAGE_SIZE (1ULL<<GDS_GPU_PAGE_BITS)
+#define GDS_GPU_PAGE_OFF  (GDS_GPU_PAGE_SIZE-1)
+#define GDS_GPU_PAGE_MASK (~(GDS_GPU_PAGE_OFF))
+
 //-----------------------------------------------------------------------------
 // tracing support
 
