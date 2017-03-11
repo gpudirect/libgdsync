@@ -1,9 +1,8 @@
 /*
- * GPUDirect Async latency benchmark
+ * GPUDirect Async loopback latency benchmark
  * 
  *
  * based on OFED libibverbs ud_pingpong test.
- * minimally changed to use MPI for bootstrapping, 
  */
 /*
  * Copyright (c) 2005 Topspin Communications.  All rights reserved.
@@ -57,29 +56,12 @@
 #include <errno.h>
 
 #include <cuda.h>
+#include <cudaProfiler.h>
 #include <cuda_runtime_api.h>
 #include <gdsync.h>
 
 #include "pingpong.h"
 #include "gpu.h"
-
-//-----------------------------------------------------------------------------
-
-#include <mpi.h>
-
-#define MPI_CHECK(stmt)                                             \
-do {                                                                \
-    int result = (stmt);                                            \
-    if (MPI_SUCCESS != result) {                                    \
-        char string[MPI_MAX_ERROR_STRING];                          \
-        int resultlen = 0;                                          \
-        MPI_Error_string(result, string, &resultlen);               \
-        fprintf(stderr, " (%s:%d) MPI check failed with %d (%*s)\n", \
-                __FILE__, __LINE__, result, resultlen, string);      \
-        exit(-1);                                                   \
-    }                                                               \
-} while(0)
-
 
 //-----------------------------------------------------------------------------
 
@@ -143,9 +125,10 @@ struct pingpong_context {
 	int                      peersync;
 	int                      peersync_gpu_cq;
         int                      consume_rx_cqe;
+        int                      gpumem;
 };
 
-static int my_rank, comm_size;
+static int my_rank = 0, comm_size = 1;
 
 struct pingpong_dest {
 	int lid;
@@ -216,61 +199,6 @@ static struct pingpong_dest *pp_client_exch_dest(const char *servername, int por
 	
 	fprintf(stderr, "%04x:%06x:%06x:%s\n", my_dest->lid, my_dest->qpn,
                 my_dest->psn, (char *)&my_dest->gid);
-#if 0
-	if (asprintf(&service, "%d", port) < 0)
-		return NULL;
-
-	n = getaddrinfo(servername, service, &hints, &res);
-
-	if (n < 0) {
-		fprintf(stderr, "%s for %s:%d\n", gai_strerror(n), servername, port);
-		free(service);
-		return NULL;
-	}
-
-        MPI_Barrier(MPI_COMM_WORLD);
-        // WAR: give time for the server socket to be really ready
-        usleep(100);
-	for (t = res; t; t = t->ai_next) {
-		sockfd = socket(t->ai_family, t->ai_socktype, t->ai_protocol);
-		if (sockfd >= 0) {
-			if (!connect(sockfd, t->ai_addr, t->ai_addrlen))
-				break;
-			close(sockfd);
-			sockfd = -1;
-		}
-	}
-
-	freeaddrinfo(res);
-	free(service);
-
-	if (sockfd < 0) {
-		fprintf(stderr, "Couldn't connect to %s:%d\n", servername, port);
-		return NULL;
-	}
-
-	gid_to_wire_gid(&my_dest->gid, gid);
-	sprintf(msg, "%04x:%06x:%06x:%s", my_dest->lid, my_dest->qpn,
-							my_dest->psn, gid);
-	if (write(sockfd, msg, sizeof msg) != sizeof msg) {
-		fprintf(stderr, "Couldn't send local address\n");
-		goto out;
-	}
-
-	if (read(sockfd, msg, sizeof msg) != sizeof msg) {
-		perror("client read");
-		fprintf(stderr, "Couldn't read remote address\n");
-		goto out;
-	}
-
-	write(sockfd, "done", sizeof "done");
-
-
-	sscanf(msg, "%x:%x:%x:%s", &rem_dest->lid, &rem_dest->qpn,
-							&rem_dest->psn, gid);
-	wire_gid_to_gid(gid, &rem_dest->gid);
-	close(sockfd);
-#endif
 	rem_dest = malloc(sizeof *rem_dest);
 	if (!rem_dest)
 		goto out;
@@ -280,106 +208,6 @@ static struct pingpong_dest *pp_client_exch_dest(const char *servername, int por
 		rem_dest->psn);
 
 out:
-	return rem_dest;
-}
-
-static struct pingpong_dest *pp_server_exch_dest(struct pingpong_context *ctx,
-						 int ib_port, int port, int sl,
-						 const struct pingpong_dest *my_dest,
-						 int sgid_idx)
-{
-	struct addrinfo *res, *t;
-	struct addrinfo hints = {
-		.ai_flags    = AI_PASSIVE,
-		.ai_family   = AF_UNSPEC,
-		.ai_socktype = SOCK_STREAM
-	};
-	char *service;
-	char msg[sizeof "0000:000000:000000:00000000000000000000000000000000"];
-	int n;
-	int sockfd = -1, connfd;
-	struct pingpong_dest *rem_dest = NULL;
-	char gid[33];
-
-	if (asprintf(&service, "%d", port) < 0)
-		return NULL;
-
-	n = getaddrinfo(NULL, service, &hints, &res);
-
-	if (n < 0) {
-		fprintf(stderr, "%s for port %d\n", gai_strerror(n), port);
-		free(service);
-		return NULL;
-	}
-
-	for (t = res; t; t = t->ai_next) {
-		sockfd = socket(t->ai_family, t->ai_socktype, t->ai_protocol);
-		if (sockfd >= 0) {
-			n = 1;
-
-			setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &n, sizeof n);
-
-			if (!bind(sockfd, t->ai_addr, t->ai_addrlen))
-				break;
-			close(sockfd);
-			sockfd = -1;
-		}
-	}
-        MPI_Barrier(MPI_COMM_WORLD);
-
-	freeaddrinfo(res);
-	free(service);
-
-	if (sockfd < 0) {
-		fprintf(stderr, "Couldn't listen to port %d\n", port);
-		return NULL;
-	}
-
-	listen(sockfd, 1);
-	connfd = accept(sockfd, NULL, 0);
-	close(sockfd);
-	if (connfd < 0) {
-		fprintf(stderr, "accept() failed\n");
-		return NULL;
-	}
-
-	n = read(connfd, msg, sizeof msg);
-	if (n != sizeof msg) {
-		perror("server read");
-		fprintf(stderr, "%d/%d: Couldn't read remote address\n", n, (int) sizeof msg);
-		goto out;
-	}
-
-	rem_dest = malloc(sizeof *rem_dest);
-	if (!rem_dest)
-		goto out;
-
-	sscanf(msg, "%x:%x:%x:%s", &rem_dest->lid, &rem_dest->qpn,
-							&rem_dest->psn, gid);
-	wire_gid_to_gid(gid, &rem_dest->gid);
-
-	if (pp_connect_ctx(ctx, ib_port, my_dest->psn, sl, rem_dest,
-								sgid_idx)) {
-		fprintf(stderr, "Couldn't connect to remote QP\n");
-		free(rem_dest);
-		rem_dest = NULL;
-		goto out;
-	}
-
-	gid_to_wire_gid(&my_dest->gid, gid);
-	sprintf(msg, "%04x:%06x:%06x:%s", my_dest->lid, my_dest->qpn,
-							my_dest->psn, gid);
-	if (write(connfd, msg, sizeof msg) != sizeof msg) {
-		fprintf(stderr, "Couldn't send local address\n");
-		free(rem_dest);
-		rem_dest = NULL;
-		goto out;
-	}
-
-	int retcode = read(connfd, msg, sizeof msg);
-        assert(retcode > 0);
-out:
-	close(connfd);
 	return rem_dest;
 }
 
@@ -396,7 +224,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                             int peersync_gpu_cq,
                                             int peersync_gpu_dbrec,
                                             int consume_rx_cqe,
-                                            int sched_mode)
+                                            int sched_mode,
+                                            int use_gpumem)
 {
 	struct pingpong_context *ctx;
 
@@ -413,12 +242,17 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 	ctx->calc_size = calc_size;
 	ctx->rx_depth = rx_depth;
 	ctx->gpu_id   = gpu_id;
+        ctx->gpumem   = use_gpumem;
 
         size_t alloc_size = 3 * align_to(size + 40, page_size);
-	if (ctx->gpu_id >= 0)
+	if (ctx->gpumem) {
+                printf("allocating GPU memory buf\n");
 		ctx->buf = gpu_malloc(page_size, alloc_size);
-	else
+	} else {
+                printf("allocating CPU memory buf\n");
 		ctx->buf = memalign(page_size, alloc_size);
+                printf("allocated CPU buffer address at %p\n", ctx->buf);
+        }
 
 	if (!ctx->buf) {
 		fprintf(stderr, "Couldn't allocate work buf.\n");
@@ -441,7 +275,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         ctx->consume_rx_cqe = consume_rx_cqe;
 
         // must be ZERO!!! for rx_flag to work...
-	if (ctx->gpu_id >= 0)
+	if (ctx->gpumem)
 		gpu_memset(ctx->buf, 0, alloc_size);
 	else
 		memset(ctx->buf, 0, alloc_size);
@@ -453,9 +287,9 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
         gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
         gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+        //gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+        //gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+        //gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
         CUCHECK(cuCtxSynchronize());
 
 	ctx->context = ibv_open_device(ib_dev);
@@ -480,11 +314,13 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 		goto clean_comp_channel;
 	}
 
+        //printf("BEFORE reg_mr(), sleeping 2s\n"); sleep(2);
 	ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, alloc_size, IBV_ACCESS_LOCAL_WRITE);
 	if (!ctx->mr) {
 		fprintf(stderr, "Couldn't register MR\n");
 		goto clean_pd;
 	}
+        //printf("AFTER reg_mr(), sleeping 2s\n"); sleep(2);
 
         int gds_flags = 0;
         if (peersync_gpu_cq)
@@ -556,7 +392,7 @@ clean_device:
 	ibv_close_device(ctx->context);
 
 clean_buffer:
-	if (ctx->gpu_id >= 0)
+	if (ctx->gpumem)
 		gpu_free(ctx->buf); 
 	else 
 		free(ctx->buf);
@@ -597,7 +433,7 @@ int pp_close_ctx(struct pingpong_context *ctx)
 		fprintf(stderr, "Couldn't release context\n");
 	}
 
-	if (ctx->gpu_id >= 0)
+	if (ctx->gpumem)
 		gpu_free(ctx->buf); 
 	else 
 		free(ctx->buf);
@@ -690,6 +526,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 
 static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uint32_t qpn, int is_client)
 {
+        int retcode = 0;
 	int i, ret = 0;
         int posted_recv = 0;
 
@@ -715,38 +552,45 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 	for (i = 0; i < posted_recv; ++i) {
                 //if (is_client) {
 
-		ret = pp_post_gpu_send(ctx, qpn, &gpu_stream_client);
+		ret = pp_post_gpu_send(ctx, qpn, &gpu_stream_server);
 		if (ret) {
-			fprintf(stderr,"ERROR: can't post GPU send (%d) posted_recv=%d posted_so_far=%d is_client=%d \n",
+			fprintf(stderr,"ERROR: error %d in pp_post_gpu_send, posted_recv=%d posted_so_far=%d is_client=%d \n",
 				ret, posted_recv, i, is_client);
-			i = -ret;
+			retcode = -ret;
+			break;
+		}
+
+		ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->send_cq, 0);
+		if (ret) {
+			fprintf(stderr, "ERROR: error %d in gds_stream_wait_cq\n", ret);
+			retcode = -ret;
 			break;
 		}
 
 		ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
 		if (ret) {
-			fprintf(stderr, "ERROR: error in gpu_post_poll_cq (%d)\n", ret);
-			i = -ret;
+			fprintf(stderr, "ERROR: error %d in gds_stream_wait_cq\n", ret);
+                        //exit(EXIT_FAILURE);
+			retcode = -ret;
 			break;
 		}
 		if (ctx->calc_size)
 			gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
 
-#if 0
-		ret = pp_post_gpu_send(ctx, qpn, &gpu_stream_server);
-		if (ret) {
-			fprintf(stderr, "ERROR: can't post GPU send\n");
-			i = -ret;
-			break;
-		}
-#endif
         }
-
         PROF(&prof, prof_idx++);
-
-        gpu_post_release_tracking_event(&gpu_stream_server);
-        //sleep(1);
-	return i;
+        if (!retcode) {
+                retcode = i;
+                gpu_post_release_tracking_event(&gpu_stream_server);
+                //sleep(1);
+        }
+#if 0
+        else {
+                cuStreamSynchronize(gpu_stream_server);
+        }
+#endif
+out:
+	return retcode;
 }
 
 static void usage(const char *argv0)
@@ -807,15 +651,8 @@ int main(int argc, char *argv[])
         int                      consume_rx_cqe = 0;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
         int                      ret = 0;
-
-        MPI_CHECK(MPI_Init(&argc, &argv));
-        MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &comm_size));
-        MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &my_rank));
-
-        if (comm_size != 1) { 
-                fprintf(stderr, "this test requires exactly one process \n");
-                MPI_Abort(MPI_COMM_WORLD, -1);
-        }
+        int                      wait_key = -1;
+        int                      use_gpumem = 0;
 
         fprintf(stdout, "libgdsync build version 0x%08x, major=%d minor=%d\n", GDS_API_VERSION, GDS_API_MAJOR_VERSION, GDS_API_MINOR_VERSION);
 
@@ -823,12 +660,12 @@ int main(int argc, char *argv[])
         ret = gds_query_param(GDS_PARAM_VERSION, &version);
         if (ret) {
                 fprintf(stderr, "error querying libgdsync version\n");
-                MPI_Abort(MPI_COMM_WORLD, -1);
+                exit(EXIT_FAILURE);
         }
         fprintf(stdout, "libgdsync queried version 0x%08x\n", version);
         if (!GDS_API_VERSION_COMPATIBLE(version)) {
                 fprintf(stderr, "incompatible libgdsync version 0x%08x\n", version);
-                MPI_Abort(MPI_COMM_WORLD, -1);
+                exit(EXIT_FAILURE);
         }
 
 	srand48(getpid() * time(NULL));
@@ -854,10 +691,12 @@ int main(int argc, char *argv[])
 			{ .name = "batch-length",    .has_arg = 1, .val = 'B' },
 			{ .name = "consume-rx-cqe",  .has_arg = 0, .val = 'Q' },
 			{ .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
+			{ .name = "gpu-mem",         .has_arg = 0, .val = 'E' },
+			{ .name = "wait-key",        .has_arg = 1, .val = 'W' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:W:E:", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -956,28 +795,28 @@ int main(int argc, char *argv[])
                 }
                 break;
 
+                case 'W':
+                        wait_key = strtol(optarg, NULL, 0);
+                        printf("INFO: wait_key=%d\n", wait_key);
+                        break;
+
+                case 'E':
+                        use_gpumem = !use_gpumem;
+                        printf("INFO: use_gpumem=%d\n", use_gpumem);
+                        break;
+
 		default:
 			usage(argv[0]);
 			return 1;
 		}
 	}
         assert(comm_size == 1);
-        char hostnames[comm_size][MPI_MAX_PROCESSOR_NAME];
-        int name_len;
-        MPI_CHECK(MPI_Get_processor_name(hostnames[my_rank], &name_len));
-        assert(name_len < MPI_MAX_PROCESSOR_NAME);
-
-        //MPI_CHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, 
-        //                        hostnames, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, MPI_COMM_WORLD));
+        char *hostnames[1] = {"localhost"};
 
         if (my_rank == 0) {
 		servername = hostnames[0];
                 printf("[%d] pid=%d server:%s\n", my_rank, getpid(), servername);
         }
-	
-	//else {
-        //        printf("[%d] pid=%d client:%s\n", my_rank, getpid(), hostnames[1]);
-        //}
 
         const char *tags = NULL;
         if (peersync) {
@@ -997,7 +836,9 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+        printf("requested IB device: <%s>\n", ib_devname);
 	if (!ib_devname) {
+                printf("picking 1st available device\n");
 		ib_dev = *dev_list;
 		if (!ib_dev) {
 			fprintf(stderr, "No IB devices found\n");
@@ -1014,8 +855,8 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
-
-	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode);
+        printf("use gpumem: %d\n", use_gpumem);
+	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem);
 	if (!ctx)
 		return 1;
 
@@ -1048,15 +889,7 @@ int main(int argc, char *argv[])
 	printf("  local address:  LID 0x%04x, QPN 0x%06x, PSN 0x%06x: GID %s\n",
 	       my_dest.lid, my_dest.qpn, my_dest.psn, gid);
 	
-	if (servername) {
-		fprintf(stderr, "p1\n");
-		rem_dest = pp_client_exch_dest(servername, port, &my_dest);
-	}
-	else {
-		fprintf(stderr, "p2\n");
-		rem_dest = pp_server_exch_dest(ctx, ib_port, port, sl,
-							&my_dest, gidx);
-	}
+        rem_dest = pp_client_exch_dest(servername, port, &my_dest);
 
 	if (!rem_dest) {
                 fprintf(stderr, "Could not exchange destination\n");
@@ -1080,6 +913,9 @@ int main(int argc, char *argv[])
                 goto out;
 	}
 
+        //printf("sleeping 10s\n");
+        //sleep(10);
+
         // for performance reasons, multiple batches back-to-back are posted here
 	rcnt = scnt = 0;
         nposted = 0;
@@ -1094,7 +930,12 @@ int main(int argc, char *argv[])
         for (batch=0; batch<n_batches; ++batch) {
                 n_post = min(min(ctx->rx_depth/2, iters-nposted), max_batch_len);
                 n_posted = pp_post_work(ctx, n_post, 0, rem_dest->qpn, servername?1:0);
-                if (n_posted != n_post) {
+                if (n_posted < 0) {
+                        fprintf(stderr, "ERROR: got error %d\n", n_posted);
+                        ret = 1;
+                        goto out;
+                }
+                else if (n_posted != n_post) {
                         fprintf(stderr, "ERROR: Couldn't post work, got %d requested %d\n", n_posted, n_post);
                         ret = 1;
                         goto out;
@@ -1148,7 +989,7 @@ int main(int argc, char *argv[])
                 //printf("before tracking\n"); fflush(stdout);
                 int ret = gpu_wait_tracking_event(1000*1000);
                 if (ret == ENOMEM) {
-                        fprintf(stderr, "gpu_wait_tracking_event nothing to do (%d)\n", ret);
+                        dbg("gpu_wait_tracking_event nothing to do (%d)\n", ret);
                 } else if (ret == EAGAIN) {
                         fprintf(stderr, "gpu_wait_tracking_event timout (%d), retrying\n", ret);
                         prof_reset(&prof);
@@ -1238,9 +1079,9 @@ int main(int argc, char *argv[])
                         routs -= last_batch_len;
                         //prev_batch_len = last_batch_len;
                         if (n_tx_ev != last_batch_len)
-                                fprintf(stderr, "[%d] unexpected tx ev %d, batch len %d\n", iter, n_tx_ev, last_batch_len);
+                                dbg("[%d] partially completed batch, got tx ev %d, batch len %d\n", iter, n_tx_ev, last_batch_len);
                         if (n_rx_ev != last_batch_len)
-                                fprintf(stderr, "[%d] unexpected rx ev %d, batch len %d\n", iter, n_rx_ev, last_batch_len);
+                                dbg("[%d] partially completed batch, got rx ev %d, batch len %d\n", iter, n_rx_ev, last_batch_len);
                         if (nposted < iters) {
                                 //fprintf(stdout, "rcnt=%d scnt=%d routs=%d nposted=%d\n", rcnt, scnt, routs, nposted); fflush(stdout);
                                 // potentially submit new work
@@ -1265,8 +1106,18 @@ int main(int argc, char *argv[])
 
 
                 if (got_error) {
+                        //fprintf(stderr, "sleeping 10s then exiting for error\n");
+                        //sleep(10);
                         fprintf(stderr, "exiting for error\n");
                         return 1;
+                }
+
+                if (wait_key >= 0) {
+                        int c;
+                        if (iter == wait_key) {
+                                puts("press any key");
+                                c = getchar();
+                        }
                 }
 	}
 
@@ -1294,19 +1145,17 @@ int main(int argc, char *argv[])
 	//ibv_ack_cq_events(ctx->cq, num_cq_events);
 	
 
-	MPI_Finalize();
 	return 0;
 
-        MPI_Barrier(MPI_COMM_WORLD);
+out:
+
 	if (pp_close_ctx(ctx))
 		ret = 1;
 
 	ibv_free_device_list(dev_list);
 	free(rem_dest);
 
-        MPI_Barrier(MPI_COMM_WORLD);
-        MPI_Finalize();
-out:
+
 	return ret;
 }
 
