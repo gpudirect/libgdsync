@@ -85,6 +85,11 @@ int gpu_init(int gpu_id, int sched_mode)
 	} else
 		printf("There are %d devices supporting CUDA, picking N.%d\n", deviceCount, gpu_id);
 
+        if (getenv("USE_GPU")) {
+                gpu_id = atoi(getenv("USE_GPU"));
+                printf("overriding gpu_id with USE_GPU=%d\n", gpu_id);
+        }
+
 	if (gpu_id >= deviceCount) {
 		printf("ERROR: requested GPU gpu_id beyond available\n");
 		ret = 1;
