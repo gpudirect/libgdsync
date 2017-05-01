@@ -267,6 +267,11 @@ int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flag
 {
 	int retcode = 0;
 
+        if (flags != 0) {
+                gds_err("invalid flags != 0\n");
+                return EINVAL;
+        }
+
         gds_init_wait_request(request, cq->curr_offset++);
 
         retcode = ibv_exp_peer_peek_cq(cq->cq, &request->peek);
