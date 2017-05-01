@@ -48,6 +48,23 @@ else
     fi
 fi
 
+AC_ARG_WITH([gdstools],
+    AC_HELP_STRING([--with-gdstools], [ Set path to gdstools installation ]))
+if test x$with_gdstools = x || test x$with_gdstools = xno; then
+    want_gdstools=no
+    LIBGDSTOOLS=
+else
+    want_gdstools=yes
+    if test -d $with_gdstools; then
+        CPPFLAGS="$CPPFLAGS -I$with_gdstools/include -DUSE_PROF -DUSE_PERF"
+        LDFLAGS="$LDFLAGS -L$with_gdstools/lib -L$with_gdstools/lib64"
+    else
+        echo "inexistent $with_gdstools directory"
+    fi
+    LIBGDSTOOLS=-lgdstools
+    AC_SUBST(LIBGDSTOOLS)
+fi
+
 AC_ARG_WITH([mpi],
     AC_HELP_STRING([--with-mpi], [ Set path to mpi installation ]))
 if test x$with_mpi = x || test x$with_mpi = xno; then
