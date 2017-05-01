@@ -46,8 +46,10 @@ driver should work.
 
 Kepler or newer Tesla/Quadro GPUs are required because of GPUDirect RDMA.
 
-A special HCA firmware is currently necessary in combination with GPUs
-prior to Pascal.
+A special HCA firmware setting is currently necessary in combination with GPUs
+prior to Pascal. Use `mlxconfig` to set the `NON_PREFETCHABLE_PF_BAR` parameter
+on your HCA to 1. For more information see [Mellanox Firmware Tools (MFT) User
+Manual](https://www.mellanox.com/related-docs/MFT/MFT_user_manual_4_6_0.pdf).
 
 
 Build
