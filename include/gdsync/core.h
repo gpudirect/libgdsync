@@ -57,6 +57,7 @@ enum gds_create_qp_flags {
 };
 
 typedef struct ibv_qp_init_attr_ex gds_qp_init_attr_t;
+typedef struct ibv_qp_attr gds_qp_attr_t;
 
 struct gds_cq {
         struct ibv_cq *cq;
