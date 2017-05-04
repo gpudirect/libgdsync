@@ -210,7 +210,9 @@ int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, struct ibv_exp_
 
         ret = gds_post_pokes(stream, 1, &send_info, dw, val);
         if (ret) {
-                goto out;
+            //the request has been committed here
+            gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+            goto out;
         }
 out:
         return ret;
