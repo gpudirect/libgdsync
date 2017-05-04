@@ -109,7 +109,7 @@ int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, int flags
     rollback.flags = flags;
     /* Reserved for future expensions, must be 0 */
     rollback.comp_mask = 0;
-    
+    gds_warn("Need to rollback WQE %x\n", rollback.rollback_id);
     ret = ibv_exp_rollback_qp(qp->qp, &rollback);
     if(ret)
     {
