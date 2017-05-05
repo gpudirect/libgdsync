@@ -87,7 +87,7 @@ int gds_register_peer(struct ibv_context *context, unsigned gpu_id);
  * - this API might have higher overhead than ibv_post_send. 
  * - It is provided for convenience only.
  */
-int gds_post_send(struct gds_qp *qp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr);
+int gds_post_send(struct gds_qp *qp, struct ibv_exp_send_wr *wr, struct ibv_exp_send_wr **bad_wr);
 
 /* \brief: CPU-synchronous post recv for peer QPs
  *

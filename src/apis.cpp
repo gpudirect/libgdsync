@@ -86,7 +86,7 @@ static void gds_init_wait_request(gds_wait_request_t *request, uint32_t offset)
 }
 
 //-----------------------------------------------------------------------------
-int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, int flags)
+int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, enum ibv_exp_rollback_flags flag)
 {
     struct ibv_exp_rollback_ctx rollback;
     int ret=0;
@@ -95,26 +95,25 @@ int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, int flags
     assert(qp->qp);
     assert(send_info);
     if(
-        flags != IBV_EXP_ROLLBACK_ABORT_UNCOMMITED && 
-        flags != IBV_EXP_ROLLBACK_ABORT_LATE
+        flag != IBV_EXP_ROLLBACK_ABORT_UNCOMMITED && 
+        flag != IBV_EXP_ROLLBACK_ABORT_LATE
     )
     {
-        gds_err("erroneous rollback flag input value\n");
+        gds_err("erroneous ibv_exp_rollback_flags flag input value\n");
+        ret=1;
         goto out;
     } 
 
     /* from ibv_exp_peer_commit call */
     rollback.rollback_id = send_info->commit.rollback_id;
-    /* from ibv_exp_rollback_flags */
-    rollback.flags = flags;
+    /* from ibv_exp_rollback_flag */
+    rollback.flags = flag;
     /* Reserved for future expensions, must be 0 */
     rollback.comp_mask = 0;
     gds_warn("Need to rollback WQE %x\n", rollback.rollback_id);
     ret = ibv_exp_rollback_qp(qp->qp, &rollback);
     if(ret)
-    {
         gds_err("error %d in ibv_exp_rollback_qp\n", ret);
-    }
 
 out:
     return ret;
@@ -122,7 +121,7 @@ out:
 
 int gds_post_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr)
 {
-    int ret = 0;
+    int ret = 0, ret2=0;
     gds_send_request_t send_info;
     ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
     if (ret) {
@@ -133,8 +132,11 @@ int gds_post_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_e
     ret = gds_post_pokes_on_cpu(1, &send_info, NULL, 0);
     if (ret) {
         gds_err("error %d in gds_post_pokes_on_cpu\n", ret);
-        //the request has been committed here
-        gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+        ret2 = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+        if (ret2) {
+            gds_err("error %d in gds_rollback_qp\n", ret2);
+        }
+
         goto out;
     }
 
@@ -200,21 +202,23 @@ out:
 
 int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, uint32_t *dw, uint32_t val)
 {
-        int ret = 0;
+    int ret = 0, ret2=0;
 	gds_send_request_t send_info;
 
-        ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
-        if (ret) {
-                goto out;
-        }
-
-        ret = gds_post_pokes(stream, 1, &send_info, dw, val);
-        if (ret) {
-            gds_err("error %d in gds_post_pokes\n", ret);
-            //the request has been committed here
-            gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+    ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
+    if (ret) {
             goto out;
+    }
+
+    ret = gds_post_pokes(stream, 1, &send_info, dw, val);
+    if (ret) {
+        gds_err("error %d in gds_post_pokes\n", ret);
+        ret2 = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+        if (ret2) {
+            gds_err("error %d in gds_rollback_qp\n", ret2);
         }
+        goto out;
+    }
 out:
         return ret;
 }
