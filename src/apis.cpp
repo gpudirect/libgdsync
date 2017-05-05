@@ -119,7 +119,7 @@ out:
     return ret;
 }
 
-int gds_post_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr)
+int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
     int ret = 0, ret2=0;
     gds_send_request_t send_info;
@@ -165,8 +165,8 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, 
-                     struct ibv_exp_send_wr **bad_ewr, 
+int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, 
+                     gds_send_wr **bad_ewr, 
                      gds_send_request_t *request)
 {
         int ret = 0;
@@ -189,8 +189,6 @@ int gds_prepare_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr,
         ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
         if (ret) {
                 gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
-                //request not commited in case of error
-                
                 //gds_wait_kernel();
                 goto out;
         }
@@ -200,7 +198,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, uint32_t *dw, uint32_t val)
+int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, uint32_t *dw, uint32_t val)
 {
     int ret = 0, ret2=0;
 	gds_send_request_t send_info;
@@ -225,7 +223,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr)
+int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
         return gds_stream_queue_send_ex(stream, qp, p_ewr, bad_ewr, NULL, 0);
 }
