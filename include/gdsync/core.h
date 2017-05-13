@@ -143,8 +143,8 @@ typedef struct gds_wait_request {
 typedef struct gds_value32_descriptor { 
         uint32_t  *ptr;
         uint32_t   value;
-        int        cond_flags; // don't care for GDS_TAG_WRITE_VALUE32
-        int        flags;
+        int        cond_flags; // takes gds_poll_cond_flag_t, don't care field for GDS_TAG_WRITE_VALUE32
+        int        flags; // takes gds_poll_memory_type_t | gds_poll_flags_t | gds_poke_flags_t
 } gds_value32_descriptor_t;
 
 typedef enum gds_tag { GDS_TAG_SEND, GDS_TAG_WAIT, GDS_TAG_WAIT_VALUE32, GDS_TAG_WRITE_VALUE32 } gds_tag_t;
