@@ -476,16 +476,10 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
         cuflags |= gds_enable_weak_consistency() ? CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK : 0;
 #endif
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
-#if 0
-        // temporarily disabled, see below
-        if (gds_enable_dump_memops()) {
-                gds_info("nops=%d flags=%08x\n", nops, cuflags);
-                gds_dump_params(nops, params);
-        }
-#endif
-        if (nops >= 256) {
-                gds_err("batch size too big, stream=%p nops=%d params=%p flags=%08x\n", stream, nops, params, flags);
-                return EINVAL;
+
+        if (nops > 256) {
+                gds_warn("batch size might be too big, stream=%p nops=%d params=%p flags=%08x\n", stream, nops, params, flags);
+                //return EINVAL;
         }
 
         result = cuStreamBatchMemOp(stream, nops, params, cuflags);
@@ -496,13 +490,15 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
                 retcode = gds_curesult_to_errno(result);
                 gds_err("nops=%d flags=%08x\n", nops, cuflags);
                 gds_dump_params(nops, params);
+                goto out;
 	}
-        // moved here to be able to dump .alias field too
+
         if (gds_enable_dump_memops()) {
                 gds_info("nops=%d flags=%08x\n", nops, cuflags);
                 gds_dump_params(nops, params);
         }
-        
+
+out:        
         return retcode;
 }
 
