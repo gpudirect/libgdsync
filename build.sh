@@ -24,6 +24,8 @@ if [ ! -e Makefile ]; then
         --with-mpi=$MPI_HOME \
         --enable-test
 
+#        --with-gdstools=$PREFIX \
+#        --enable-extended-memops
 fi
 
 make V=1 clean all install

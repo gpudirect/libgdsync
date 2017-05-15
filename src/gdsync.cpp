@@ -82,28 +82,29 @@ int gds_flusher_enabled()
 // detect Async APIs
 
 #if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_VALUE_64
-#warning "enabling write_64 extensions"
+#warning "enabling write_64 extension"
 #define GDS_HAS_WRITE64     1
 #else 
 #define GDS_HAS_WRITE64     0
 #endif
 
-#if HAVE_DECL_CU_STREAM_MEM_OP_INLINE_COPY
-#warning "enabling inline_copy extensions"
+#if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
+#warning "enabling WRITE_MEMORY extension"
 #define GDS_HAS_INLINE_COPY 1
 #else 
 #define GDS_HAS_INLINE_COPY 0
 #endif
 
 #if HAVE_DECL_CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK
-#warning "enabling consistency extensions"
+#warning "enabling consistency extension"
 #define GDS_HAS_WEAK_API    1
 #else
 #define GDS_HAS_WEAK_API    0
+#define CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK 1
 #endif
 
 #if HAVE_DECL_CU_STREAM_MEM_OP_MEMORY_BARRIER
-#warning "enabling memory barrier extensions"
+#warning "enabling memory barrier extension"
 #define GDS_HAS_MEMBAR      1
 #else
 #define GDS_HAS_MEMBAR      0
@@ -188,18 +189,55 @@ static bool gds_enable_membar()
         return GDS_HAS_MEMBAR && !gds_disable_membar;
 }
 
+// pre-req: an active CUDA context
+static bool gds_detect_weak_consistency()
+{
+        bool has_hidden_flag = false;
+        gds_dbg("testing hidden weak flag\n");
+        do {
+                CUstreamBatchMemOpParams params[2];
+                CUresult res;
+                res = cuStreamBatchMemOp(0, 0, params, 0);
+                if (res != CUDA_SUCCESS) {
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
+                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
+                        break;
+                }
+                res = cuStreamBatchMemOp(0, 0, params, CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK);
+                if (res ==  CUDA_ERROR_INVALID_VALUE) {
+                        gds_dbg("weak flag is not supported\n");
+                        break;
+                } else if (res != CUDA_SUCCESS) {
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
+                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
+                        break;
+                }
+                gds_dbg("detected hidden weak consistency flag\n");
+                has_hidden_flag = true;
+        } while(0);
+        return has_hidden_flag;
+}
+
 static bool gds_enable_weak_consistency()
 {
         static int gds_disable_weak_consistency = -1;
+        static bool test_hidden_flag = true;
+        static bool has_hidden_flag = false;
         if (-1 == gds_disable_weak_consistency) {
-            const char *env = getenv("GDS_DISABLE_WEAK_CONSISTENCY");
-            if (env)
-                    gds_disable_weak_consistency = !!atoi(env);
-            else
-                    gds_disable_weak_consistency = 1; // disabled by default
-            gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
+                const char *env = getenv("GDS_DISABLE_WEAK_CONSISTENCY");
+                if (env)
+                        gds_disable_weak_consistency = !!atoi(env);
+                else
+                        gds_disable_weak_consistency = 1; // disabled by default
+                gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
         }
-        return GDS_HAS_WEAK_API && !gds_disable_weak_consistency;
+        if (!GDS_HAS_WEAK_API && test_hidden_flag) {
+                test_hidden_flag = false;
+                has_hidden_flag = gds_detect_weak_consistency();
+        }
+        return GDS_HAS_WEAK_API || has_hidden_flag && !gds_disable_weak_consistency;
 }
 
 //-----------------------------------------------------------------------------
@@ -244,13 +282,13 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
                 break;
 
 #if GDS_HAS_INLINE_COPY
-        case CU_STREAM_MEM_OP_INLINE_COPY:
+        case CU_STREAM_MEM_OP_WRITE_MEMORY:
                 gds_info("INLINECOPY addr:%p alias:%p src:%p len=%zu flags:%08x\n",
-                        (void*)param->inlineCopy.address,
-                        (void*)param->inlineCopy.alias,
-                        (void*)param->inlineCopy.srcData,
-                        param->inlineCopy.byteCount,
-                        param->inlineCopy.flags);
+                        (void*)param->writeMemory.address,
+                        (void*)param->writeMemory.alias,
+                        (void*)param->writeMemory.srcData,
+                        param->writeMemory.byteCount,
+                        param->writeMemory.flags);
                 break;
 #endif
 
@@ -293,10 +331,14 @@ int gds_fill_membar(gds_op_list_t &ops, int flags)
         } else {
                 if (flags & GDS_MEMBAR_DEFAULT) {
                         param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
-                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_DEFAULT;
+                        param.memoryBarrier.scope = CU_STREAM_MEMORY_BARRIER_SCOPE_GPU;
+                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_WRITE_32 | CU_STREAM_MEMORY_BARRIER_OP_WRITE_64;
+                        param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 } else if (flags & GDS_MEMBAR_SYS) {
                         param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
-                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_SYS;
+                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_SCOPE_SYS;
+                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_WRITE_32 | CU_STREAM_MEMORY_BARRIER_OP_WRITE_64;
+                        param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 } else {
                         gds_err("error, unsupported membar\n");
                         retcode = EINVAL;
@@ -332,19 +374,20 @@ static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, siz
 
         bool need_barrier       = (flags  & GDS_IMMCOPY_POST_TAIL_FLUSH  ) ? true : false;
 
-        param.operation = CU_STREAM_MEM_OP_INLINE_COPY;
-        param.inlineCopy.byteCount = n_bytes;
-        param.inlineCopy.srcData = data;
-        param.inlineCopy.address = dev_ptr;
-        param.inlineCopy.flags = CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
+        param.operation = CU_STREAM_MEM_OP_WRITE_MEMORY;
+        param.writeMemory.byteCount = n_bytes;
+        param.writeMemory.src = data;
+        param.writeMemory.address = dev_ptr;
         if (need_barrier)
-                param.inlineCopy.flags = 0;
+                param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_FENCE_SYS;
+        else
+                param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER
         gds_dbg("op=%d addr=%p src=%p size=%zd flags=%08x\n",
                 param.operation,
-                (void*)param.inlineCopy.address,
-                param.inlineCopy.srcData,
-                param.inlineCopy.byteCount,
-                param.inlineCopy.flags);
+                (void*)param.writeMemory.address,
+                param.writeMemory.srcData,
+                param.writeMemory.byteCount,
+                param.writeMemory.flags);
         ops.push_back(param);
 #else
         gds_err("error, inline copy is unsupported\n");
@@ -373,8 +416,8 @@ out:
 static void gds_enable_barrier_for_inlcpy(CUstreamBatchMemOpParams *param)
 {
 #if GDS_HAS_INLINE_COPY
-        assert(param.operation == CU_STREAM_MEM_OP_INLINE_COPY);
-        param.inlineCopy.flags &= ~CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
+        assert(param->operation == CU_STREAM_MEM_OP_WRITE_MEMORY);
+        param->writeMemory.flags &= ~CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER;
 #endif
 }
 
@@ -567,9 +610,7 @@ int gds_stream_batch_ops(CUstream stream, gds_op_list_t &ops, int flags)
         CUresult result = CUDA_SUCCESS;
         int retcode = 0;
         unsigned int cuflags = 0;
-#if GDS_HAS_WEAK_API
         cuflags |= gds_enable_weak_consistency() ? CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK : 0;
-#endif
         size_t nops = ops.size();
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
 
@@ -1393,9 +1434,11 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
                 peer->attr.caps |= IBV_EXP_PEER_OP_POLL_GEQ_DWORD_CAP;
 
         if (peer->has_inlcpy) {
+                gds_dbg("enabling COPY BLOCK feature\n");
                 peer->attr.caps |= IBV_EXP_PEER_OP_COPY_BLOCK_CAP;
         }
         else if (peer->has_write64 || gds_simulate_write64()) {
+                gds_dbg("enabling STORE QWORD feature\n");
                 peer->attr.caps |= IBV_EXP_PEER_OP_STORE_QWORD_CAP;
         }
         gds_dbg("caps=%016lx\n", peer->attr.caps);
@@ -1643,7 +1686,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         gds_peer_attr *peer_attr = NULL;
         int old_errno = errno;
 
-        gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x errno=%d\n", pd, context, gpu_id, flags, errno);
+        gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", pd, context, gpu_id, flags, errno);
         assert(pd);
         assert(context);
         assert(qp_attr);

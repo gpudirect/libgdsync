@@ -170,7 +170,7 @@ AC_CHECK_LIB(cuda, cuStreamBatchMemOp, [],
     AC_MSG_ERROR([cuStreamBatchMemOp() not found.  libgdsync requires CUDA 8.0 or later.]))
 
 if test x$enable_ext_memops = xyes; then
-   AC_CHECK_DECLS([CU_STREAM_MEM_OP_INLINE_COPY],    [], [], [[#include <cuda.h>]])
+   AC_CHECK_DECLS([CU_STREAM_MEM_OP_WRITE_MEMORY],    [], [], [[#include <cuda.h>]])
    AC_CHECK_DECLS([CU_STREAM_MEM_OP_MEMORY_BARRIER], [], [], [[#include <cuda.h>]])
    AC_CHECK_DECLS([CU_STREAM_MEM_OP_WRITE_VALUE_64], [], [], [[#include <cuda.h>]])
    AC_CHECK_DECLS([CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK], [], [], [[#include <cuda.h>]])
