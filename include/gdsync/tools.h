@@ -45,7 +45,7 @@ typedef enum gds_memory_type {
         GDS_MEMORY_HOST = 2,
         GDS_MEMORY_IO   = 4,
 	GDS_MEMORY_MASK = 0x7
-} gds_poll_memory_type_t;
+} gds_memory_type_t;
 
 typedef enum gds_poll_flags {
 	GDS_POLL_POST_FLUSH = 1<<3,

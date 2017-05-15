@@ -50,7 +50,7 @@ struct gds_range {
         CUdeviceptr dptr;
         size_t size;
         gds_buf *buf;
-        gds_poll_memory_type_t type;
+        gds_memory_type_t type;
 };
 
 static inline uint64_t range_to_id(gds_range *range)

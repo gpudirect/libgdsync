@@ -111,8 +111,10 @@ static inline int gds_curesult_to_errno(CUresult result)
         return retcode;
 }
 
-static inline gds_poll_memory_type_t memtype_from_flags(int flags) {
-        return (gds_poll_memory_type_t)(flags & GDS_MEMORY_MASK);
+static inline gds_memory_type_t memtype_from_flags(int flags) {
+        gds_memory_type_t ret = (gds_memory_type_t)(flags & GDS_MEMORY_MASK);
+        assert(ret >= GDS_MEMORY_GPU && ret <= GDS_MEMORY_IO);
+        return ret;
 }
 
 //-----------------------------------------------------------------------------

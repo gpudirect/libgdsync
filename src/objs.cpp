@@ -164,7 +164,7 @@ gds_range *gds_peer::register_range(void *start, size_t length, int flags)
         int ret = 0;
         gds_range *range = NULL;
         gds_dbg("start=%p length=%zu\n", start, length);
-        gds_poll_memory_type_t mem_type = memtype_from_flags(flags);
+        gds_memory_type_t mem_type = memtype_from_flags(flags);
         CUdeviceptr dev_ptr = 0;
 
         ret = gds_register_mem(start, length, mem_type, &dev_ptr);
