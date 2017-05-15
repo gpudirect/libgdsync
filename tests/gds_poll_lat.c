@@ -17,6 +17,17 @@
 
 #ifdef USE_PROF
 #include "prof.h"
+#else
+struct prof { };
+#define PROF(P, H) do { } while(0)
+static inline int prof_init(struct prof *p, int unit_scale, int scale_factor, const char* unit_scale_str, int nbins, int merge_bins, const char *tags) {return 0;}
+static inline int prof_destroy(struct prof *p) {return 0;}
+static inline void prof_dump(struct prof *p) {}
+static inline void prof_update(struct prof *p) {}
+static inline void prof_enable(struct prof *p) {}
+static inline int  prof_enabled(struct prof *p) { return 0; }
+static inline void prof_disable(struct prof *p) {}
+static inline void prof_reset(struct prof *p) {}
 #endif
 struct prof prof;
 int prof_idx = 0;
@@ -24,6 +35,19 @@ int prof_idx = 0;
 #include "test_utils.h"
 #include "gpu.h"
 
+#if defined(USE_PERF)
+#include "perf.h"
+#else
+static int perf_start()
+{
+        printf("Performance instrumentation is disabled\n");
+        return 0;
+}
+static int perf_stop()
+{
+        return 0;
+}
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -33,7 +57,7 @@ int main(int argc, char *argv[])
         // this seems to minimize polling time
         int sleep_us = 10;
 	size_t page_size = sysconf(_SC_PAGESIZE);
-	size_t size = 1024*4;
+	size_t size = 1024*64;
         int use_gpu_buf = 0;
         int use_flush = 0;
         int use_combined = 0;
@@ -41,7 +65,6 @@ int main(int argc, char *argv[])
         int wait_key = -1;
         CUstream gpu_stream;
 
-        int use_bg_poll = 0;
         int n_bg_streams = 0;
 
         size_t n_pokes = 1;
@@ -60,7 +83,6 @@ int main(int argc, char *argv[])
                         wait_key = strtol(optarg, NULL, 0);
                         break;
                 case 'p':
-                        use_bg_poll = 1;
                         n_bg_streams = strtol(optarg, NULL, 0);
                         break;
                 case 'c':
@@ -121,13 +143,14 @@ int main(int argc, char *argv[])
 
         puts("");
         printf("number iterations %d\n", num_iters);
+        printf("num dwords per poke %d\n", n_pokes);
         printf("use poll flush %d\n", use_flush);
         printf("use poke membar %d\n", use_membar);
         printf("use %d background streams\n", n_bg_streams);
         printf("sleep %dus\n", sleep_us);
         printf("buffer size %zd\n", size);
         printf("poll on %s buffer\n", use_gpu_buf?"GPU":"CPU");
-        printf("write on CPU buffer\n");
+        printf("write on %s buffer\n", use_gpu_buf?"GPU":"CPU");
         puts("");
 
         gds_mem_desc_t desc =  {0,};
@@ -138,17 +161,18 @@ int main(int argc, char *argv[])
         }
         CUdeviceptr d_buf = desc.d_ptr;
         void *h_buf = desc.h_ptr;
-        printf("allocated d_buf=%lx h_buf=%p\n", (unsigned long)d_buf, h_buf);
+        printf("allocated d_buf=%p h_buf=%p\n", (void*)d_buf, h_buf);
         memset(h_buf, 0, size);
 
         gds_mem_desc_t desc_data =  {0,};
-        ret = gds_alloc_mapped_memory(&desc_data, size, GDS_MEMORY_HOST);
+        ret = gds_alloc_mapped_memory(&desc_data, size, use_gpu_buf?GDS_MEMORY_GPU:GDS_MEMORY_HOST);
         if (ret) {
                 gpu_err("error (%d) while allocating mem\n", ret);
                 goto out;
         }
         CUdeviceptr d_data = desc_data.d_ptr;
-        void *h_data = desc_data.h_ptr;
+        uint32_t *h_data = desc_data.h_ptr;
+        printf("allocated d_data=%p h_data=%p\n", (void*)d_data, h_data);
         memset(h_data, 0, size);
 
         int i;
@@ -160,7 +184,7 @@ int main(int argc, char *argv[])
                 poll_flags |= GDS_POLL_POST_FLUSH;
 
         uint32_t *h_bg_buf = NULL;
-        if (use_bg_poll) {
+        if (n_bg_streams) {
                 printf("launching background %dx poll\n", n_bg_streams);
                 ASSERT(!posix_memalign((void*)&h_bg_buf, page_size, size)); 
                 memset(h_bg_buf, 0, size);
@@ -170,7 +194,9 @@ int main(int argc, char *argv[])
                         gds_stream_post_poll_dword(bg_streams[i], h_bg_buf+i, 1, GDS_POLL_COND_GEQ, GDS_MEMORY_HOST);
                 }
         }
+
         printf("starting test...\n");
+        perf_start();
 
 	for (i = 0, value = 1; i < num_iters; ++i, ++value) {
                 ASSERT(value <= INT_MAX);
@@ -190,18 +216,21 @@ int main(int argc, char *argv[])
 		PROF(&prof, prof_idx++);
 
                 assert(n_pokes < size/sizeof(uint32_t));
-                uint32_t *poke_ptrs[n_pokes];
+                uint32_t *poke_dptrs[n_pokes];
+                uint32_t *poke_hptrs[n_pokes];
                 uint32_t  poke_values[n_pokes];
                 int       poke_flags[n_pokes];
                 static int j = 1;
                 int k;
                 for (k=0; k<n_pokes; ++k) {
-                        poke_ptrs[k] = h_data+k;
+                        poke_dptrs[k] = (uint32_t*)d_data+((k+i*n_pokes) % (size*sizeof(uint32_t)));
+                        poke_hptrs[k] =            h_data+((k+i*n_pokes) % (size/sizeof(uint32_t)));
                         poke_values[k] = 0xd4d00000|(j<<8)|k;
-                        poke_flags[k] = GDS_MEMORY_HOST;
-                        poke_flags[k] = (use_membar && k==n_pokes-1)?GDS_POKE_POST_PRE_BARRIER:0;
-                        ACCESS_ONCE(*poke_ptrs[k]) = 0;
+                        poke_flags[k] = use_gpu_buf?GDS_MEMORY_GPU:GDS_MEMORY_HOST;
+                        poke_flags[k] |= (use_membar && k==n_pokes-1)?GDS_POKE_POST_PRE_BARRIER:0;
+                        ACCESS_ONCE(*poke_hptrs[k]) = 0;
                         ++j;
+                        //printf("%d %d %p\n", i, k, poke_dptrs[k]);
                 }
                 uint32_t *poll_ptrs[1] = { d_ptr };
                 uint32_t  poll_values[1] = { value };
@@ -209,17 +238,23 @@ int main(int argc, char *argv[])
                 int       poll_flagses[1] = { poll_flags };
 
                 if (use_combined) {
-                        gds_stream_post_polls_and_pokes(gpu_stream, 
-                                                        1, poll_ptrs, poll_values, poll_cond_flags, poll_flagses, 
-                                                        n_pokes, poke_ptrs, poke_values, poke_flags);
+                        ret = gds_stream_post_polls_and_pokes(gpu_stream, 
+                                                              1, poll_ptrs, poll_values, poll_cond_flags, poll_flagses, 
+                                                              n_pokes, poke_dptrs, poke_values, poke_flags);
+                        if (ret)
+                                exit(EXIT_FAILURE);
                         PROF(&prof, prof_idx++);
                 } else {
-                        gds_stream_post_poll_dword(gpu_stream,
+                        ret = gds_stream_post_poll_dword(gpu_stream,
                                                    d_ptr, value, GDS_POLL_COND_GEQ, poll_flags);
+                        if (ret)
+                                exit(EXIT_FAILURE);
                         PROF(&prof, prof_idx++);
-                        gds_stream_post_polls_and_pokes(gpu_stream, 
-                                                        0, 0, 0, 0, 0, 
-                                                        n_pokes, poke_ptrs, poke_values, poke_flags);
+                        ret = gds_stream_post_polls_and_pokes(gpu_stream, 
+                                                              0, 0, 0, 0, 0, 
+                                                              n_pokes, poke_dptrs, poke_values, poke_flags);
+                        if (ret)
+                                exit(EXIT_FAILURE);
                 }
 		PROF(&prof, prof_idx++);
 
@@ -254,7 +289,7 @@ int main(int argc, char *argv[])
                 gds_us_t start = gds_get_time_us();
                 gds_us_t tmout = start + tout;
                 while(1) {
-                        uint32_t value = ACCESS_ONCE(*poke_ptrs[n_pokes-1]);
+                        uint32_t value = ACCESS_ONCE(*poke_hptrs[n_pokes-1]);
                         gpu_dbg("h_poke[%zu]=%x\n", n_pokes-1, value);
                         if (value) 
                                 break;
@@ -273,9 +308,12 @@ int main(int argc, char *argv[])
 		prof_update(&prof);
 		prof_idx = 0;
 	}
+        printf("test finished!\n");
+
+        perf_stop();
         prof_dump(&prof);
 err:
-        if (use_bg_poll) {
+        if (n_bg_streams) {
                 printf("signaling %d background polling stream(s)\n", n_bg_streams);
                 int s;
                 for (s=0; s<n_bg_streams; ++s) {
@@ -291,7 +329,7 @@ err:
                 }
                 free(h_bg_buf);
         }
-
+        printf("calling gds_free_mapped_memory\n"); //fflush(stdout); sleep(1);
         ret = gds_free_mapped_memory(&desc);
         if (ret) {
                 gpu_err("error (%d) while freeing mem\n", ret);

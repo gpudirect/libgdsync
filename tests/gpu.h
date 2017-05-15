@@ -48,7 +48,7 @@
 			const char *err_str = NULL;			\
 			cuGetErrorString(result, &err_str);		\
 			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, err_str); \
-			abort(); exit(EXIT_FAILURE);                    \
+			exit(EXIT_FAILURE);                             \
 		}							\
         } while (0)
 

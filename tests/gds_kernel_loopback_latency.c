@@ -628,7 +628,7 @@ int main(int argc, char *argv[])
 	struct pingpong_dest     my_dest;
 	struct pingpong_dest    *rem_dest;
 	struct timeval           rstart, start, end;
-	char                    *ib_devname = NULL;
+	const char              *ib_devname = NULL;
 	char                    *servername = NULL;
 	int                      port = 18515;
 	int                      ib_port = 1;
@@ -838,6 +838,13 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+        if (!ib_devname) {
+                const char *env = getenv("USE_HCA");
+                if (env) {
+                        printf("USE_HCA=%s\n", env);
+                        ib_devname = env;
+                }
+        }
         printf("requested IB device: <%s>\n", ib_devname);
 	if (!ib_devname) {
                 printf("picking 1st available device\n");

@@ -67,6 +67,9 @@ CUstream gpu_stream_client;
 static int next_acquire = 0, next_release = 0, next_wait = 0;
 static CUevent gpu_tracking_event[num_tracking_events];
 
+int gpu_launch_calc_kernel_on_stream(size_t size, CUstream s);
+int gpu_launch_void_kernel_on_stream(CUstream s);
+
 int gpu_init(int gpu_id, int sched_mode)
 {
 	int ret = 0;
@@ -145,6 +148,10 @@ int gpu_init(int gpu_id, int sched_mode)
                 }
         }        
 
+        //  pipe cleaner
+        gpu_launch_void_kernel_on_stream(gpu_stream);
+        cuStreamSynchronize(gpu_stream);
+
 out:
         if (ret) {
                 if (gpu_ctx)
@@ -202,9 +209,6 @@ int gpu_register_host_mem(void *ptr, size_t size)
 
         return 0;
 }
-
-int gpu_launch_calc_kernel_on_stream(size_t size, CUstream s);
-int gpu_launch_void_kernel_on_stream(CUstream s);
 
 int gpu_launch_kernel(size_t size, int is_peersync)
 {
@@ -270,7 +274,8 @@ int gpu_wait_tracking_event(int tmout_us)
                                 //sleep(1);
                         } else {
                                 printf("cuEventQuery error (%d)\n", retcode);
-                                exit(1);
+                                ret = EFAULT;
+                                break;
                         }
                         // time-out check
                         uint64_t now = ts.tv_nsec/1000 + ts.tv_sec*1000000;
