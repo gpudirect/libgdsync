@@ -137,37 +137,49 @@ int gds_register_mem(void *ptr, size_t size, gds_poll_memory_type_t mem_type, CU
 int gds_register_mem_internal(void *ptr, size_t size, gds_poll_memory_type_t type, CUdeviceptr *dev_ptr)
 {
         gds_dbg("ptr=%p size=%zu memtype=%d\n", ptr, size, type);
-
         unsigned long addr = (unsigned long)ptr;
-        unsigned long page_addr = addr & GDS_HOST_PAGE_MASK;
-        unsigned long page_off = addr & GDS_HOST_PAGE_OFF;
-        size_t len = ROUND_UP(size + page_off, GDS_HOST_PAGE_SIZE);
         CUdeviceptr page_dev_ptr = 0;
+        // NOTE: registering buffer address on GPU MMU, on all GPUs
         unsigned int flags = CU_MEMHOSTREGISTER_DEVICEMAP | CU_MEMHOSTREGISTER_PORTABLE;
         bool cuda_registered = false;
         bool need_cuda_registration = true;
+        unsigned long target_page_mask = 0;
+        unsigned long target_page_off = 0;
+        unsigned long target_page_size = 0;
 
         switch (type) {
         case GDS_MEMORY_GPU:
-                gds_dbg("GPU memory, no CUDA registration\n");
+                gds_dbg("this is GPU memory, no CUDA registration required\n");
                 need_cuda_registration = false;
+                target_page_mask = GDS_GPU_PAGE_MASK;
+                target_page_off = GDS_GPU_PAGE_OFF;
+                target_page_size = GDS_GPU_PAGE_SIZE;
                 break;
         case GDS_MEMORY_IO:
                 flags |= CU_MEMHOSTREGISTER_IOMEMORY;
-                break;
+                // fall through
         case GDS_MEMORY_HOST:
+                target_page_mask = GDS_HOST_PAGE_MASK;
+                target_page_off = GDS_HOST_PAGE_OFF;
+                target_page_size = GDS_HOST_PAGE_SIZE;
                 break;
         default:
                 gds_err("invalid mem type\n");
                 return EINVAL;
         }
+
+        unsigned long page_addr = addr & target_page_mask;
+        unsigned long page_off = addr & target_page_off;
+        size_t len = ROUND_UP(size + page_off, target_page_size);
+
         if (need_cuda_registration) {
+                gds_dbg("calling cuMemHostRegister(%p, %zu, 0x%x)\n", (void*)page_addr, len, flags);
                 CUresult res = cuMemHostRegister((void*)page_addr, len, flags);
                 if (res == CUDA_SUCCESS) {
                         // we are good here
                 }
                 else if (res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) {
-                        gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
+                        gds_warn("page=%p size=%zu is already registered with CUDA\n", (void*)page_addr, len);
                         cuda_registered = true;
                 }
                 else if (res == CUDA_ERROR_NOT_INITIALIZED) {
@@ -178,14 +190,15 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_poll_memory_type_t typ
                         //CUCHECK(res);
                         const char *err_str = NULL;
                         cuGetErrorString(res, &err_str);
-                        gds_err("Error %d (%s) while register address=%p size=%llu flags=%08x\n", 
-                                res, err_str, (void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
+                        gds_err("Error %d (%s) while register address=%p size=%zu flags=%08x\n", 
+                                res, err_str, (void*)page_addr, len, flags);
                         // TODO: handle ENOPERM
                         return EINVAL;
                 }
                 CUCHECK(cuMemHostGetDevicePointer(&page_dev_ptr, (void *)page_addr, 0));
         }
         else {
+                // page_addr is a UVA ptr, i.e. a good device ptr already
                 page_dev_ptr = (CUdeviceptr)page_addr;
         }
         gds_dbg("page_ptr=%lx page_dev_ptr=%lx\n", page_addr, (unsigned long)page_dev_ptr);
