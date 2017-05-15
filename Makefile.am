@@ -34,7 +34,7 @@ bin_PROGRAMS = tests/gds_kernel_latency tests/rstest tests/gds_poll_lat tests/gd
 noinst_PROGRAMS = 
 
 tests_gds_kernel_latency_SOURCES = tests/gds_kernel_latency.c tests/gpu_kernels.cu tests/pingpong.c tests/gpu.cpp
-tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lmpi -lcuda -lcudart
+tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lmpi $(LIBGDSTOOLS) -lgdrapi -lcuda -lcudart
 
 tests_rstest_SOURCES = tests/rstest.cpp
 tests_rstest_LDADD = 
@@ -45,7 +45,7 @@ tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernel
 tests_gds_poll_lat_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lmpi -lcuda -lcudart
 
 tests_gds_kernel_loopback_latency_SOURCES = tests/gds_kernel_loopback_latency.c tests/pingpong.c tests/gpu.cpp tests/gpu_kernels.cu
-tests_gds_kernel_loopback_latency_LDADD = $(top_builddir)/src/libgdsync.la -lgdrapi -lcuda -lcudart
+tests_gds_kernel_loopback_latency_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lcuda -lcudart
 
 
 SUFFIXES= .cu
