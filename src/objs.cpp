@@ -58,12 +58,14 @@ gds_buf *gds_peer::alloc(size_t sz, uint32_t alignment)
         gds_buf *buf = new gds_buf(this, sz);
         if (!buf)
                 return buf;
-        int ret = gds_peer_malloc(gpu_id, 0, &buf->addr, &buf->peer_addr, buf->length, &buf->handle);
+        CUdeviceptr paddr = 0;
+        int ret = gds_peer_malloc(gpu_id, 0, &buf->addr, &paddr, buf->length, &buf->handle);
         if (ret) {
                 delete buf;
                 buf = NULL;
                 gds_err("error allocating GPU mapped memory\n");
         }
+        buf->peer_addr = (uint64_t)paddr;
         return buf;
 }
 

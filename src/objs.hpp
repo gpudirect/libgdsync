@@ -35,13 +35,14 @@ struct gds_peer;
 
 struct gds_buf: ibv_exp_peer_buf {
         gds_peer   *peer;
-        CUdeviceptr peer_addr;
+        //CUdeviceptr peer_addr;
         void       *handle;
 
-        gds_buf(gds_peer *p, size_t sz): peer(p), peer_addr(0), handle(NULL) {
+        gds_buf(gds_peer *p, size_t sz): peer(p), handle(NULL) {
+                peer_addr = 0;
                 addr = NULL;
                 length = sz;
-                comp_mask = 0;
+                comp_mask = IBV_EXP_PEER_BUF_VERSION;
         }
 };
 
