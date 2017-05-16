@@ -62,23 +62,9 @@
 
 #include "pingpong.h"
 #include "gpu.h"
+#include "test_utils.h"
 
 //-----------------------------------------------------------------------------
-
-#ifdef USE_PROF
-#include "prof.h"
-#else
-struct prof { };
-#define PROF(P, H) do { } while(0)
-static inline int prof_init(struct prof *p, int unit_scale, int scale_factor, const char* unit_scale_str, int nbins, int merge_bins, const char *tags) {return 0;}
-static inline int prof_destroy(struct prof *p) {return 0;}
-static inline void prof_dump(struct prof *p) {}
-static inline void prof_update(struct prof *p) {}
-static inline void prof_enable(struct prof *p) {}
-static inline int  prof_enabled(struct prof *p) { return 0; }
-static inline void prof_disable(struct prof *p) {}
-static inline void prof_reset(struct prof *p) {}
-#endif
 
 struct prof prof;
 int prof_idx = 0;

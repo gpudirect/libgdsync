@@ -1,10 +1,10 @@
 #pragma once
 
-#ifndef USE_PROF
+#ifdef USE_PROF
+#include "prof.h"
+#else
 struct prof { };
-
 #define PROF(P, H) do { } while(0)
-
 static inline int prof_init(struct prof *p, int unit_scale, int scale_factor, const char* unit_scale_str, int nbins, int merge_bins, const char *tags) {return 0;}
 static inline int prof_destroy(struct prof *p) {return 0;}
 static inline void prof_dump(struct prof *p) {}
@@ -13,6 +13,20 @@ static inline void prof_enable(struct prof *p) {}
 static inline int  prof_enabled(struct prof *p) { return 0; }
 static inline void prof_disable(struct prof *p) {}
 static inline void prof_reset(struct prof *p) {}
+#endif
+
+#if defined(USE_PERF)
+#include "perf.h"
+#else
+static int perf_start()
+{
+        printf("Performance instrumentation is disabled\n");
+        return 0;
+}
+static int perf_stop()
+{
+        return 0;
+}
 #endif
 
 typedef int64_t gds_us_t;
