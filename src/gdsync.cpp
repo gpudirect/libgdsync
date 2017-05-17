@@ -812,7 +812,7 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                                 //poll_cond = GDS_POLL_COND_NOR;
                                 // TODO: lookup and pass peer down
                                 assert(gpu_does_support_nor(NULL));
-                                retcode = -EINVAL;
+                                retcode = EINVAL;
                                 goto out;
                                 break;
                         case IBV_PEER_OP_POLL_GEQ_DWORD:
@@ -1736,7 +1736,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 case GDS_TAG_WRITE_VALUE32:
                         retcode = gds_fill_poke(params+idx, desc->value32.ptr, desc->value32.value, desc->value32.flags);
                         if (retcode) {
-                                gds_err("error %d in gds_fill_poll\n", retcode);
+                                gds_err("error %d in gds_fill_poke\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
