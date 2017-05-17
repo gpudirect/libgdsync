@@ -178,7 +178,9 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
                 if (res == CUDA_SUCCESS) {
                         // we are good here
                 }
-                else if (res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) {
+                else if ((res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) ||
+                         (res == CUDA_ERROR_ALREADY_MAPPED)) {
+                        // older CUDA driver versions seem to return CUDA_ERROR_ALREADY_MAPPED 
                         gds_warn("page=%p size=%zu is already registered with CUDA\n", (void*)page_addr, len);
                         cuda_registered = true;
                 }
@@ -287,7 +289,8 @@ int gds_mem_devptr(void *va, size_t n_bytes, CUdeviceptr *pdev_ptr)
                                 gds_dbg("registering page_addr=%lx iomem=%d\n", page_addr, is_iomem);
                                 CUresult res = cuMemHostRegister((void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
                                 if (res == CUDA_SUCCESS) {
-                                } else if (res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) {
+                                } else if ((res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) ||
+                                           (res == CUDA_ERROR_ALREADY_MAPPED)) {
                                         gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
                                 } else {
                                         //CUCHECK(res);
