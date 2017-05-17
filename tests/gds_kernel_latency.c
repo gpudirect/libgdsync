@@ -452,8 +452,7 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 		}
 	};
 	gds_send_wr *bad_wr;
-    printf("ibv_post_send\n");
-    return gds_post_send(ctx->gds_qp, &wr, &bad_wr);
+	return gds_post_send(ctx->gds_qp, &wr, &bad_wr);
 }
 
 static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
