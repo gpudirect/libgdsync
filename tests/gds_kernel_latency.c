@@ -1,9 +1,9 @@
 /*
  * GPUDirect Async latency benchmark
- * 
+ *
  *
  * based on OFED libibverbs ud_pingpong test.
- * minimally changed to use MPI for bootstrapping, 
+ * minimally changed to use MPI for bootstrapping,
  */
 /*
  * Copyright (c) 2005 Topspin Communications.  All rights reserved.
@@ -193,8 +193,22 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 
 	ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
 	if (!ctx->ah) {
-		fprintf(stderr, "Failed to create AH\n");
-		return 1;
+		union ibv_gid dgid;
+		if (ibv_query_gid(ctx->context, port, 0, &dgid)) {
+			fprintf(stderr, "Failed to query interface gid\n");
+			return 1;
+		}
+
+		ah_attr.is_global = 1;
+		ah_attr.grh.hop_limit = 1;
+		ah_attr.grh.dgid = dgid;
+		ah_attr.grh.sgid_index = 0;
+
+		ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
+		if (!ctx->ah) {
+			fprintf(stderr, "Failed to create AH\n");
+			return 1;
+		}
 	}
 
 	return 0;
@@ -249,7 +263,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 
         ctx->rx_flag =  memalign(page_size, alloc_size);
         if (!ctx->rx_flag) {
-                fprintf(stderr, "Couldn't allocate rx_flag buf\n");  
+                fprintf(stderr, "Couldn't allocate rx_flag buf\n");
                 goto clean_ctx;
         }
 
@@ -367,8 +381,8 @@ clean_device:
 
 clean_buffer:
 	if (ctx->gpu_id >= 0)
-		gpu_free(ctx->buf); 
-	else 
+		gpu_free(ctx->buf);
+	else
 		free(ctx->buf);
 
 clean_ctx:
@@ -408,8 +422,8 @@ int pp_close_ctx(struct pingpong_context *ctx)
 	}
 
 	if (ctx->gpu_id >= 0)
-		gpu_free(ctx->buf); 
-	else 
+		gpu_free(ctx->buf);
+	else
 		free(ctx->buf);
 
 	if (ctx->gpu_id >= 0)
@@ -509,7 +523,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 
         posted_recv = pp_post_recv(ctx, n_posts);
         if (posted_recv < 0) {
-                fprintf(stderr,"ERROR: can't post recv (%d) n_posts=%d is_client=%d\n", 
+                fprintf(stderr,"ERROR: can't post recv (%d) n_posts=%d is_client=%d\n",
                         posted_recv, n_posts, is_client);
                 exit(EXIT_FAILURE);
                 return 0;
@@ -518,7 +532,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 if (!posted_recv)
                         return 0;
         }
-        
+
         PROF(&prof, prof_idx++);
 
 	for (i = 0; i < posted_recv; ++i) {
@@ -630,7 +644,7 @@ int main(int argc, char *argv[])
         MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &comm_size));
         MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &my_rank));
 
-        if (comm_size != 2) { 
+        if (comm_size != 2) {
                 fprintf(stderr, "this test requires exactly two processes \n");
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
@@ -785,7 +799,7 @@ int main(int argc, char *argv[])
         MPI_CHECK(MPI_Get_processor_name(hostnames[my_rank], &name_len));
         assert(name_len < MPI_MAX_PROCESSOR_NAME);
 
-        MPI_CHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, 
+        MPI_CHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
                                 hostnames, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, MPI_COMM_WORLD));
 
         if (my_rank == 1) {
@@ -815,7 +829,7 @@ int main(int argc, char *argv[])
 
         if (!ib_devname) {
                 // old env var, for compatibility
-                const char *value = getenv("USE_IB_HCA"); 
+                const char *value = getenv("USE_IB_HCA");
                 if (value != NULL) {
                         printf("[%d] USE_IB_HCA: <%s>\n", my_rank, value);
                         ib_devname = value;
@@ -876,7 +890,7 @@ int main(int argc, char *argv[])
 
 	struct pingpong_dest all_dest[4] = {{0,}};
         all_dest[my_rank] = my_dest;
-        MPI_CHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, 
+        MPI_CHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
                                 all_dest, sizeof(all_dest[0]), MPI_CHAR, MPI_COMM_WORLD));
         rem_dest = &all_dest[my_rank?0:1];
 	inet_ntop(AF_INET6, &rem_dest->gid, gid, sizeof gid);
@@ -918,8 +932,16 @@ int main(int argc, char *argv[])
 
                 ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
                 if (!ctx->ah) {
-                        fprintf(stderr, "Failed to create AH\n");
-                        return 1;
+            		ah_attr.is_global = 1;
+            		ah_attr.grh.hop_limit = 1;
+            		ah_attr.grh.dgid = my_dest.gid;
+            		ah_attr.grh.sgid_index = 0;
+
+            		ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
+            		if (!ctx->ah) {
+            			fprintf(stderr, "Failed to create AH\n");
+            			return 1;
+            		}
                 }
 
         }
