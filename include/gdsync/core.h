@@ -184,13 +184,19 @@ int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t
  * flags:  gds_memory_type_t | gds_write_flags_t
  */
 int gds_prepare_write_value32(uint32_t *ptr, uint32_t value, int flags, gds_wait_value32_t *desc);
-int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs);
+
+/**
+ * flags: must be 0
+ */
+int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags);
 
 int gds_prepare_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
 int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
-//int gds_stream_post_send_all_ex(CUstream stream, int count, gds_send_request_t request, uint32_t *dw, uint32_t val);
 
+/**
+ * flags: must be 0
+ */
 int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
 int gds_stream_post_wait_cq(CUstream stream, gds_wait_request_t *request);
 int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *request);
