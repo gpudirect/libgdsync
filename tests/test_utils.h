@@ -1,5 +1,5 @@
 #pragma once
-/*
+
 #ifndef USE_PROF
 struct prof { };
 
@@ -14,7 +14,7 @@ static inline int  prof_enabled(struct prof *p) { return 0; }
 static inline void prof_disable(struct prof *p) {}
 static inline void prof_reset(struct prof *p) {}
 #endif
-*/
+
 typedef int64_t gds_us_t;
 static inline gds_us_t gds_get_time_us()
 {
@@ -43,9 +43,9 @@ static void gds_cpu_relax(void)
 }
 
 static void gds_wmb(void) __attribute__((unused)) ;
-static void gds_wmb(void)
+static void gds_wmb(void) 
 {
-	asm volatile("sync") ;
+	asm volatile("sync") ; 
 }
 #else
 #error "platform not supported"
