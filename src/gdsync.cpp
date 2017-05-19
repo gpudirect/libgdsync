@@ -34,6 +34,7 @@
 #include <assert.h>
 
 #include <gdsync.h>
+#include <gdsync/tools.h>
 
 #include "utils.hpp"
 #include "memmgr.hpp"
@@ -260,7 +261,7 @@ void gds_dump_params(unsigned int nops, CUstreamBatchMemOpParams *params)
 
 //-----------------------------------------------------------------------------
 
-static int gds_fill_membar(CUstreamBatchMemOpParams *param, int flags)
+int gds_fill_membar(CUstreamBatchMemOpParams *param, int flags)
 {
         int retcode = 0;
 #if GDS_HAS_MEMBAR
@@ -330,7 +331,7 @@ static int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, CUdeviceptr addr, vo
         return retcode;
 }
 
-static int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, void *ptr, void *data, size_t n_bytes, int flags)
+int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, void *ptr, void *data, size_t n_bytes, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
@@ -366,7 +367,7 @@ static int gds_fill_poke(CUstreamBatchMemOpParams *param, CUdeviceptr addr, uint
         assert(addr);
         assert((((unsigned long)addr) & 0x3) == 0); 
 
-        bool need_barrier = (flags  & GDS_POKE_POST_PRE_BARRIER ) ? true : false;
+        bool need_barrier = (flags  & GDS_WRITE_PRE_BARRIER ) ? true : false;
 
         param->operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
         param->writeValue.address = dev_ptr;
@@ -383,7 +384,7 @@ static int gds_fill_poke(CUstreamBatchMemOpParams *param, CUdeviceptr addr, uint
         return retcode;
 }
 
-static int gds_fill_poke(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t value, int flags)
+int gds_fill_poke(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t value, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
@@ -412,21 +413,21 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
         assert(ptr);
         assert((((unsigned long)ptr) & 0x3) == 0);
 
-        bool need_flush = (flags & GDS_POLL_POST_FLUSH) ? true : false;
+        bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
 
         param->operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
         param->waitValue.address = dev_ptr;
         param->waitValue.value = magic;
         switch(cond_flag) {
-        case GDS_POLL_COND_GEQ:
+        case GDS_WAIT_COND_GEQ:
                 param->waitValue.flags = CU_STREAM_WAIT_VALUE_GEQ;
                 cond_str = "CU_STREAM_WAIT_VALUE_GEQ";
                 break;
-        case GDS_POLL_COND_EQ:
+        case GDS_WAIT_COND_EQ:
                 param->waitValue.flags = CU_STREAM_WAIT_VALUE_EQ;
                 cond_str = "CU_STREAM_WAIT_VALUE_EQ";
                 break;
-        case GDS_POLL_COND_AND:
+        case GDS_WAIT_COND_AND:
                 param->waitValue.flags = CU_STREAM_WAIT_VALUE_AND;
                 cond_str = "CU_STREAM_WAIT_VALUE_AND";
                 break;
@@ -499,67 +500,6 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
         }
 
 out:        
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, int cond_flags, int flags)
-{
-        int retcode = 0;
-	CUstreamBatchMemOpParams param[1];
-        retcode = gds_fill_poll(param, ptr, magic, cond_flags, flags);
-        if (retcode) {
-                gds_err("error in fill_poll\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, 1, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_poke_dword(CUstream stream, uint32_t *ptr, uint32_t value, int flags)
-{
-        int retcode = 0;
-	CUstreamBatchMemOpParams param[1];
-        retcode = gds_fill_poke(param, ptr, value, flags);
-        if (retcode) {
-                gds_err("error in fill_poke\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, 1, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_inline_copy(CUstream stream, void *ptr, void *src, size_t nbytes, int flags)
-{
-        int retcode = 0;
-	CUstreamBatchMemOpParams param[1];
-
-        retcode = gds_fill_inlcpy(param, ptr, src, nbytes, flags);
-        if (retcode) {
-                gds_err("error in fill_poke\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, 1, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
         return retcode;
 }
 
@@ -713,7 +653,7 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                                 }
                                 if (prev_was_fence) {
                                         gds_dbg("using PRE_BARRIER as fence\n");
-                                        flags |= GDS_POKE_POST_PRE_BARRIER;
+                                        flags |= GDS_WRITE_PRE_BARRIER;
                                         prev_was_fence = false;
                                 }
                                 retcode = gds_fill_poke(params+idx, dev_ptr, data, flags);
@@ -754,14 +694,14 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
 
                                 if (prev_was_fence) {
                                         gds_dbg("enabling PRE_BARRIER\n");
-                                        flags |= GDS_POKE_POST_PRE_BARRIER;
+                                        flags |= GDS_WRITE_PRE_BARRIER;
                                         prev_was_fence = false;
                                 }
                                 retcode = gds_fill_poke(params+idx, dev_ptr, datalo, flags);
                                 ++idx;
 
                                 // get rid of the barrier, if there
-                                flags &= ~GDS_POKE_POST_PRE_BARRIER;
+                                flags &= ~GDS_WRITE_PRE_BARRIER;
 
                                 // advance to next DWORD
                                 dev_ptr += sizeof(uint32_t);
@@ -803,23 +743,23 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                         // TODO: properly handle a following fence instead of blidly flushing
                         int flags = 0;
                         if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
-                                flags |= GDS_POLL_POST_FLUSH;
+                                flags |= GDS_WAIT_POST_FLUSH;
 
-                        gds_dbg("OP_POLL_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
+                        gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
 
                         switch(op->type) {
                         case IBV_PEER_OP_POLL_NOR_DWORD:
-                                //poll_cond = GDS_POLL_COND_NOR;
+                                //poll_cond = GDS_WAIT_COND_NOR;
                                 // TODO: lookup and pass peer down
                                 assert(gpu_does_support_nor(NULL));
                                 retcode = EINVAL;
                                 goto out;
                                 break;
                         case IBV_PEER_OP_POLL_GEQ_DWORD:
-                                poll_cond = GDS_POLL_COND_GEQ;
+                                poll_cond = GDS_WAIT_COND_GEQ;
                                 break;
                         case IBV_PEER_OP_POLL_AND_DWORD:
-                                poll_cond = GDS_POLL_COND_AND;
+                                poll_cond = GDS_WAIT_COND_AND;
                                 break;
                         default:
                                 assert(!"cannot happen");
@@ -1012,7 +952,7 @@ out:
 //-----------------------------------------------------------------------------
 
 int gds_stream_post_polls_and_pokes(CUstream stream,
-				    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], int cond_flags[], int poll_flags[], 
+				    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
 				    size_t n_pokes, uint32_t *poke_ptrs[], uint32_t poke_values[], int poke_flags[])
 {
 	int retcode = 0;
@@ -1023,7 +963,7 @@ int gds_stream_post_polls_and_pokes(CUstream stream,
 	for (size_t j = 0; j < n_polls; ++j, ++idx) {
                 uint32_t *ptr = ptrs[j];
                 uint32_t magic = magics[j];
-                int cond_flag = cond_flags[j];
+                gds_wait_cond_flag_t cond_flag = cond_flags[j];
                 int flags = poll_flags[j];
                 gds_dbg("poll %zu: addr=%p value=%08x cond=%d flags=%08x\n", j, ptr, magic, cond_flag, flags);
                 retcode = gds_fill_poll(params+idx, ptr, magic, cond_flag, flags);
@@ -1060,7 +1000,7 @@ out:
 //-----------------------------------------------------------------------------
 
 int gds_stream_post_polls_and_immediate_copies(CUstream stream, 
-                                               size_t n_polls, uint32_t *ptrs[], uint32_t magics[], int cond_flags[], int poll_flags[], 
+                                               size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
                                                size_t n_imms, void *imm_ptrs[], void *imm_datas[], size_t imm_bytes[], int imm_flags[])
 {
 	int retcode = 0;
@@ -1070,7 +1010,7 @@ int gds_stream_post_polls_and_immediate_copies(CUstream stream,
 	for (size_t j = 0; j < n_polls; ++j, ++idx) {
                 uint32_t *ptr = ptrs[j];
                 uint32_t magic = magics[j];
-                int cond_flag = cond_flags[j];
+                gds_wait_cond_flag_t cond_flag = cond_flags[j];
                 int flags = poll_flags[j];
 
                 retcode = gds_fill_poll(params+idx, ptr, magic, cond_flag, flags);
@@ -1432,6 +1372,11 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         assert(context);
         assert(qp_attr);
 
+        if (flags & ~(GDS_CREATE_QP_WQ_ON_GPU|GDS_CREATE_QP_TX_CQ_ON_GPU|GDS_CREATE_QP_RX_CQ_ON_GPU|GDS_CREATE_QP_WQ_DBREC_ON_GPU)) {
+                gds_err("invalid flags");
+                return NULL;
+        }
+
         gqp = (struct gds_qp*)calloc(1, sizeof(struct gds_qp));
         if (!gqp) {
                 gds_err("cannot allocate memory\n");
@@ -1463,19 +1408,6 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
 
         qp_attr->pd = pd;
         qp_attr->comp_mask |= IBV_QP_INIT_ATTR_PD;
-
-        // disable overflow checks in ibv_poll_cq(), as GPU might invalidate
-        // the CQE without updating the tracking variables
-        if (flags & GDS_CREATE_QP_GPU_INVALIDATE_RX_CQ) {
-                gds_warn("IGNORE_RQ_OVERFLOW\n");
-                qp_attr->exp_create_flags |= IBV_EXP_QP_CREATE_IGNORE_RQ_OVERFLOW;
-                qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS;
-        }
-        if (flags & GDS_CREATE_QP_GPU_INVALIDATE_TX_CQ) {
-                gds_warn("IGNORE_SQ_OVERFLOW\n");
-                qp_attr->exp_create_flags |= IBV_EXP_QP_CREATE_IGNORE_SQ_OVERFLOW;
-                qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS;
-        }
 
         gds_dbg("before gds_register_peer_ex\n");
 
@@ -1725,7 +1657,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 }
                 case GDS_TAG_WAIT_VALUE32:
-                        retcode = gds_fill_poll(params+idx, desc->value32.ptr, desc->value32.value, desc->value32.cond_flags, desc->value32.flags);
+                        retcode = gds_fill_poll(params+idx, desc->wait32.ptr, desc->wait32.value, desc->wait32.cond_flags, desc->wait32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poll\n", retcode);
                                 ret = retcode;
@@ -1734,7 +1666,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         ++idx;
                         break;
                 case GDS_TAG_WRITE_VALUE32:
-                        retcode = gds_fill_poke(params+idx, desc->value32.ptr, desc->value32.value, desc->value32.flags);
+                        retcode = gds_fill_poke(params+idx, desc->write32.ptr, desc->write32.value, desc->write32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poke\n", retcode);
                                 ret = retcode;
