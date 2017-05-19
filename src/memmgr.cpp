@@ -44,6 +44,7 @@ using namespace std;
 #include <gdrapi.h>
 
 #include "gdsync.h"
+#include "gdsync/tools.h"
 #include "objs.hpp"
 #include "utils.hpp"
 #include "memmgr.hpp"
@@ -164,7 +165,7 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
                 target_page_size = GDS_HOST_PAGE_SIZE;
                 break;
         default:
-                gds_err("invalid mem type\n");
+                gds_err("invalid mem type %d\n", type);
                 return EINVAL;
         }
 
@@ -192,8 +193,8 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
                         //CUCHECK(res);
                         const char *err_str = NULL;
                         cuGetErrorString(res, &err_str);
-                        gds_err("Error %d (%s) while register address=%p size=%zu flags=%08x\n", 
-                                res, err_str, (void*)page_addr, len, flags);
+                        gds_err("Error %d (%s) while register address=%p size=%zu (original size %zu) flags=%08x\n", 
+                                res, err_str, (void*)page_addr, len, size, flags);
                         // TODO: handle ENOPERM
                         return EINVAL;
                 }
