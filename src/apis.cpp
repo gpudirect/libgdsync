@@ -44,6 +44,7 @@
 //#include <gdrapi.h>
 
 #include "gdsync.h"
+#include "gdsync/tools.h"
 #include "objs.hpp"
 #include "utils.hpp"
 #include "memmgr.hpp"
@@ -171,7 +172,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, uint32_t *dw, uint32_t val)
+int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr)
 {
         int ret = 0;
 	gds_send_request_t send_info;
@@ -181,19 +182,12 @@ int gds_stream_queue_send_ex(CUstream stream, struct gds_qp *qp, struct ibv_exp_
                 goto out;
         }
 
-        ret = gds_post_pokes(stream, 1, &send_info, dw, val);
+        ret = gds_post_pokes(stream, 1, &send_info, NULL, 0);
         if (ret) {
                 goto out;
         }
 out:
         return ret;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr)
-{
-        return gds_stream_queue_send_ex(stream, qp, p_ewr, bad_ewr, NULL, 0);
 }
 
 //-----------------------------------------------------------------------------
@@ -222,43 +216,6 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
             gds_err("error in gds_post_pokes (%d)\n", ret);
     }
     return ret;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_send_ex(CUstream stream, gds_send_request_t *request, uint32_t *dw, uint32_t val)
-{
-    int ret = 0;
-
-    //struct ibv_exp_send_ex_info *info = (struct ibv_exp_send_ex_info *) request;
-
-    ret = gds_post_pokes(stream, 1, request, dw, val);
-    if (ret) {
-            gds_err("error in gds_post_pokes (%d)\n", ret);
-    }
-    return ret;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_queue_recv(CUstream stream, struct gds_qp *qp, struct ibv_recv_wr *p_ewr, struct ibv_recv_wr **bad_ewr)
-{
-        int ret = 0;
-#if 0
-	struct ibv_exp_recv_ex_info send_info;
-        gds_dbg("calling gds_stream_queue_recv()\n");
-        ret = ibv_exp_post_recv_ex(qp, p_ewr, bad_ewr, &recv_info);
-        if (ret) {
-                gds_err("ibv_exp_post_recv_ex (%d)\n", ret);
-                //gds_wait_kernel();
-                return ret;
-        }
-        ret = gds_post_pokes(stream, &send_info);
-#else
-        gds_err("queue_recv not implemented\n");
-	ret = EINVAL;
-#endif
-        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -331,13 +288,6 @@ int gds_stream_post_wait_cq(CUstream stream, gds_wait_request_t *request)
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_post_wait_cq_ex(CUstream stream, gds_wait_request_t *request, uint32_t *dw, uint32_t val)
-{
-	return gds_stream_post_wait_cq_multi(stream, 1, request, dw, val);
-}
-
-//-----------------------------------------------------------------------------
-
 int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *requests)
 {
 	return gds_stream_post_wait_cq_multi(stream, count, requests, NULL, 0);
@@ -345,42 +295,7 @@ int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_wait_cq_ex(CUstream stream, struct gds_cq *cq, int flag, uint32_t *dw, uint32_t val)
-{
-        int retcode = 0;
-        int ret;
-        gds_wait_request_t request;
-
-        assert(cq);
-        assert(stream);
-
-        ret = gds_prepare_wait_cq(cq, &request, flag);
-        if (ret) {
-                gds_err("error %d in gds_prepare_wait_cq\n", ret);
-                goto out;
-        }
-
-	ret = gds_stream_post_wait_cq_ex(stream, &request, dw, val);
-        if (ret) {
-                gds_err("error %d in gds_stream_post_wait_cq_ex\n", ret);
-                retcode = ret;
-                goto out;
-        }
-
-out:
-	return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags)
-{
-        return gds_stream_wait_cq_ex(stream, cq, flags, NULL, 0);
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
+static int gds_abort_wait_cq(struct gds_cq *cq, gds_wait_request_t *request)
 {
         assert(cq);
         assert(request);
@@ -392,15 +307,168 @@ int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, int cond_flags, int flags, gds_value32_descriptor_t *desc)
+int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags)
+{
+        int retcode = 0;
+        int ret;
+        gds_wait_request_t request;
+
+        assert(cq);
+        assert(stream);
+
+        if (flags) {
+                retcode = EINVAL;
+                goto out;
+        }
+
+        ret = gds_prepare_wait_cq(cq, &request, flags);
+        if (ret) {
+                gds_err("error %d in gds_prepare_wait_cq\n", ret);
+                goto out;
+        }
+
+	ret = gds_stream_post_wait_cq(stream, &request);
+        if (ret) {
+                gds_err("error %d in gds_stream_post_wait_cq_ex\n", ret);
+                int retcode2 = gds_abort_wait_cq(cq, &request);
+                if (retcode2) {
+                        gds_err("nested error %d while aborting request\n", retcode2);
+                }
+                retcode = ret;
+                goto out;
+        }
+
+out:
+	return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
+{
+        int retcode = 0;
+
+        if (flags) {
+                retcode = EINVAL;
+                goto out;
+        }
+
+        retcode = gds_abort_wait_cq(cq, request);
+out:
+        return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t cond_flags, int flags, gds_wait_value32_t *desc)
 {
         int ret = 0;
         assert(desc);
+        if (!is_valid(memtype_from_flags(flags))) {
+                gds_err("invalid memory type in flags\n");
+                ret = EINVAL;
+                goto out;
+        }
+        if (flags & ~(GDS_WAIT_POST_FLUSH|GDS_MEMORY_MASK)) {
+                gds_err("invalid flags\n");
+                ret = EINVAL;
+                goto out;
+        }
+        if (!is_valid(cond_flags)) {
+                gds_err("invalid cond flags\n");
+                ret = EINVAL;
+                goto out;
+        }
         desc->ptr = ptr;
         desc->value = value;
         desc->flags = flags;
         desc->cond_flags = cond_flags;
+out:
         return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_prepare_write_value32(uint32_t *ptr, uint32_t value, int flags, gds_write_value32_t *desc)
+{
+        int ret = 0;
+        assert(desc);
+        if (!is_valid(memtype_from_flags(flags))) {
+                gds_err("invalid memory type in flags\n");
+                ret = EINVAL;
+                goto out;
+        }
+        if (flags & ~(GDS_WRITE_PRE_BARRIER|GDS_MEMORY_MASK)) {
+                gds_err("invalid flags\n");
+                ret = EINVAL;
+                goto out;
+        }
+        desc->ptr = ptr;
+        desc->value = value;
+        desc->flags = flags;
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, gds_wait_cond_flag_t cond_flags, int flags)
+{
+        int retcode = 0;
+	CUstreamBatchMemOpParams param[1];
+        retcode = gds_fill_poll(param, ptr, magic, cond_flags, flags);
+        if (retcode) {
+                gds_err("error in fill_poll\n");
+                goto out;
+        }
+        retcode = gds_stream_batch_ops(stream, 1, param, 0);
+        if (retcode) {
+                gds_err("error in batch_ops\n");
+                goto out;
+        }
+out:
+        return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_stream_post_poke_dword(CUstream stream, uint32_t *ptr, uint32_t value, int flags)
+{
+        int retcode = 0;
+	CUstreamBatchMemOpParams param[1];
+        retcode = gds_fill_poke(param, ptr, value, flags);
+        if (retcode) {
+                gds_err("error in fill_poke\n");
+                goto out;
+        }
+        retcode = gds_stream_batch_ops(stream, 1, param, 0);
+        if (retcode) {
+                gds_err("error in batch_ops\n");
+                goto out;
+        }
+out:
+        return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_stream_post_inline_copy(CUstream stream, void *ptr, void *src, size_t nbytes, int flags)
+{
+        int retcode = 0;
+	CUstreamBatchMemOpParams param[1];
+
+        retcode = gds_fill_inlcpy(param, ptr, src, nbytes, flags);
+        if (retcode) {
+                gds_err("error in fill_poke\n");
+                goto out;
+        }
+        retcode = gds_stream_batch_ops(stream, 1, param, 0);
+        if (retcode) {
+                gds_err("error in batch_ops\n");
+                goto out;
+        }
+out:
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------

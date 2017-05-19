@@ -111,7 +111,5 @@
 GDS_BEGIN_DECLS
 
 #include <gdsync/core.h>
-#include <gdsync/tools.h>
-#include <gdsync/mlx5.h>
 
 GDS_END_DECLS

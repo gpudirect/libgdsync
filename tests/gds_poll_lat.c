@@ -13,6 +13,7 @@
 
 #include <infiniband/verbs_exp.h>
 #include <gdsync.h>
+#include <gdsync/tools.h>
 #include <gdrapi.h>
 
 #include "test_utils.h"
@@ -115,7 +116,7 @@ int main(int argc, char *argv[])
 
         puts("");
         printf("number iterations %d\n", num_iters);
-        printf("num dwords per poke %d\n", n_pokes);
+        printf("num dwords per poke %zu\n", n_pokes);
         printf("use poll flush %d\n", use_flush);
         printf("use poke membar %d\n", use_membar);
         printf("use %d background streams\n", n_bg_streams);
@@ -153,7 +154,7 @@ int main(int argc, char *argv[])
         if (use_gpu_buf)
                 poll_flags = GDS_MEMORY_GPU;
         if (use_flush)
-                poll_flags |= GDS_POLL_POST_FLUSH;
+                poll_flags |= GDS_WAIT_POST_FLUSH;
 
         uint32_t *h_bg_buf = NULL;
         if (n_bg_streams) {
@@ -162,8 +163,8 @@ int main(int argc, char *argv[])
                 memset(h_bg_buf, 0, size);
                 for (i=0; i<n_bg_streams; ++i) {
                         CUCHECK(cuStreamCreate(&bg_streams[i], 0));
-                        //gpu_post_poll_dword_on_stream(str[i], h_bg_buf+i, 1, GDS_POLL_COND_GEQ, GDS_MEMORY_HOST);
-                        gds_stream_post_poll_dword(bg_streams[i], h_bg_buf+i, 1, GDS_POLL_COND_GEQ, GDS_MEMORY_HOST);
+                        //gpu_post_poll_dword_on_stream(str[i], h_bg_buf+i, 1, GDS_WAIT_COND_GEQ, GDS_MEMORY_HOST);
+                        gds_stream_post_poll_dword(bg_streams[i], h_bg_buf+i, 1, GDS_WAIT_COND_GEQ, GDS_MEMORY_HOST);
                 }
         }
 
@@ -199,14 +200,14 @@ int main(int argc, char *argv[])
                         poke_hptrs[k] =            h_data+((k+i*n_pokes) % (size/sizeof(uint32_t)));
                         poke_values[k] = 0xd4d00000|(j<<8)|k;
                         poke_flags[k] = use_gpu_buf?GDS_MEMORY_GPU:GDS_MEMORY_HOST;
-                        poke_flags[k] |= (use_membar && k==n_pokes-1)?GDS_POKE_POST_PRE_BARRIER:0;
+                        poke_flags[k] |= (use_membar && k==n_pokes-1) ? GDS_WRITE_PRE_BARRIER : 0;
                         ACCESS_ONCE(*poke_hptrs[k]) = 0;
                         ++j;
                         //printf("%d %d %p\n", i, k, poke_dptrs[k]);
                 }
                 uint32_t *poll_ptrs[1] = { d_ptr };
                 uint32_t  poll_values[1] = { value };
-                int       poll_cond_flags[1] = { GDS_POLL_COND_GEQ };
+                gds_wait_cond_flag_t poll_cond_flags[1] = { GDS_WAIT_COND_GEQ };
                 int       poll_flagses[1] = { poll_flags };
 
                 if (use_combined) {
@@ -218,7 +219,7 @@ int main(int argc, char *argv[])
                         PROF(&prof, prof_idx++);
                 } else {
                         ret = gds_stream_post_poll_dword(gpu_stream,
-                                                   d_ptr, value, GDS_POLL_COND_GEQ, poll_flags);
+                                                   d_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
                         if (ret)
                                 exit(EXIT_FAILURE);
                         PROF(&prof, prof_idx++);

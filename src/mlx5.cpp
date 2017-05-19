@@ -34,6 +34,7 @@
 #include <assert.h>
 
 #include "gdsync.h"
+#include "gdsync/mlx5.h"
 #include "utils.hpp"
 #include "memmgr.hpp"
 //#include "mem.hpp"
@@ -253,13 +254,13 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         switch(op->type) {
                         case IBV_PEER_OP_POLL_NOR_DWORD:
                                 // GPU SMs can always do NOR
-                                mlx5_i->cond = GDS_POLL_COND_NOR;
+                                mlx5_i->cond = GDS_WAIT_COND_NOR;
                                 break;
                         case IBV_PEER_OP_POLL_GEQ_DWORD:
-                                mlx5_i->cond = GDS_POLL_COND_GEQ;
+                                mlx5_i->cond = GDS_WAIT_COND_GEQ;
                                 break;
                         case IBV_PEER_OP_POLL_AND_DWORD:
-                                mlx5_i->cond = GDS_POLL_COND_AND;
+                                mlx5_i->cond = GDS_WAIT_COND_AND;
                                 break;
                         default:
                                 gds_err("unexpected op type\n");
