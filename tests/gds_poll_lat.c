@@ -189,43 +189,43 @@ int main(int argc, char *argv[])
 		PROF(&prof, prof_idx++);
 
                 assert(n_pokes < size/sizeof(uint32_t));
-                uint32_t *poke_dptrs[n_pokes];
+                gds_descriptor_t descs[n_pokes+1];
                 uint32_t *poke_hptrs[n_pokes];
-                uint32_t  poke_values[n_pokes];
-                int       poke_flags[n_pokes];
                 static int j = 1;
                 int k;
+
+                descs[0].tag = GDS_TAG_WAIT_VALUE32;
+                descs[0].wait32.ptr   = d_ptr;
+                descs[0].wait32.value = value;
+                descs[0].wait32.cond_flags = GDS_WAIT_COND_GEQ;
+                descs[0].wait32.flags = poll_flags;
+
                 for (k=0; k<n_pokes; ++k) {
-                        poke_dptrs[k] = (uint32_t*)d_data+((k+i*n_pokes) % (size*sizeof(uint32_t)));
-                        poke_hptrs[k] =            h_data+((k+i*n_pokes) % (size/sizeof(uint32_t)));
-                        poke_values[k] = 0xd4d00000|(j<<8)|k;
-                        poke_flags[k] = use_gpu_buf?GDS_MEMORY_GPU:GDS_MEMORY_HOST;
-                        poke_flags[k] |= (use_membar && k==n_pokes-1) ? GDS_WRITE_PRE_BARRIER : 0;
+                        size_t off = ((k+i*n_pokes) % (size/sizeof(uint32_t)));
+                        descs[1+k].tag = GDS_TAG_WRITE_VALUE32;
+                        descs[1+k].write32.ptr = (uint32_t*)(d_data+sizeof(uint32_t)*off);
+                        descs[1+k].write32.value = 0xd4d00000|(j<<8)|k;
+                        descs[1+k].write32.flags = (use_gpu_buf?GDS_MEMORY_GPU:GDS_MEMORY_HOST);
+                        if (use_membar && (k==n_pokes-1))
+                                descs[1+k].write32.flags |= GDS_WRITE_PRE_BARRIER;
+
+                        poke_hptrs[k] =  h_data  + off;
                         ACCESS_ONCE(*poke_hptrs[k]) = 0;
                         ++j;
                         //printf("%d %d %p\n", i, k, poke_dptrs[k]);
                 }
-                uint32_t *poll_ptrs[1] = { d_ptr };
-                uint32_t  poll_values[1] = { value };
-                gds_wait_cond_flag_t poll_cond_flags[1] = { GDS_WAIT_COND_GEQ };
-                int       poll_flagses[1] = { poll_flags };
 
                 if (use_combined) {
-                        ret = gds_stream_post_polls_and_pokes(gpu_stream, 
-                                                              1, poll_ptrs, poll_values, poll_cond_flags, poll_flagses, 
-                                                              n_pokes, poke_dptrs, poke_values, poke_flags);
+                        ret = gds_stream_post_descriptors(gpu_stream, 1+n_pokes, descs, 0);
                         if (ret)
                                 exit(EXIT_FAILURE);
                         PROF(&prof, prof_idx++);
                 } else {
-                        ret = gds_stream_post_poll_dword(gpu_stream,
-                                                   d_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
+                        ret = gds_stream_post_descriptors(gpu_stream, 1, descs, 0);
                         if (ret)
                                 exit(EXIT_FAILURE);
                         PROF(&prof, prof_idx++);
-                        ret = gds_stream_post_polls_and_pokes(gpu_stream, 
-                                                              0, 0, 0, 0, 0, 
-                                                              n_pokes, poke_dptrs, poke_values, poke_flags);
+                        ret = gds_stream_post_descriptors(gpu_stream, n_pokes, descs+1, 0);
                         if (ret)
                                 exit(EXIT_FAILURE);
                 }
