@@ -175,9 +175,7 @@ int main(int argc, char *argv[])
                 ASSERT(value <= INT_MAX);
                 uint32_t *h_ptr = (uint32_t*)h_buf + (i % (size/sizeof(uint32_t)));
                 uint32_t *d_ptr = (uint32_t*)d_buf + (i % (size/sizeof(uint32_t)));
-                if (!use_gpu_buf) // use UVA host pointer as polling target
-                        d_ptr = h_ptr;
-                // post a sema.acquire on SYS/VIDMEM
+
                 gpu_dbg("GEQ h_ptr=%p d_ptr=%p *h_ptr=%08x i=%d value=%d\n", h_ptr, d_ptr, *h_ptr, i, value);
                 if (!use_gpu_buf) {
                         int c;
