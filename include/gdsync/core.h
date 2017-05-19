@@ -183,7 +183,7 @@ int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t
 /**
  * flags:  gds_memory_type_t | gds_write_flags_t
  */
-int gds_prepare_write_value32(uint32_t *ptr, uint32_t value, int flags, gds_wait_value32_t *desc);
+int gds_prepare_write_value32(uint32_t *ptr, uint32_t value, int flags, gds_write_value32_t *desc);
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs);
 
 int gds_prepare_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, gds_send_request_t *request);
