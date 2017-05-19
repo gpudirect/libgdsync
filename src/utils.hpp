@@ -116,7 +116,7 @@ static inline gds_memory_type_t memtype_from_flags(int flags) {
         return ret;
 }
 
-static bool is_valid(gds_memory_type_t type)
+static inline bool is_valid(gds_memory_type_t type)
 {
         int ret = 0;
         if (ret < GDS_MEMORY_GPU || ret > GDS_MEMORY_IO) {
@@ -125,13 +125,21 @@ static bool is_valid(gds_memory_type_t type)
         return ret;
 }
 
-static bool is_valid(gds_wait_cond_flag_t cond)
+static inline bool is_valid(gds_wait_cond_flag_t cond)
 {
         int ret = 0;
         if (cond < GDS_WAIT_COND_GEQ || cond > GDS_WAIT_COND_NOR) {
                 ret = EINVAL;
         }
         return ret;
+}
+
+static inline uint32_t gds_qword_lo(uint64_t v) {
+        return (uint32_t)(v);
+}
+
+static inline uint32_t gds_qword_hi(uint64_t v) {
+        return (uint32_t)(v >> 32);
 }
 
 //-----------------------------------------------------------------------------
@@ -165,6 +173,11 @@ int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, void *ptr, void *data, size
 int gds_fill_poke(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t value, int flags);
 int gds_fill_poll(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
 int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *params, int flags);
+
+enum gds_post_ops_flags {
+        GDS_POST_OPS_DISCARD_WAIT_FLUSH = 1<<0
+};
+int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *params, int &idx, int post_flags = 0);
 
 //-----------------------------------------------------------------------------
 
