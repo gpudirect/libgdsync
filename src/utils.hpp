@@ -118,18 +118,20 @@ static inline gds_memory_type_t memtype_from_flags(int flags) {
 
 static inline bool is_valid(gds_memory_type_t type)
 {
-        int ret = 0;
+        bool ret = true;
         if (ret < GDS_MEMORY_GPU || ret > GDS_MEMORY_IO) {
-                ret = EINVAL;
+                ret = false;
         }
         return ret;
 }
 
 static inline bool is_valid(gds_wait_cond_flag_t cond)
 {
-        int ret = 0;
-        if (cond < GDS_WAIT_COND_GEQ || cond > GDS_WAIT_COND_NOR) {
-                ret = EINVAL;
+        bool ret = true;
+
+        if ((int)cond < GDS_WAIT_COND_GEQ || (int)cond > GDS_WAIT_COND_NOR) {
+                gds_dbg("cond flag=0x%x\n", cond);
+                ret = false;
         }
         return ret;
 }
