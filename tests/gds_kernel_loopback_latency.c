@@ -458,34 +458,6 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 
 	return i;
 }
-#if 0
-static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
-{
-        int ret = 0;
-	struct ibv_sge list = {
-		.addr	= (uintptr_t) ctx->txbuf,
-		.length = ctx->size,
-		.lkey	= ctx->mr->lkey
-	};
-	struct ibv_send_wr wr = {
-		.wr_id	    = PINGPONG_SEND_WRID,
-		.sg_list    = &list,
-		.num_sge    = 1,
-		.opcode     = IBV_WR_SEND,
-		.send_flags = IBV_SEND_SIGNALED,
-		.wr         = {
-			.ud = {
-				 .ah          = ctx->ah,
-				 .remote_qpn  = qpn,
-				 .remote_qkey = 0x11111111
-			 }
-		}
-	};
-	struct ibv_send_wr *bad_wr;
-        printf("ibv_post_send\n");
-        return gds_post_send(ctx->gds_qp, &wr, &bad_wr);
-}
-#endif
 
 static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *gpu_stream)
 {
