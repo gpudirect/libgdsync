@@ -466,7 +466,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
 		.length = ctx->size,
 		.lkey	= ctx->mr->lkey
 	};
-	struct ibv_exp_send_wr ewr = {
+	gds_send_wr ewr = {
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
@@ -481,8 +481,8 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
 		},
 		.comp_mask = 0
 	};
-	struct ibv_exp_send_wr *bad_ewr;
-        return gds_stream_queue_send(gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
+	gds_send_wr *bad_ewr;
+    return gds_stream_queue_send(gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
 }
 
 static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
@@ -493,7 +493,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		.length = ctx->size,
 		.lkey	= ctx->mr->lkey
 	};
-	struct ibv_exp_send_wr ewr = {
+	gds_send_wr ewr = {
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
@@ -508,8 +508,8 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		},
 		.comp_mask = 0
 	};
-	struct ibv_exp_send_wr *bad_ewr;
-        return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
+	gds_send_wr *bad_ewr;
+    return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
 }
 
 

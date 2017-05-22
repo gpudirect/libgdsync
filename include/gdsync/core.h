@@ -32,7 +32,7 @@
 #error "don't include directly this header, use gdsync.h always"
 #endif
 
-#define GDS_API_MAJOR_VERSION    1U
+#define GDS_API_MAJOR_VERSION    2U
 #define GDS_API_MINOR_VERSION    1U
 #define GDS_API_VERSION          ((GDS_API_MAJOR_VERSION << 16) | GDS_API_MINOR_VERSION)
 #define GDS_API_VERSION_COMPATIBLE(v) \
@@ -55,6 +55,7 @@ enum gds_create_qp_flags {
 };
 
 typedef struct ibv_qp_init_attr_ex gds_qp_init_attr_t;
+typedef struct ibv_exp_send_wr gds_send_wr;
 
 struct gds_cq {
         struct ibv_cq *cq;
@@ -82,7 +83,7 @@ int gds_register_peer(struct ibv_context *context, unsigned gpu_id);
  * - this API might have higher overhead than ibv_post_send. 
  * - It is provided for convenience only.
  */
-int gds_post_send(struct gds_qp *qp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr);
+int gds_post_send(struct gds_qp *qp, gds_send_wr *wr, gds_send_wr **bad_wr);
 
 /* \brief: CPU-synchronous post recv for peer QPs
  *
@@ -98,7 +99,7 @@ int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags);
  * Notes:
  * - execution of the send operation happens in CUDA stream order
  */
-int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr);
+int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr);
 
 
 // batched submission APIs
@@ -190,7 +191,7 @@ int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t
  */
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags);
 
-int gds_prepare_send(struct gds_qp *qp, struct ibv_exp_send_wr *p_ewr, struct ibv_exp_send_wr **bad_ewr, gds_send_request_t *request);
+int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
 int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
 
