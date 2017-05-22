@@ -193,19 +193,23 @@ int main(int argc, char *argv[])
                 int k;
 
                 descs[0].tag = GDS_TAG_WAIT_VALUE32;
-                descs[0].wait32.ptr   = d_ptr;
-                descs[0].wait32.value = value;
-                descs[0].wait32.cond_flags = GDS_WAIT_COND_GEQ;
-                descs[0].wait32.flags = poll_flags;
+                ret = gds_prepare_wait_value32(&descs[0].wait32, d_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
+                if (ret)
+                        exit(EXIT_FAILURE);
 
                 for (k=0; k<n_pokes; ++k) {
                         size_t off = ((k+i*n_pokes) % (size/sizeof(uint32_t)));
-                        descs[1+k].tag = GDS_TAG_WRITE_VALUE32;
-                        descs[1+k].write32.ptr = (uint32_t*)(d_data+sizeof(uint32_t)*off);
-                        descs[1+k].write32.value = 0xd4d00000|(j<<8)|k;
-                        descs[1+k].write32.flags = (use_gpu_buf?GDS_MEMORY_GPU:GDS_MEMORY_HOST);
+                        int dflags = use_gpu_buf ? GDS_MEMORY_GPU : GDS_MEMORY_HOST;
                         if (use_membar && (k==n_pokes-1))
-                                descs[1+k].write32.flags |= GDS_WRITE_PRE_BARRIER;
+                                dflags |= GDS_WRITE_PRE_BARRIER;
+
+                        descs[1+k].tag = GDS_TAG_WRITE_VALUE32;
+                        ret = gds_prepare_write_value32(&descs[1+k].write32,
+                                                        (uint32_t*)(d_data+sizeof(uint32_t)*off),
+                                                        0xd4d00000|(j<<8)|k,
+                                                        dflags);
+                        if (ret)
+                                exit(EXIT_FAILURE);
 
                         poke_hptrs[k] =  h_data  + off;
                         ACCESS_ONCE(*poke_hptrs[k]) = 0;
