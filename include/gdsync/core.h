@@ -178,12 +178,12 @@ typedef struct gds_descriptor {
 /**
  * flags: gds_memory_type_t | gds_wait_flags_t
  */
-int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t cond_flags, int flags, gds_wait_value32_t *desc);
+int gds_prepare_wait_value32(gds_wait_value32_t *desc, uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t cond_flags, int flags);
 
 /**
  * flags:  gds_memory_type_t | gds_write_flags_t
  */
-int gds_prepare_write_value32(uint32_t *ptr, uint32_t value, int flags, gds_write_value32_t *desc);
+int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t value, int flags);
 
 /**
  * flags: must be 0
