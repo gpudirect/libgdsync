@@ -436,12 +436,12 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 		.length = ctx->size,
 		.lkey	= ctx->mr->lkey
 	};
-	struct ibv_send_wr wr = {
+	gds_send_wr wr = {
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.opcode     = IBV_WR_SEND,
-		.send_flags = IBV_SEND_SIGNALED,
+		.exp_opcode     = IBV_EXP_WR_SEND,
+		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
@@ -450,9 +450,8 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 			 }
 		}
 	};
-	struct ibv_send_wr *bad_wr;
-        printf("ibv_post_send\n");
-        return gds_post_send(ctx->gds_qp, &wr, &bad_wr);
+	gds_send_wr *bad_wr;
+	return gds_post_send(ctx->gds_qp, &wr, &bad_wr);
 }
 
 static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
@@ -463,7 +462,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
 		.length = ctx->size,
 		.lkey	= ctx->mr->lkey
 	};
-	struct ibv_exp_send_wr ewr = {
+	gds_send_wr ewr = {
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
@@ -478,7 +477,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
 		},
 		.comp_mask = 0
 	};
-	struct ibv_exp_send_wr *bad_ewr;
+	gds_send_wr *bad_ewr;
         //printf("gpu_post_send_on_stream\n");
         return gds_stream_queue_send(gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
 }
