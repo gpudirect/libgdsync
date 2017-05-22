@@ -43,6 +43,7 @@ using namespace std;
 #include <gdrapi.h>
 
 #include "gdsync.h"
+#include "gdsync/tools.h"
 #include "objs.hpp"
 #include "utils.hpp"
 #include "memmgr.hpp"
