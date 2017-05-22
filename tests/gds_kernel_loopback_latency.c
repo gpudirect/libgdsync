@@ -669,6 +669,7 @@ static void usage(const char *argv0)
 	printf("  -P, --peersync            enable GPUDirect PeerSync support (default enabled)\n");
 	printf("  -C, --peersync-gpu-cq     enable GPUDirect PeerSync GPU CQ support (default disabled)\n");
 	printf("  -D, --peersync-gpu-dbrec  enable QP DBREC on GPU memory (default disabled)\n");
+	printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
 	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
 }
@@ -743,13 +744,13 @@ int main(int argc, char *argv[])
 			{ .name = "peersync",        .has_arg = 0, .val = 'P' },
 			{ .name = "peersync-gpu-cq", .has_arg = 0, .val = 'C' },
 			{ .name = "peersync-gpu-dbrec", .has_arg = 1, .val = 'D' },
+                        { .name = "peersync-desc-apis", .has_arg = 0, .val = 'U' },
 			{ .name = "gpu-calc-size",   .has_arg = 1, .val = 'S' },
 			{ .name = "batch-length",    .has_arg = 1, .val = 'B' },
 			{ .name = "consume-rx-cqe",  .has_arg = 0, .val = 'Q' },
 			{ .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
 			{ .name = "gpu-mem",         .has_arg = 0, .val = 'E' },
 			{ .name = "wait-key",        .has_arg = 1, .val = 'W' },
-			{ .name = "use-desc-api",    .has_arg = 0, .val = 'U' },
 			{ 0 }
 		};
 
@@ -899,13 +900,15 @@ int main(int argc, char *argv[])
 	}
 
         if (!ib_devname) {
-                const char *env = getenv("USE_HCA");
-                if (env) {
-                        printf("USE_HCA=%s\n", env);
-                        ib_devname = env;
+                const char *value = getenv("USE_HCA"); 
+                if (value != NULL) {
+                        printf("[%d] USE_HCA: <%s>\n", my_rank, value);
+                        ib_devname = value;
                 }
+        } else {
+                printf("[%d] requested IB device: <%s>\n", my_rank, ib_devname);
         }
-        printf("requested IB device: <%s>\n", ib_devname);
+
 	if (!ib_devname) {
                 printf("picking 1st available device\n");
 		ib_dev = *dev_list;
@@ -924,6 +927,14 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
+
+        {
+                const char *env = getenv("USE_GPU");
+                if (env) {
+                        gpu_id = atoi(env);
+                        printf("USE_GPU=%s(%d)\n", env, gpu_id);
+                }
+        }
         printf("use gpumem: %d\n", use_gpumem);
 	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis);
 	if (!ctx)
