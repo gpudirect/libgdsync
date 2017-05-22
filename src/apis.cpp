@@ -112,7 +112,7 @@ static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, en
         rollback.flags = flag;
         /* Reserved for future expensions, must be 0 */
         rollback.comp_mask = 0;
-        gds_warn("Need to rollback WQE %x\n", rollback.rollback_id);
+        gds_warn("Need to rollback WQE %lx\n", rollback.rollback_id);
         ret = ibv_exp_rollback_qp(qp->qp, &rollback);
         if(ret)
                 gds_err("error %d in ibv_exp_rollback_qp\n", ret);
@@ -125,7 +125,7 @@ out:
 
 int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
-        int ret = 0, ret2=0;
+        int ret = 0, ret_roll=0;
         gds_send_request_t send_info;
         ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
         if (ret) {
@@ -136,9 +136,9 @@ int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
         ret = gds_post_pokes_on_cpu(1, &send_info, NULL, 0);
         if (ret) {
                 gds_err("error %d in gds_post_pokes_on_cpu\n", ret);
-                ret2 = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
-                if (ret2) {
-                        gds_err("error %d in gds_rollback_qp\n", ret2);
+                ret_roll = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+                if (ret_roll) {
+                        gds_err("error %d in gds_rollback_qp\n", ret_roll);
                 }
 
                 goto out;
@@ -203,7 +203,7 @@ out:
 
 int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
-        int ret = 0;
+        int ret = 0, ret_roll = 0;
 	gds_send_request_t send_info;
 
         ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
@@ -211,12 +211,12 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
                 goto out;
         }
 
-        ret = gds_post_pokes(stream, 1, &send_info, dw, val);
+        ret = gds_post_pokes(stream, 1, &send_info, NULL, 0);
         if (ret) {
                 gds_err("error %d in gds_post_pokes\n", ret);
-                ret2 = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
-                if (ret2) {
-                        gds_err("error %d in gds_rollback_qp\n", ret2);
+                ret_roll = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+                if (ret_roll) {
+                        gds_err("error %d in gds_rollback_qp\n", ret_roll);
                 }
                 goto out;
         }
