@@ -130,6 +130,7 @@ struct pingpong_context {
 	int                      peersync;
 	int                      peersync_gpu_cq;
         int                      consume_rx_cqe;
+        int                      use_desc_apis;
 };
 
 static int my_rank, comm_size;
@@ -200,7 +201,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                             int peersync_gpu_cq,
                                             int peersync_gpu_dbrec,
                                             int consume_rx_cqe,
-                                            int sched_mode)
+                                            int sched_mode,
+                                            int use_desc_apis)
 {
 	struct pingpong_context *ctx;
 
@@ -217,6 +219,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 	ctx->calc_size = calc_size;
 	ctx->rx_depth = rx_depth;
 	ctx->gpu_id   = gpu_id;
+        ctx->use_desc_apis = use_desc_apis;
 
         size_t alloc_size = 3 * align_to(size + 40, page_size);
 	if (ctx->gpu_id >= 0)
@@ -479,9 +482,36 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
 		.comp_mask = 0
 	};
 	struct ibv_exp_send_wr *bad_ewr;
-        //printf("gpu_post_send_on_stream\n");
         return gds_stream_queue_send(gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
 }
+
+static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
+{
+        int ret = 0;
+	struct ibv_sge list = {
+		.addr	= (uintptr_t) ctx->txbuf,
+		.length = ctx->size,
+		.lkey	= ctx->mr->lkey
+	};
+	struct ibv_exp_send_wr ewr = {
+		.wr_id	    = PINGPONG_SEND_WRID,
+		.sg_list    = &list,
+		.num_sge    = 1,
+		.exp_opcode = IBV_EXP_WR_SEND,
+		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.wr         = {
+			.ud = {
+				 .ah          = ctx->ah,
+				 .remote_qpn  = qpn,
+				 .remote_qkey = 0x11111111
+			 }
+		},
+		.comp_mask = 0
+	};
+	struct ibv_exp_send_wr *bad_ewr;
+        return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
+}
+
 
 static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uint32_t qpn, int is_client)
 {
@@ -507,27 +537,60 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
         
         PROF(&prof, prof_idx++);
 
+        gds_send_request_t send_rq[posted_recv];
+        gds_wait_request_t wait_tx_rq[posted_recv];
+        gds_wait_request_t wait_rx_rq[posted_recv];
+        gds_descriptor_t descs[2];
+
 	for (i = 0; i < posted_recv; ++i) {
                 if (is_client) {
+                        if (ctx->use_desc_apis) {
+                                int k = 0;
+                                ret = pp_prepare_gpu_send(ctx, qpn, &send_rq[i]);
+                                if (ret) {
+                                        i = -ret;
+                                        break;
+                                }
+                                descs[k].tag = GDS_TAG_SEND;
+                                descs[k].send = &send_rq[i];
+                                ++k;
 
-                        ret = pp_post_gpu_send(ctx, qpn);
-                        if (ret) {
-                                fprintf(stderr,"ERROR: can't post GPU send (%d) posted_recv=%d posted_so_far=%d is_client=%d \n",
-                                        ret, posted_recv, i, is_client);
-                                i = -ret;
-                                break;
-                        }
+                                ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wait_rx_rq[i], 0);
+                                if (ret) {
+                                        i = -ret;
+                                        break;
+                                }
+                                descs[k].tag = GDS_TAG_WAIT;
+                                descs[k].wait = &wait_rx_rq[i];
+                                ++k;
 
-                        ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
-                        if (ret) {
-                                fprintf(stderr,"ERROR: error in gpu_post_poll_cq (%d)\n", ret);
-                                i = -ret;
-                                break;
+                                ret = gds_stream_post_descriptors(gpu_stream, k, descs, 0);
+                                if (ret) {
+                                        i = -ret;
+                                        break;
+                                }
+                        } else {
+                                ret = pp_post_gpu_send(ctx, qpn);
+                                if (ret) {
+                                        fprintf(stderr,"ERROR: can't post GPU send (%d) posted_recv=%d posted_so_far=%d is_client=%d \n",
+                                                ret, posted_recv, i, is_client);
+                                        i = -ret;
+                                        break;
+                                }
+
+                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                                if (ret) {
+                                        // TODO: rollback gpu send and wait send_cq
+                                        fprintf(stderr,"ERROR: error in gpu_post_poll_cq (%d)\n", ret);
+                                        i = -ret;
+                                        break;
+                                }
                         }
                         if (ctx->calc_size)
                                 gpu_launch_kernel(ctx->calc_size, ctx->peersync);
                 } else {
-
+                        // no point in using descriptor APIs here, as kernel launch 
+                        // would be sitting in between
                         ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
                         if (ret) {
                                 fprintf(stderr, "ERROR: error in gpu_post_poll_cq (%d)\n", ret);
@@ -539,6 +602,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 
                         ret = pp_post_gpu_send(ctx, qpn);
                         if (ret) {
+                                // TODO: rollback gpu send and kernel launch
                                 fprintf(stderr, "ERROR: can't post GPU send\n");
                                 i = -ret;
                                 break;
@@ -611,6 +675,7 @@ int main(int argc, char *argv[])
         int                      consume_rx_cqe = 0;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
         int                      ret = 0;
+        int                      use_desc_apis = 0;
 
         MPI_CHECK(MPI_Init(&argc, &argv));
         MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &comm_size));
@@ -658,10 +723,11 @@ int main(int argc, char *argv[])
 			{ .name = "batch-length",    .has_arg = 1, .val = 'B' },
 			{ .name = "consume-rx-cqe",  .has_arg = 0, .val = 'Q' },
 			{ .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
+                        { .name = "use-desc-api",    .has_arg = 0, .val = 'U' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:U", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -760,6 +826,11 @@ int main(int argc, char *argv[])
                 }
                 break;
 
+                case 'U':
+                        use_desc_apis = 1;
+                        printf("INFO: use_desc_apis=%d\n", use_desc_apis);
+                        break;
+                        
 		default:
 			usage(argv[0]);
 			return 1;
@@ -829,7 +900,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode);
+	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_desc_apis);
 	if (!ctx)
 		return 1;
 
@@ -1113,20 +1184,25 @@ int main(int argc, char *argv[])
 		ret = 1;
 	}
 
-	{
-		float usec = (end.tv_sec - start.tv_sec) * 1000000 +
-			(end.tv_usec - start.tv_usec) + pre_post_us;
-		long long bytes = (long long) size * iters * 2;
 
-		printf("[%d] %lld bytes in %.2f seconds = %.2f Mbit/sec\n",
-		       my_rank, bytes, usec / 1000000., bytes * 8. / usec);
-		printf("[%d] %d iters in %.2f seconds = %.2f usec/iter\n",
-		       my_rank, iters, usec / 1000000., usec / iters);
-	}
+        int rid;
+        for (rid = 0; rid < comm_size; ++rid) {
+                MPI_Barrier(MPI_COMM_WORLD);
+                if (my_rank == rid) {
+                        float usec = (end.tv_sec - start.tv_sec) * 1000000 +
+                                (end.tv_usec - start.tv_usec) + pre_post_us;
+                        long long bytes = (long long) size * iters * 2;
 
-        if (prof_enabled(&prof)) {
-                printf("dumping prof\n");
-                prof_dump(&prof);
+                        printf("[%d] %lld bytes in %.2f seconds = %.2f Mbit/sec\n",
+                               my_rank, bytes, usec / 1000000., bytes * 8. / usec);
+                        printf("[%d] %d iters in %.2f seconds = %.2f usec/iter\n",
+                               my_rank, iters, usec / 1000000., usec / iters);
+
+                        if (prof_enabled(&prof)) {
+                                printf("[%d] dumping prof\n", my_rank);
+                                prof_dump(&prof);
+                        }
+                }
         }
 
 	//ibv_ack_cq_events(ctx->cq, num_cq_events);
