@@ -36,67 +36,6 @@
 #include <infiniband/verbs_exp.h>
 #include <infiniband/peer_ops.h>
 
-#define ibv_peer_commit			 ibv_exp_peer_commit
-#define ibv_peer_commit_qp		 ibv_exp_peer_commit_qp
-
-#define ibv_create_qp_ex		 ibv_exp_create_qp
-#define ibv_qp_init_attr_ex		 ibv_exp_qp_init_attr
-#define ibv_create_cq_attr_ex		 ibv_exp_cq_init_attr
-
-#define IBV_QP_INIT_ATTR_PD		 IBV_EXP_QP_INIT_ATTR_PD
-#define IBV_QP_INIT_ATTR_PEER_DIRECT	 IBV_EXP_QP_INIT_ATTR_PEER_DIRECT
-
-#define IBV_CREATE_CQ_ATTR_PEER_DIRECT	 IBV_EXP_CQ_INIT_ATTR_PEER_DIRECT
-
-#define IBV_PEER_OP_FENCE		 IBV_EXP_PEER_OP_FENCE
-#define IBV_PEER_OP_STORE_DWORD		 IBV_EXP_PEER_OP_STORE_DWORD
-#define IBV_PEER_OP_STORE_QWORD		 IBV_EXP_PEER_OP_STORE_QWORD
-#define IBV_PEER_OP_POLL_AND_DWORD	 IBV_EXP_PEER_OP_POLL_AND_DWORD
-#define IBV_PEER_OP_POLL_NOR_DWORD	 IBV_EXP_PEER_OP_POLL_NOR_DWORD
-#define IBV_PEER_OP_POLL_GEQ_DWORD	 IBV_EXP_PEER_OP_POLL_GEQ_DWORD
-#define IBV_PEER_OP_COPY_BLOCK           IBV_EXP_PEER_OP_COPY_BLOCK
-
-#define IBV_PEER_OP_FENCE_CAP		 IBV_EXP_PEER_OP_FENCE_CAP
-#define IBV_PEER_OP_STORE_DWORD_CAP	 IBV_EXP_PEER_OP_STORE_DWORD_CAP
-#define IBV_PEER_OP_STORE_QWORD_CAP	 IBV_EXP_PEER_OP_STORE_QWORD_CAP
-#define IBV_PEER_OP_COPY_BLOCK_CAP       IBV_EXP_PEER_OP_COPY_BLOCK_CAP
-#define IBV_PEER_OP_POLL_AND_DWORD_CAP	 IBV_EXP_PEER_OP_POLL_AND_DWORD_CAP
-#define IBV_PEER_OP_POLL_NOR_DWORD_CAP	 IBV_EXP_PEER_OP_POLL_NOR_DWORD_CAP
-
-#define IBV_PEER_FENCE_OP_READ           IBV_EXP_PEER_FENCE_OP_READ      
-#define IBV_PEER_FENCE_OP_WRITE          IBV_EXP_PEER_FENCE_OP_WRITE
-#define IBV_PEER_FENCE_FROM_CPU          IBV_EXP_PEER_FENCE_FROM_CPU
-#define IBV_PEER_FENCE_FROM_HCA          IBV_EXP_PEER_FENCE_FROM_HCA
-#define IBV_PEER_FENCE_MEM_SYS           IBV_EXP_PEER_FENCE_MEM_SYS      
-#define IBV_PEER_FENCE_MEM_PEER          IBV_EXP_PEER_FENCE_MEM_PEER
-
-#define ibv_peer_direct_attr		 ibv_exp_peer_direct_attr
-#define ibv_peer_direction		 ibv_exp_peer_direction
-#define ibv_peer_op			 ibv_exp_peer_op
-
-#define IBV_ROLLBACK_ABORT_UNCOMMITED    IBV_EXP_ROLLBACK_ABORT_UNCOMMITED
-#define IBV_ROLLBACK_ABORT_LATE		 IBV_EXP_ROLLBACK_ABORT_LATE
-
-#define ibv_rollback_ctx		 ibv_exp_rollback_ctx
-#define ibv_rollback_qp			 ibv_exp_rollback_qp
-#define ibv_peer_peek			 ibv_exp_peer_peek
-#define ibv_peer_peek_cq		 ibv_exp_peer_peek_cq
-#define ibv_peer_abort_peek		 ibv_exp_peer_abort_peek
-#define ibv_peer_abort_peek_cq		 ibv_exp_peer_abort_peek_cq
-
-#define IBV_PEER_DIRECTION_FROM_CPU	 IBV_EXP_PEER_DIRECTION_FROM_CPU
-#define IBV_PEER_DIRECTION_FROM_HCA	 IBV_EXP_PEER_DIRECTION_FROM_HCA
-#define IBV_PEER_DIRECTION_FROM_PEER     IBV_EXP_PEER_DIRECTION_FROM_PEER
-#define IBV_PEER_DIRECTION_TO_CPU        IBV_EXP_PEER_DIRECTION_TO_CPU 
-#define IBV_PEER_DIRECTION_TO_HCA        IBV_EXP_PEER_DIRECTION_TO_HCA 
-#define IBV_PEER_DIRECTION_TO_PEER       IBV_EXP_PEER_DIRECTION_TO_PEER
-
-#define ibv_peer_buf			 ibv_exp_peer_buf
-#define ibv_peer_buf_alloc_attr		 ibv_exp_peer_buf_alloc_attr
-
-#define ibv_create_cq_ex_(ctx, attr, n, ch) \
-		ibv_exp_create_cq(ctx, n, NULL, ch, 0, attr)
-
 #include <cuda.h>
 #include <gdrapi.h>
 
