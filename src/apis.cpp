@@ -360,17 +360,21 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_wait_value32(uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t cond_flags, int flags, gds_wait_value32_t *desc)
+int gds_prepare_wait_value32(gds_wait_value32_t *desc, uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t cond_flags, int flags)
 {
         int ret = 0;
         assert(desc);
-        if (!is_valid(memtype_from_flags(flags))) {
-                gds_err("invalid memory type in flags\n");
+
+        gds_dbg("desc=%p ptr=%p value=0x%08x cond_flags=0x%x flags=0x%x\n",
+                desc, ptr, value, cond_flags, flags);
+
+        if (flags & ~(GDS_WAIT_POST_FLUSH|GDS_MEMORY_MASK)) {
+                gds_err("invalid flags\n");
                 ret = EINVAL;
                 goto out;
         }
-        if (flags & ~(GDS_WAIT_POST_FLUSH|GDS_MEMORY_MASK)) {
-                gds_err("invalid flags\n");
+        if (!is_valid(memtype_from_flags(flags))) {
+                gds_err("invalid memory type in flags\n");
                 ret = EINVAL;
                 goto out;
         }
@@ -389,7 +393,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_write_value32(uint32_t *ptr, uint32_t value, int flags, gds_write_value32_t *desc)
+int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t value, int flags)
 {
         int ret = 0;
         assert(desc);
