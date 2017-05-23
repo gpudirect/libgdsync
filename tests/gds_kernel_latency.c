@@ -595,6 +595,7 @@ static void usage(const char *argv0)
 	printf("  -C, --peersync-gpu-cq     enable GPUDirect PeerSync GPU CQ support (default disabled)\n");
 	printf("  -D, --peersync-gpu-dbrec  enable QP DBREC on GPU memory (default disabled)\n");
 	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
+	printf("  -T, --time-gds-ops        evaluate time needed to execute gds operations using cuda events\n");
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
 }
 
@@ -677,11 +678,12 @@ int main(int argc, char *argv[])
 			{ .name = "gpu-calc-size",   .has_arg = 1, .val = 'S' },
 			{ .name = "batch-length",    .has_arg = 1, .val = 'B' },
 			{ .name = "consume-rx-cqe",  .has_arg = 0, .val = 'Q' },
+			{ .name = "time-gds-ops",  .has_arg = 0, .val = 'T' },
 			{ .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQTM:", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -754,6 +756,11 @@ int main(int argc, char *argv[])
 		case 'Q':
 			consume_rx_cqe = !consume_rx_cqe;
                         printf("INFO: switching consume_rx_cqe %s\n", consume_rx_cqe?"ON":"OFF");
+			break;
+			
+		case 'T':
+			gds_enable_event_prof = !gds_enable_event_prof;
+                        printf("INFO: gds_enable_event_prof %s\n", gds_enable_event_prof?"ON":"OFF");
 			break;
 
 		case 'C':
