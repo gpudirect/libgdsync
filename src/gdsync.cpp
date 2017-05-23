@@ -1297,11 +1297,6 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
         return ret;
 }
 
-int gds_register_peer(struct ibv_context *context, unsigned gpu_id)
-{
-        return gds_register_peer_ex(context, gpu_id, NULL, NULL);
-}
-
 //-----------------------------------------------------------------------------
 
 struct ibv_cq *

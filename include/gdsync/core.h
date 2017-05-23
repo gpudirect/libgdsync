@@ -75,8 +75,6 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                              int gpu_id, int flags);
 int gds_destroy_qp(struct gds_qp *qp);
 
-int gds_register_peer(struct ibv_context *context, unsigned gpu_id);
-
 /* \brief: CPU-synchronous post send for peer QPs
  *
  * Notes:
