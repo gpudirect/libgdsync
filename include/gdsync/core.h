@@ -102,13 +102,6 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
 
 // batched submission APIs
 
-typedef enum gds_wait_cond_flag {
-        GDS_WAIT_COND_GEQ = 0, // must match verbs_exp enum
-        GDS_WAIT_COND_EQ,
-        GDS_WAIT_COND_AND,
-        GDS_WAIT_COND_NOR
-} gds_wait_cond_flag_t;
-
 typedef enum gds_memory_type {
         GDS_MEMORY_GPU  = 1,
         GDS_MEMORY_HOST = 2,
@@ -139,15 +132,75 @@ enum {
         GDS_WAIT_INFO_MAX_OPS = 32
 };
 
+/**
+ * Represents a posted send operation on a particular QP
+ */
+
 typedef struct gds_send_request {
         struct ibv_exp_peer_commit commit;
         struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
 } gds_send_request_t;
 
+int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
+int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
+int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
+
+
+/**
+ * Represents a wait operation on a particular CQ
+ */
+
 typedef struct gds_wait_request {
         struct ibv_exp_peer_peek peek;
         struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
 } gds_wait_request_t;
+
+/**
+ * Initializes a wait request out of the next heading CQE, which is kept in
+ * cq->curr_offset.
+ *
+ * flags: must be 0
+ */
+int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
+
+/**
+ * Issues the descriptors contained in request on the CUDA stream
+ *
+ */
+int gds_stream_post_wait_cq(CUstream stream, gds_wait_request_t *request);
+
+/**
+ * Issues the descriptors contained in the array of requests on the CUDA stream.
+ * This has potentially less overhead than submitting each request individually.
+ *
+ */
+int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *request);
+
+/**
+ * \brief CPU-synchronously enable polling on request
+ *
+ * Unblock calls to ibv_poll_cq. CPU will do what is necessary to make the corresponding
+ * CQE poll-able.
+ *
+ */
+int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
+
+
+
+/**
+ * Represents the condition operation for wait operations on memory words
+ */
+
+typedef enum gds_wait_cond_flag {
+        GDS_WAIT_COND_GEQ = 0, // must match verbs_exp enum
+        GDS_WAIT_COND_EQ,
+        GDS_WAIT_COND_AND,
+        GDS_WAIT_COND_NOR
+} gds_wait_cond_flag_t;
+
+/**
+ * Represents a wait operation on a 32-bits memory word
+ */
 
 typedef struct gds_wait_value32 { 
         uint32_t  *ptr;
@@ -156,16 +209,34 @@ typedef struct gds_wait_value32 {
         int        flags; // takes gds_memory_type_t | gds_wait_flags_t
 } gds_wait_value32_t;
 
+/**
+ * flags: gds_memory_type_t | gds_wait_flags_t
+ */
+int gds_prepare_wait_value32(gds_wait_value32_t *desc, uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t cond_flags, int flags);
+
+
+
+/**
+ * Represents a write operation on a 32-bits memory word
+ */
+
 typedef struct gds_write_value32 { 
         uint32_t  *ptr;
         uint32_t   value;
         int        flags; // takes gds_memory_type_t | gds_write_flags_t
 } gds_write_value32_t;
 
+/**
+ * flags:  gds_memory_type_t | gds_write_flags_t
+ */
+int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t value, int flags);
+
+
+
 typedef enum gds_tag { GDS_TAG_SEND, GDS_TAG_WAIT, GDS_TAG_WAIT_VALUE32, GDS_TAG_WRITE_VALUE32 } gds_tag_t;
 
 typedef struct gds_descriptor {
-        gds_tag_t tag;
+        gds_tag_t tag; /**< selector for union below */
         union {
                 gds_send_request_t  *send;
                 gds_wait_request_t  *wait;
@@ -175,40 +246,9 @@ typedef struct gds_descriptor {
 } gds_descriptor_t;
 
 /**
- * flags: gds_memory_type_t | gds_wait_flags_t
- */
-int gds_prepare_wait_value32(gds_wait_value32_t *desc, uint32_t *ptr, uint32_t value, gds_wait_cond_flag_t cond_flags, int flags);
-
-/**
- * flags:  gds_memory_type_t | gds_write_flags_t
- */
-int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t value, int flags);
-
-/**
  * flags: must be 0
  */
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags);
-
-int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
-int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
-int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
-
-/**
- * flags: must be 0
- */
-int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
-int gds_stream_post_wait_cq(CUstream stream, gds_wait_request_t *request);
-int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *request);
-int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val);
-
-
-/* \brief CPU-synchronously enable polling on request
- *
- * Unblock calls to ibv_poll_cq. CPU will do what is necessary to make the corresponding
- * CQE poll-able.
- *
- */
-int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
 
 /*
  * Local variables:
