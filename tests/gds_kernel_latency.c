@@ -322,27 +322,12 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         ctx->tx_cq = ctx->gds_qp->qp->send_cq;
         ctx->rx_cq = ctx->gds_qp->qp->recv_cq;
 
-	if (IBV_QPT_UD == gds_qpt) {
+	{
 		struct ibv_qp_attr attr = {
 			.qp_state        = IBV_QPS_INIT,
 			.pkey_index      = 0,
 			.port_num        = port,
-			.qkey            = 0x11111111
-		};
-
-		if (ibv_modify_qp(ctx->qp, &attr,
-				  IBV_QP_STATE              |
-				  IBV_QP_PKEY_INDEX         |
-				  IBV_QP_PORT               |
-				  IBV_QP_QKEY)) {
-			fprintf(stderr, "Failed to modify QP to INIT\n");
-			goto clean_qp;
-		}
-	} else {
-		struct ibv_qp_attr attr = {
-			.qp_state        = IBV_QPS_INIT,
-			.pkey_index      = 0,
-			.port_num        = port,
+			.qkey            = 0x11111111,
 			.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE
 		};
 
@@ -350,7 +335,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 				  IBV_QP_STATE              |
 				  IBV_QP_PKEY_INDEX         |
 				  IBV_QP_PORT               |
-				  IBV_QP_ACCESS_FLAGS)) {
+				  ((IBV_QPT_UD == gds_qpt) ? IBV_QP_QKEY : IBV_QP_ACCESS_FLAGS))) {
 			fprintf(stderr, "Failed to modify QP to INIT\n");
 			goto clean_qp;
 		}
@@ -554,7 +539,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 	for (i = 0; i < posted_recv; ++i) {
                 if (is_client) {
 
-			if (gds_enable_event_prof) {
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
 				cudaEventRecord(start_time[event_idx], gpu_stream);
 			}
                         ret = pp_post_gpu_send(ctx, qpn);
@@ -571,7 +556,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 i = -ret;
                                 break;
                         }
-			if (gds_enable_event_prof) {
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
 				cudaEventRecord(stop_time[event_idx], gpu_stream);
 				event_idx++;
 			} 
@@ -588,7 +573,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         if (ctx->calc_size)
                                 gpu_launch_kernel(ctx->calc_size, ctx->peersync);
 
-			if (gds_enable_event_prof) {
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
 				cudaEventRecord(start_time[event_idx], gpu_stream);
 			} 
                         ret = pp_post_gpu_send(ctx, qpn);
@@ -597,7 +582,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 i = -ret;
                                 break;
                         }
-			if (gds_enable_event_prof) {
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
 				cudaEventRecord(stop_time[event_idx], gpu_stream);
 				event_idx++;
 			} 
@@ -669,6 +654,7 @@ int main(int argc, char *argv[])
         int                      warmup = 10;
         int                      max_batch_len = 20;
         int                      consume_rx_cqe = 0;
+	int                      gds_qp_type = 1;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
         int                      ret = 0;
 
@@ -794,11 +780,13 @@ int main(int argc, char *argv[])
 			break;
 			
 		case 'K':
-			gds_qpt = (int) strtol(optarg, NULL, 0);
-                        printf("INFO: GDS_QPT %s\n", (gds_qpt == 1) ? "UD":"RC");
-			gds_qpt = (gds_qpt == 1) ? IBV_QPT_UD : IBV_QPT_RC;
+			gds_qp_type = (int) strtol(optarg, NULL, 0);
+                        switch (gds_qp_type) {
+                        case 1: printf("INFO: GDS_QPT %s\n","UD"); gds_qpt = IBV_QPT_UD; break;
+                        case 2: printf("INFO: GDS_QPT %s\n","RC"); gds_qpt = IBV_QPT_RC; break;
+                        default: printf("ERROR: unexpected value 1 for UD or 2 for RC \n"); exit(EXIT_FAILURE); break;
+                        }
 			break;
-
 		case 'Q':
 			consume_rx_cqe = !consume_rx_cqe;
                         printf("INFO: switching consume_rx_cqe %s\n", consume_rx_cqe?"ON":"OFF");
