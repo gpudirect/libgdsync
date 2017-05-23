@@ -106,6 +106,12 @@ enum {
 
 static int page_size;
 
+#define MAX_EVENTS 1024
+cudaEvent_t start_time[MAX_EVENTS], stop_time[MAX_EVENTS];
+float elapsed_time = 0.0;
+int event_idx = 0;
+int gds_enable_event_prof = 0;
+
 struct pingpong_context {
 	struct ibv_context	*context;
 	struct ibv_comp_channel *channel;
@@ -510,6 +516,9 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 	for (i = 0; i < posted_recv; ++i) {
                 if (is_client) {
 
+			if (gds_enable_event_prof) {
+				cudaEventRecord(start_time[event_idx], gpu_stream);
+			}
                         ret = pp_post_gpu_send(ctx, qpn);
                         if (ret) {
                                 fprintf(stderr,"ERROR: can't post GPU send (%d) posted_recv=%d posted_so_far=%d is_client=%d \n",
@@ -524,6 +533,10 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 i = -ret;
                                 break;
                         }
+			if (gds_enable_event_prof) {
+				cudaEventRecord(stop_time[event_idx], gpu_stream);
+				event_idx++;
+			} 
                         if (ctx->calc_size)
                                 gpu_launch_kernel(ctx->calc_size, ctx->peersync);
                 } else {
@@ -537,12 +550,19 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         if (ctx->calc_size)
                                 gpu_launch_kernel(ctx->calc_size, ctx->peersync);
 
+			if (gds_enable_event_prof) {
+				cudaEventRecord(start_time[event_idx], gpu_stream);
+			} 
                         ret = pp_post_gpu_send(ctx, qpn);
                         if (ret) {
                                 fprintf(stderr, "ERROR: can't post GPU send\n");
                                 i = -ret;
                                 break;
                         }
+			if (gds_enable_event_prof) {
+				cudaEventRecord(stop_time[event_idx], gpu_stream);
+				event_idx++;
+			} 
                 }
         }
 
@@ -810,6 +830,14 @@ int main(int argc, char *argv[])
                 printf("[%d] requested IB device: <%s>\n", my_rank, ib_devname);
         }
 
+	{
+		const char *value = getenv("GDS_ENABLE_EVENT_PROF"); 
+		if (value != NULL) {
+			printf("[%d] USE_IB_HCA: <%s>\n", my_rank, value);
+			gds_enable_event_prof = atoi(value);
+		}
+	}
+
 	if (!ib_devname) {
                 printf("[%d] picking 1st available device\n", my_rank);
 		ib_dev = *dev_list;
@@ -928,6 +956,14 @@ int main(int argc, char *argv[])
         int n_post = 0;
         int n_posted;
         int batch;
+	int ii;
+
+	if (gds_enable_event_prof) {
+		for (ii = 0; ii < MAX_EVENTS; ii++) {
+			cudaEventCreate(&start_time[ii]);
+			cudaEventCreate(&stop_time[ii]);
+		}
+	}
 
         for (batch=0; batch<n_batches; ++batch) {
                 n_post = min(min(ctx->rx_depth/2, iters-nposted), max_batch_len);
@@ -1130,6 +1166,19 @@ int main(int argc, char *argv[])
         }
 
 	//ibv_ack_cq_events(ctx->cq, num_cq_events);
+
+	//expect work to be completed by now
+
+	if (gds_enable_event_prof) {
+		for (ii = 0; ii < event_idx; ii++) {
+			cudaEventElapsedTime(&elapsed_time, start_time[ii], stop_time[ii]);
+			fprintf(stderr, "[%d] size = %d, time = %f\n", my_rank, ctx->size, 1000 * elapsed_time);
+		}
+		for (ii = 0; ii < MAX_EVENTS; ii++) {
+			cudaEventDestroy(stop_time[ii]);
+			cudaEventDestroy(start_time[ii]);
+		}
+	} 
 
         MPI_Barrier(MPI_COMM_WORLD);
 	if (pp_close_ctx(ctx))
