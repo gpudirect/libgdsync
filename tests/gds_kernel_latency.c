@@ -833,7 +833,6 @@ int main(int argc, char *argv[])
 	{
 		const char *value = getenv("GDS_ENABLE_EVENT_PROF"); 
 		if (value != NULL) {
-			printf("[%d] USE_IB_HCA: <%s>\n", my_rank, value);
 			gds_enable_event_prof = atoi(value);
 		}
 	}
