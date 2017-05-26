@@ -38,7 +38,7 @@ namespace gdsync {
     };
 
     //typedef enum wait_cond { WAIT_GEQ, WAIT_EQ, WAIT_AND, WAIT_NOR } wait_cond_t;
-    typedef gds_poll_cond_flag_t wait_cond_t;
+    typedef gds_wait_cond_flag_t wait_cond_t;
 
     struct sem32 {
         typedef uint32_t T;
