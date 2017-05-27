@@ -1,6 +1,6 @@
 /*
  * GPUDirect Async loopback latency benchmark
- * 
+ *
  *
  * based on OFED libibverbs ud_pingpong test.
  */
@@ -163,8 +163,22 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 
 	ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
 	if (!ctx->ah) {
-		fprintf(stderr, "Failed to create AH\n");
-		return 1;
+		union ibv_gid dgid;
+		if (ibv_query_gid(ctx->context, port, 0, &dgid)) {
+			fprintf(stderr, "Failed to query interface gid\n");
+			return 1;
+		}
+
+		ah_attr.is_global = 1;
+		ah_attr.grh.hop_limit = 1;
+		ah_attr.grh.dgid = dgid;
+		ah_attr.grh.sgid_index = 0;
+
+		ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
+		if (!ctx->ah) {
+			fprintf(stderr, "Failed to create AH\n");
+			return 1;
+		}
 	}
 
 	return 0;
@@ -184,7 +198,7 @@ static struct pingpong_dest *pp_client_exch_dest(const char *servername, int por
 	int sockfd = -1;
 	struct pingpong_dest *rem_dest = NULL;
 	char gid[33];
-	
+
 	fprintf(stderr, "%04x:%06x:%06x:%s\n", my_dest->lid, my_dest->qpn,
                 my_dest->psn, (char *)&my_dest->gid);
 	rem_dest = malloc(sizeof *rem_dest);
@@ -253,7 +267,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 
         ctx->rx_flag =  memalign(page_size, alloc_size);
         if (!ctx->rx_flag) {
-                fprintf(stderr, "Couldn't allocate rx_flag buf\n");  
+                fprintf(stderr, "Couldn't allocate rx_flag buf\n");
                 goto clean_ctx;
         }
 
@@ -327,7 +341,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 },
                 .qp_type = IBV_QPT_UD,
         };
-	
+
 	//why?
         if (my_rank == 1) {
                 printf("sleeping 2s\n");
@@ -381,8 +395,8 @@ clean_device:
 
 clean_buffer:
 	if (ctx->gpumem)
-		gpu_free(ctx->buf); 
-	else 
+		gpu_free(ctx->buf);
+	else
 		free(ctx->buf);
 
 clean_ctx:
@@ -422,8 +436,8 @@ int pp_close_ctx(struct pingpong_context *ctx)
 	}
 
 	if (ctx->gpumem)
-		gpu_free(ctx->buf); 
-	else 
+		gpu_free(ctx->buf);
+	else
 		free(ctx->buf);
 
 	if (ctx->gpu_id >= 0)
@@ -525,7 +539,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 
         posted_recv = pp_post_recv(ctx, n_posts);
         if (posted_recv < 0) {
-                fprintf(stderr,"ERROR: can't post recv (%d) n_posts=%d is_client=%d\n", 
+                fprintf(stderr,"ERROR: can't post recv (%d) n_posts=%d is_client=%d\n",
                         posted_recv, n_posts, is_client);
                 exit(EXIT_FAILURE);
                 return 0;
@@ -534,7 +548,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 if (!posted_recv)
                         return 0;
         }
-        
+
         PROF(&prof, prof_idx++);
 
 	for (i = 0; i < posted_recv; ++i) {
@@ -883,7 +897,7 @@ int main(int argc, char *argv[])
 	inet_ntop(AF_INET6, &my_dest.gid, gid, sizeof gid);
 	printf("  local address:  LID 0x%04x, QPN 0x%06x, PSN 0x%06x: GID %s\n",
 	       my_dest.lid, my_dest.qpn, my_dest.psn, gid);
-	
+
         rem_dest = pp_client_exch_dest(servername, port, &my_dest);
 
 	if (!rem_dest) {
@@ -1139,7 +1153,7 @@ int main(int argc, char *argv[])
         prof_destroy(&prof);
 
 	//ibv_ack_cq_events(ctx->cq, num_cq_events);
-	
+
 
 	return 0;
 
