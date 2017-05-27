@@ -106,6 +106,13 @@ enum {
 
 static int page_size;
 
+#define MAX_EVENTS 1024
+cudaEvent_t start_time[MAX_EVENTS], stop_time[MAX_EVENTS];
+float elapsed_time = 0.0;
+int event_idx = 0;
+int gds_enable_event_prof = 0;
+int gds_qpt = IBV_QPT_UD; //UD by default
+
 struct pingpong_context {
 	struct ibv_context	*context;
 	struct ibv_comp_channel *channel;
@@ -302,7 +309,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                         .max_send_sge = 1,
                         .max_recv_sge = 1
                 },
-                .qp_type = IBV_QPT_UD,
+                .qp_type = gds_qpt,
         };
 
         ctx->gds_qp = gds_create_qp(ctx->pd, ctx->context, &attr, gpu_id, gds_flags);
@@ -320,14 +327,15 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 			.qp_state        = IBV_QPS_INIT,
 			.pkey_index      = 0,
 			.port_num        = port,
-			.qkey            = 0x11111111
+			.qkey            = 0x11111111,
+			.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE
 		};
 
 		if (ibv_modify_qp(ctx->qp, &attr,
 				  IBV_QP_STATE              |
 				  IBV_QP_PKEY_INDEX         |
 				  IBV_QP_PORT               |
-				  IBV_QP_QKEY)) {
+				  ((IBV_QPT_UD == gds_qpt) ? IBV_QP_QKEY : IBV_QP_ACCESS_FLAGS))) {
 			fprintf(stderr, "Failed to modify QP to INIT\n");
 			goto clean_qp;
 		}
@@ -375,8 +383,10 @@ int pp_close_ctx(struct pingpong_context *ctx)
 		fprintf(stderr, "Couldn't deregister MR\n");
 	}
 
-	if (ibv_destroy_ah(ctx->ah)) {
-		fprintf(stderr, "Couldn't destroy AH\n");
+	if (IBV_QPT_UD == gds_qpt) {
+		if (ibv_destroy_ah(ctx->ah)) {
+			fprintf(stderr, "Couldn't destroy AH\n");
+		}
 	}
 
 	if (ibv_dealloc_pd(ctx->pd)) {
@@ -413,6 +423,9 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 		.length = ctx->size + 40,
 		.lkey	= ctx->mr->lkey
 	};
+
+	if (IBV_QPT_UD != gds_qpt) list.length = ctx->size;
+	
 	struct ibv_recv_wr wr = {
 		.wr_id	    = PINGPONG_RECV_WRID,
 		.sg_list    = &list,
@@ -436,20 +449,26 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 		.length = ctx->size,
 		.lkey	= ctx->mr->lkey
 	};
-	struct ibv_send_wr wr = {
-		.wr_id	    = PINGPONG_SEND_WRID,
-		.sg_list    = &list,
-		.num_sge    = 1,
-		.opcode     = IBV_WR_SEND,
-		.send_flags = IBV_SEND_SIGNALED,
-		.wr         = {
-			.ud = {
-				 .ah          = ctx->ah,
-				 .remote_qpn  = qpn,
-				 .remote_qkey = 0x11111111
-			 }
-		}
-	};
+	struct ibv_exp_send_wr wr;
+	if (IBV_QPT_UD == gds_qpt) {
+		wr.wr_id	    = PINGPONG_SEND_WRID;
+		wr.sg_list    = &list;
+		wr.num_sge    = 1;
+		wr.exp_opcode     = IBV_EXP_WR_SEND;
+		wr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
+		wr.wr.ud.ah          = ctx->ah;
+		wr.wr.ud.remote_qpn  = qpn;
+		wr.wr.ud.remote_qkey = 0x11111111;
+	}
+	else {
+		wr.num_sge = 1;
+		wr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
+		wr.exp_opcode = IBV_EXP_WR_SEND;
+		wr.wr_id = PINGPONG_SEND_WRID;
+		wr.sg_list = &list;
+		wr.next = NULL;
+	}
+	
 	struct ibv_send_wr *bad_wr;
         printf("ibv_post_send\n");
         return gds_post_send(ctx->gds_qp, &wr, &bad_wr);
@@ -478,6 +497,16 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn)
 		},
 		.comp_mask = 0
 	};
+	
+	if (IBV_QPT_UD != gds_qpt) {
+		memset(&ewr, 0, sizeof(ewr));
+		ewr.num_sge = 1;
+		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
+		ewr.exp_opcode = IBV_EXP_WR_SEND;
+		ewr.wr_id = PINGPONG_SEND_WRID;
+		ewr.sg_list = &list;
+		ewr.next = NULL;
+	}
 	struct ibv_exp_send_wr *bad_ewr;
         //printf("gpu_post_send_on_stream\n");
         return gds_stream_queue_send(gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
@@ -510,6 +539,9 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 	for (i = 0; i < posted_recv; ++i) {
                 if (is_client) {
 
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
+				cudaEventRecord(start_time[event_idx], gpu_stream);
+			}
                         ret = pp_post_gpu_send(ctx, qpn);
                         if (ret) {
                                 fprintf(stderr,"ERROR: can't post GPU send (%d) posted_recv=%d posted_so_far=%d is_client=%d \n",
@@ -524,6 +556,10 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 i = -ret;
                                 break;
                         }
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
+				cudaEventRecord(stop_time[event_idx], gpu_stream);
+				event_idx++;
+			} 
                         if (ctx->calc_size)
                                 gpu_launch_kernel(ctx->calc_size, ctx->peersync);
                 } else {
@@ -537,12 +573,19 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         if (ctx->calc_size)
                                 gpu_launch_kernel(ctx->calc_size, ctx->peersync);
 
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
+				cudaEventRecord(start_time[event_idx], gpu_stream);
+			} 
                         ret = pp_post_gpu_send(ctx, qpn);
                         if (ret) {
                                 fprintf(stderr, "ERROR: can't post GPU send\n");
                                 i = -ret;
                                 break;
                         }
+			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
+				cudaEventRecord(stop_time[event_idx], gpu_stream);
+				event_idx++;
+			} 
                 }
         }
 
@@ -575,6 +618,8 @@ static void usage(const char *argv0)
 	printf("  -C, --peersync-gpu-cq     enable GPUDirect PeerSync GPU CQ support (default disabled)\n");
 	printf("  -D, --peersync-gpu-dbrec  enable QP DBREC on GPU memory (default disabled)\n");
 	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
+	printf("  -T, --time-gds-ops        evaluate time needed to execute gds operations using cuda events\n");
+	printf("  -K, --qp-kind             select IB transport kind used by GDS QPs. (-K 1) for UD, (-K 2) for RC\n");
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
 }
 
@@ -609,6 +654,7 @@ int main(int argc, char *argv[])
         int                      warmup = 10;
         int                      max_batch_len = 20;
         int                      consume_rx_cqe = 0;
+	int                      gds_qp_type = 1;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
         int                      ret = 0;
 
@@ -657,11 +703,13 @@ int main(int argc, char *argv[])
 			{ .name = "gpu-calc-size",   .has_arg = 1, .val = 'S' },
 			{ .name = "batch-length",    .has_arg = 1, .val = 'B' },
 			{ .name = "consume-rx-cqe",  .has_arg = 0, .val = 'Q' },
+			{ .name = "time-gds-ops",  .has_arg = 0, .val = 'T' },
+			{ .name = "qp-kind",          .has_arg = 1, .val = 'K' },
 			{ .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:K:S:B:PCDQTM:", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -730,10 +778,23 @@ int main(int argc, char *argv[])
 			peersync = !peersync;
                         printf("INFO: switching PeerSync %s\n", peersync?"ON":"OFF");
 			break;
-
+			
+		case 'K':
+			gds_qp_type = (int) strtol(optarg, NULL, 0);
+                        switch (gds_qp_type) {
+                        case 1: printf("INFO: GDS_QPT %s\n","UD"); gds_qpt = IBV_QPT_UD; break;
+                        case 2: printf("INFO: GDS_QPT %s\n","RC"); gds_qpt = IBV_QPT_RC; break;
+                        default: printf("ERROR: unexpected value 1 for UD or 2 for RC \n"); exit(EXIT_FAILURE); break;
+                        }
+			break;
 		case 'Q':
 			consume_rx_cqe = !consume_rx_cqe;
                         printf("INFO: switching consume_rx_cqe %s\n", consume_rx_cqe?"ON":"OFF");
+			break;
+			
+		case 'T':
+			gds_enable_event_prof = !gds_enable_event_prof;
+                        printf("INFO: gds_enable_event_prof %s\n", gds_enable_event_prof?"ON":"OFF");
 			break;
 
 		case 'C':
@@ -810,6 +871,13 @@ int main(int argc, char *argv[])
                 printf("[%d] requested IB device: <%s>\n", my_rank, ib_devname);
         }
 
+	{
+		const char *value = getenv("GDS_ENABLE_EVENT_PROF"); 
+		if (value != NULL) {
+			gds_enable_event_prof = atoi(value);
+		}
+	}
+
 	if (!ib_devname) {
                 printf("[%d] picking 1st available device\n", my_rank);
 		ib_dev = *dev_list;
@@ -845,7 +913,7 @@ int main(int argc, char *argv[])
 	}
 	my_dest.lid = ctx->portinfo.lid;
 	my_dest.qpn = ctx->qp->qp_num;
-	my_dest.psn = lrand48() & 0xffffff;
+	my_dest.psn = (IBV_QPT_UD == gds_qpt) ? (lrand48() & 0xffffff) : 0;
 
 	if (gidx >= 0) {
 		if (ibv_query_gid(ctx->context, ib_port, gidx, &my_dest.gid)) {
@@ -870,7 +938,7 @@ int main(int argc, char *argv[])
 	printf("[%d] remote address: LID 0x%04x, QPN 0x%06x, PSN 0x%06x, GID %s\n",
 	       my_rank, rem_dest->lid, rem_dest->qpn, rem_dest->psn, gid);
 
-        {
+        if (IBV_QPT_UD == gds_qpt) {
                 struct ibv_qp_attr attr = {
                         .qp_state		= IBV_QPS_RTR
                 };
@@ -909,6 +977,43 @@ int main(int argc, char *argv[])
                 }
 
         }
+	else {
+                struct ibv_qp_attr attr = {
+			.qp_state       = IBV_QPS_RTR,
+			.path_mtu       = ctx->portinfo.active_mtu,
+			.dest_qp_num    = rem_dest->qpn,
+			.rq_psn         = rem_dest->psn,
+			.ah_attr.dlid   = rem_dest->lid,
+			.max_dest_rd_atomic     = 1,
+			.min_rnr_timer          = 12,
+			.ah_attr.is_global      = 0,
+			.ah_attr.sl             = 0,
+			.ah_attr.src_path_bits  = 0,
+			.ah_attr.port_num       = ib_port
+                };
+
+                if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU
+						   | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN
+						   | IBV_QP_MIN_RNR_TIMER | IBV_QP_MAX_DEST_RD_ATOMIC))) {
+                        fprintf(stderr, "Failed to modify QP to RTR\n");
+                        return 1;
+                }
+		
+		memset(&attr, 0, sizeof(struct ibv_qp_attr));
+		attr.qp_state       = IBV_QPS_RTS;
+		attr.sq_psn         = 0;
+		attr.timeout        = 20;
+		attr.retry_cnt      = 7;
+		attr.rnr_retry      = 7;
+		attr.max_rd_atomic  = 1;
+
+		if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT
+						     | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY
+						   | IBV_QP_MAX_QP_RD_ATOMIC))) {
+                        fprintf(stderr, "Failed to modify QP to RTS\n");
+                        return 1;
+		}
+	}
 
         MPI_Barrier(MPI_COMM_WORLD);
 
@@ -928,6 +1033,14 @@ int main(int argc, char *argv[])
         int n_post = 0;
         int n_posted;
         int batch;
+	int ii;
+
+	if (gds_enable_event_prof) {
+		for (ii = 0; ii < MAX_EVENTS; ii++) {
+			cudaEventCreate(&start_time[ii]);
+			cudaEventCreate(&stop_time[ii]);
+		}
+	}
 
         for (batch=0; batch<n_batches; ++batch) {
                 n_post = min(min(ctx->rx_depth/2, iters-nposted), max_batch_len);
@@ -1130,6 +1243,19 @@ int main(int argc, char *argv[])
         }
 
 	//ibv_ack_cq_events(ctx->cq, num_cq_events);
+
+	//expect work to be completed by now
+
+	if (gds_enable_event_prof) {
+		for (ii = 0; ii < event_idx; ii++) {
+			cudaEventElapsedTime(&elapsed_time, start_time[ii], stop_time[ii]);
+			fprintf(stderr, "[%d] size = %d, time = %f\n", my_rank, ctx->size, 1000 * elapsed_time);
+		}
+		for (ii = 0; ii < MAX_EVENTS; ii++) {
+			cudaEventDestroy(stop_time[ii]);
+			cudaEventDestroy(start_time[ii]);
+		}
+	} 
 
         MPI_Barrier(MPI_COMM_WORLD);
 	if (pp_close_ctx(ctx))
