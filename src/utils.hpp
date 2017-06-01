@@ -113,8 +113,35 @@ static inline int gds_curesult_to_errno(CUresult result)
 
 static inline gds_memory_type_t memtype_from_flags(int flags) {
         gds_memory_type_t ret = (gds_memory_type_t)(flags & GDS_MEMORY_MASK);
-        assert(ret >= GDS_MEMORY_GPU && ret <= GDS_MEMORY_IO);
         return ret;
+}
+
+static inline bool is_valid(gds_memory_type_t type)
+{
+        bool ret = true;
+        if (ret < GDS_MEMORY_GPU || ret > GDS_MEMORY_IO) {
+                ret = false;
+        }
+        return ret;
+}
+
+static inline bool is_valid(gds_wait_cond_flag_t cond)
+{
+        bool ret = true;
+
+        if ((int)cond < GDS_WAIT_COND_GEQ || (int)cond > GDS_WAIT_COND_NOR) {
+                gds_dbg("cond flag=0x%x\n", cond);
+                ret = false;
+        }
+        return ret;
+}
+
+static inline uint32_t gds_qword_lo(uint64_t v) {
+        return (uint32_t)(v);
+}
+
+static inline uint32_t gds_qword_hi(uint64_t v) {
+        return (uint32_t)(v >> 32);
 }
 
 //-----------------------------------------------------------------------------
@@ -143,6 +170,16 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
 void gds_dump_wait_request(gds_wait_request_t *request, size_t count);
 void gds_dump_param(CUstreamBatchMemOpParams *param);
 void gds_dump_params(unsigned int nops, CUstreamBatchMemOpParams *params);
+int gds_fill_membar(CUstreamBatchMemOpParams *param, int flags);
+int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, void *ptr, void *data, size_t n_bytes, int flags);
+int gds_fill_poke(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t value, int flags);
+int gds_fill_poll(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
+int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *params, int flags);
+
+enum gds_post_ops_flags {
+        GDS_POST_OPS_DISCARD_WAIT_FLUSH = 1<<0
+};
+int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *params, int &idx, int post_flags = 0);
 
 //-----------------------------------------------------------------------------
 

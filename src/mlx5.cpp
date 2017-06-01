@@ -34,6 +34,7 @@
 #include <assert.h>
 
 #include "gdsync.h"
+#include "gdsync/mlx5.h"
 #include "utils.hpp"
 #include "memmgr.hpp"
 //#include "mem.hpp"
@@ -61,7 +62,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
 
         for (; op && n < n_ops; op = op->next, ++n) {
                 switch(op->type) {
-                case IBV_PEER_OP_FENCE: {
+                case IBV_EXP_PEER_OP_FENCE: {
                         gds_dbg("OP_FENCE: fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
@@ -90,7 +91,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         }
                         break;
                 }
-                case IBV_PEER_OP_STORE_DWORD: {
+                case IBV_EXP_PEER_OP_STORE_DWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
@@ -104,7 +105,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         mlx5_i->dbrec_value = data;
                         break;
                 }
-                case IBV_PEER_OP_STORE_QWORD: {
+                case IBV_EXP_PEER_OP_STORE_QWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                 op->wr.qword_va.offset;
                         uint64_t data = op->wr.qword_va.data;
@@ -118,7 +119,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         mlx5_i->db_value = data;
                         break;
                 }
-                case IBV_PEER_OP_COPY_BLOCK: {
+                case IBV_EXP_PEER_OP_COPY_BLOCK: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
                                 op->wr.copy_op.offset;
                         size_t len = op->wr.copy_op.len;
@@ -133,9 +134,9 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         mlx5_i->db_value = *(uint64_t*)src; 
                         break;
                 }
-                case IBV_PEER_OP_POLL_AND_DWORD:
-                case IBV_PEER_OP_POLL_GEQ_DWORD:
-                case IBV_PEER_OP_POLL_NOR_DWORD: {
+                case IBV_EXP_PEER_OP_POLL_AND_DWORD:
+                case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
+                case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
                         gds_err("unexpected polling op in send request\n");
                         retcode = EINVAL;
                         break;
@@ -188,7 +189,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
 
         for (; op && n < n_ops; op = op->next, ++n) {
                 switch(op->type) {
-                case IBV_PEER_OP_FENCE: {
+                case IBV_EXP_PEER_OP_FENCE: {
                         gds_dbg("OP_FENCE: fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
@@ -206,7 +207,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         retcode = EINVAL;
                         break;
                 }
-                case IBV_PEER_OP_STORE_DWORD: {
+                case IBV_EXP_PEER_OP_STORE_DWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
@@ -220,7 +221,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         mlx5_i->flag_value = data;
                         break;
                 }
-                case IBV_PEER_OP_STORE_QWORD: {
+                case IBV_EXP_PEER_OP_STORE_QWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                 op->wr.qword_va.offset;
                         uint64_t data = op->wr.qword_va.data;
@@ -229,7 +230,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         retcode = EINVAL;
                         break;
                 }
-                case IBV_PEER_OP_COPY_BLOCK: {
+                case IBV_EXP_PEER_OP_COPY_BLOCK: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
                                 op->wr.copy_op.offset;
                         size_t len = op->wr.copy_op.len;
@@ -238,9 +239,9 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         retcode = EINVAL;
                         break;
                 }
-                case IBV_PEER_OP_POLL_AND_DWORD:
-                case IBV_PEER_OP_POLL_GEQ_DWORD:
-                case IBV_PEER_OP_POLL_NOR_DWORD: {
+                case IBV_EXP_PEER_OP_POLL_AND_DWORD:
+                case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
+                case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
@@ -251,15 +252,15 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         mlx5_i->cqe_value = data;
 
                         switch(op->type) {
-                        case IBV_PEER_OP_POLL_NOR_DWORD:
+                        case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
                                 // GPU SMs can always do NOR
-                                mlx5_i->cond = GDS_POLL_COND_NOR;
+                                mlx5_i->cond = GDS_WAIT_COND_NOR;
                                 break;
-                        case IBV_PEER_OP_POLL_GEQ_DWORD:
-                                mlx5_i->cond = GDS_POLL_COND_GEQ;
+                        case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
+                                mlx5_i->cond = GDS_WAIT_COND_GEQ;
                                 break;
-                        case IBV_PEER_OP_POLL_AND_DWORD:
-                                mlx5_i->cond = GDS_POLL_COND_AND;
+                        case IBV_EXP_PEER_OP_POLL_AND_DWORD:
+                                mlx5_i->cond = GDS_WAIT_COND_AND;
                                 break;
                         default:
                                 gds_err("unexpected op type\n");

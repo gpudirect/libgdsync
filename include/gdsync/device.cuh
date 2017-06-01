@@ -29,6 +29,8 @@
 
 #include <gdsync.h> // for gds_poll_cond_flag_t
 
+#ifdef  __cplusplus
+
 namespace gdsync {
 
     static const clock_t large_timeout = 1ULL<<32;
@@ -38,7 +40,7 @@ namespace gdsync {
     };
 
     //typedef enum wait_cond { WAIT_GEQ, WAIT_EQ, WAIT_AND, WAIT_NOR } wait_cond_t;
-    typedef gds_poll_cond_flag_t wait_cond_t;
+    typedef gds_wait_cond_flag_t wait_cond_t;
 
     struct sem32 {
         typedef uint32_t T;
@@ -90,10 +92,10 @@ namespace gdsync {
         template<typename S> __device__ inline int wait(S &sem, wait_cond_t cond) {
             int ret = 0;
             switch(cond) {
-            case GDS_POLL_COND_EQ:  ret = wait_eq(sem);  break;
-            case GDS_POLL_COND_GEQ: ret = wait_geq(sem); break;
-            case GDS_POLL_COND_AND: ret = wait_and(sem); break;
-            case GDS_POLL_COND_NOR: ret = wait_nor(sem); break;
+            case GDS_WAIT_COND_EQ:  ret = wait_eq(sem);  break;
+            case GDS_WAIT_COND_GEQ: ret = wait_geq(sem); break;
+            case GDS_WAIT_COND_AND: ret = wait_and(sem); break;
+            case GDS_WAIT_COND_NOR: ret = wait_nor(sem); break;
             default: ret = ERROR_INVALID; break;
             }
             return ret;
@@ -157,3 +159,5 @@ namespace gdsync {
 #endif
 
 } // namespace gdsync
+
+#endif // __cplusplus

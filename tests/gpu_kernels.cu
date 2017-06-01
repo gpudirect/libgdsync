@@ -1,6 +1,8 @@
 #include <sys/time.h>
 #include <assert.h>
 
+#include "gdsync/device.cuh"
+
 #include "gpu.h"
 
 //---------------------------

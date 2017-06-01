@@ -29,11 +29,11 @@
 
 static const size_t max_gpus = 16;
 
-typedef struct ibv_peer_direct_attr gds_peer_attr;
+typedef struct ibv_exp_peer_direct_attr gds_peer_attr;
 
 struct gds_peer;
 
-struct gds_buf: ibv_peer_buf {
+struct gds_buf: ibv_exp_peer_buf {
         gds_peer   *peer;
         CUdeviceptr peer_addr;
         void       *handle;
