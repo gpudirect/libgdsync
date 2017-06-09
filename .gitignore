@@ -1,3 +1,17 @@
+*~
+configure
+config.h.in
+config.log
+Makefile.in
+autom4te.cache
+aclocal.m4
+.libs
+.deps
+config/*
+libgdsync.spec
+libtool
+.depend*
+
 # Object files
 *.o
 *.ko
