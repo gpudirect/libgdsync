@@ -163,7 +163,7 @@ out:
 
 int gpu_finalize()
 {
-	printf("destroying current CUDA Ctx\n");
+	gpu_dbg("destroying current CUDA Ctx\n");
         CUCHECK(cuCtxSynchronize());
         int n;
         for (n=0; n<num_tracking_events; ++n)
