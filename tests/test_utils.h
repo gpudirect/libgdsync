@@ -81,5 +81,5 @@ static inline void gds_busy_wait_us(gds_us_t tmout)
 void gds_atomic_set_dword(uint32_t *ptr, uint32_t value)
 {
         ACCESS_ONCE(*ptr) = value;
-        gds_wmb();
+        //gds_wmb();
 }
