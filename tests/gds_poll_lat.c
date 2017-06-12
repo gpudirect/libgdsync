@@ -170,7 +170,8 @@ int main(int argc, char *argv[])
 
         printf("starting test...\n");
         perf_start();
-
+        gds_us_t delta_t = 0;
+        int warmup = 5;
 	for (i = 0, value = 1; i < num_iters; ++i, ++value) {
                 ASSERT(value <= INT_MAX);
                 uint32_t *h_ptr = (uint32_t*)h_buf + (i % (size/sizeof(uint32_t)));
@@ -267,18 +268,18 @@ int main(int argc, char *argv[])
                 //        ret = gpu_poll_poke();
                 gds_us_t tout = 100;
                 gds_us_t start = gds_get_time_us();
-                gds_us_t tmout = start + tout;
+                gds_us_t end = start;
                 while(1) {
                         uint32_t value = ACCESS_ONCE(*poke_hptrs[n_pokes-1]);
                         gpu_dbg("h_poke[%zu]=%x\n", n_pokes-1, value);
                         if (value) 
                                 break;
-                        // time-out check
-                        if ((gds_get_time_us()-start) > (long)tmout) {
+                        end = gds_get_time_us();
+                        if (end - start > tout) {
                                 gpu_warn("timeout %ldus reached!!\n", tout);
                                 goto err;
                         }
-                        //arch_cpu_relax();
+                        gds_cpu_relax();
                 }
 		PROF(&prof, prof_idx++);
                 // CUDA synchronize
@@ -287,8 +288,17 @@ int main(int argc, char *argv[])
 		PROF(&prof, prof_idx++);
 		prof_update(&prof);
 		prof_idx = 0;
+                
+                if (i > warmup) {
+                        delta_t += end - start;
+                }
 	}
         printf("test finished!\n");
+
+        if (num_iters > warmup) {
+                double avg_wait_us = (double)delta_t / (double)(num_iters - warmup);
+                printf("average wait time: %fus\n", avg_wait_us);
+        }
 
         perf_stop();
         prof_dump(&prof);
