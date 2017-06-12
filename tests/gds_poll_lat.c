@@ -193,19 +193,20 @@ int main(int argc, char *argv[])
                 int k;
 
                 descs[0].tag = GDS_TAG_WAIT_VALUE32;
-                ret = gds_prepare_wait_value32(&descs[0].wait32, d_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
+                ret = gds_prepare_wait_value32(&descs[0].wait32, use_gpu_buf ? d_ptr : h_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
                 if (ret)
                         exit(EXIT_FAILURE);
 
                 for (k=0; k<n_pokes; ++k) {
                         size_t off = ((k+i*n_pokes) % (size/sizeof(uint32_t)));
                         int dflags = use_gpu_buf ? GDS_MEMORY_GPU : GDS_MEMORY_HOST;
+                        uint32_t *ptr = (use_gpu_buf ? (uint32_t*)(d_data) : h_data) + off;
                         if (use_membar && (k==n_pokes-1))
                                 dflags |= GDS_WRITE_PRE_BARRIER;
 
                         descs[1+k].tag = GDS_TAG_WRITE_VALUE32;
                         ret = gds_prepare_write_value32(&descs[1+k].write32,
-                                                        (uint32_t*)(d_data+sizeof(uint32_t)*off),
+                                                        ptr,
                                                         0xd4d00000|(j<<8)|k,
                                                         dflags);
                         if (ret)
@@ -224,12 +225,16 @@ int main(int argc, char *argv[])
                         PROF(&prof, prof_idx++);
                 } else {
                         ret = gds_stream_post_descriptors(gpu_stream, 1, descs, 0);
-                        if (ret)
+                        if (ret) {
+                                gpu_err("error %d while posting wait\n", ret);
                                 exit(EXIT_FAILURE);
+                        }
                         PROF(&prof, prof_idx++);
                         ret = gds_stream_post_descriptors(gpu_stream, n_pokes, descs+1, 0);
-                        if (ret)
+                        if (ret) {
+                                gpu_err("error %d while posting write(s)\n", ret);
                                 exit(EXIT_FAILURE);
+                        }
                 }
 		PROF(&prof, prof_idx++);
 
