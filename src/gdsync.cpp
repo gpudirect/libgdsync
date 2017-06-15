@@ -1357,7 +1357,7 @@ gds_create_cq(struct ibv_context *context, int cqe,
         attr.peer_direct_attrs = peer_attr;
         attr.res_domain = NULL;
         if (peer->res_domain) {
-                gds_warn("using peer res_domain %p for CQ\n", peer->res_domain);
+                gds_dbg("using peer->res_domain %p for CQ\n", peer->res_domain);
                 attr.res_domain = peer->res_domain;
                 attr.comp_mask |= IBV_EXP_CQ_INIT_ATTR_RES_DOMAIN;
         }
