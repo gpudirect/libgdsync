@@ -1276,11 +1276,6 @@ static ibv_exp_res_domain *gds_create_res_domain(struct ibv_context *context)
         res_domain_attr.comp_mask |= IBV_EXP_RES_DOMAIN_THREAD_MODEL;
         res_domain_attr.thread_model = IBV_EXP_THREAD_SINGLE;
 
-        // consider introducing profiles associated with the msg model
-        //res_domain_attr.comp_mask |= IBV_EXP_RES_DOMAIN_MSG_MODEL;
-        //res_domain_attr.msg_model = IBV_EXP_MSG_HIGH_BW;
-        //res_domain_attr.msg_model = IBV_EXP_MSG_FORCE_LOW_LATENCY
-
         ibv_exp_res_domain *res_domain = ibv_exp_create_res_domain(context, &res_domain_attr);
         if (!res_domain) {
                 gds_warn("Can't create resource domain\n");
