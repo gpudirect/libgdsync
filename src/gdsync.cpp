@@ -237,7 +237,9 @@ static bool gds_enable_weak_consistency()
                 test_hidden_flag = false;
                 has_hidden_flag = gds_detect_weak_consistency();
         }
-        return GDS_HAS_WEAK_API || has_hidden_flag && !gds_disable_weak_consistency;
+        gds_dbg("GDS_HAS_WEAK_API=%d has_hidden_flag=%d gds_disable_weak_consistency=%d\n",
+                GDS_HAS_WEAK_API, has_hidden_flag, gds_disable_weak_consistency);
+        return !gds_disable_weak_consistency && (GDS_HAS_WEAK_API || has_hidden_flag);
 }
 
 //-----------------------------------------------------------------------------
