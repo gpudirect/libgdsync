@@ -41,6 +41,20 @@
 #define ASSERT(x) __ASSERT((x), #x)
 
 
+#define __GDSCHECK(stmt, cond_str)					\
+	do {								\
+		int result = (stmt);				\
+		if (0 != result) {				\
+			const char *err_str = strerror(result);               \
+			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, err_str); \
+			exit(EXIT_FAILURE);                             \
+		}							\
+        } while (0)
+
+#define GDSCHECK(stmt) __GDSCHECK(stmt, #stmt)
+
+//----
+
 #define __CUCHECK(stmt, cond_str)					\
 	do {								\
 		CUresult result = (stmt);				\
