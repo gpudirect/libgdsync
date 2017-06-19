@@ -128,9 +128,9 @@ typedef enum gds_write_flags {
 	GDS_WRITE_PRE_BARRIER = 1<<4,
 } gds_write_flags_t;
 
-typedef enum gds_immcopy_flags {
-	GDS_IMMCOPY_POST_TAIL_FLUSH = 1<<4,
-} gds_immcopy_flags_t;
+typedef enum gds_write_memory_flags {
+	GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, /*< add a trailing memory barrier to the memory write operation */
+} gds_write_memory_flags_t;
 
 typedef enum gds_membar_flags {
 	GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
@@ -244,7 +244,32 @@ int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t
 
 
 
-typedef enum gds_tag { GDS_TAG_SEND, GDS_TAG_WAIT, GDS_TAG_WAIT_VALUE32, GDS_TAG_WRITE_VALUE32 } gds_tag_t;
+/**
+ * Represents a staged copy operation
+ * the src buffer can be reused after the API call
+ */
+
+typedef struct gds_write_memory { 
+        uint8_t       *dest;
+        const uint8_t *src;
+        size_t         count;
+        int            flags; // takes gds_memory_type_t | gds_write_memory_flags_t
+} gds_write_memory_t;
+
+/**
+ * flags:  gds_memory_type_t | gds_write_memory_flags_t
+ */
+int gds_prepare_write_memory(gds_write_memory_t *desc, uint8_t *dest, const uint8_t *src, size_t count, int flags);
+
+
+
+typedef enum gds_tag { 
+        GDS_TAG_SEND,
+        GDS_TAG_WAIT,
+        GDS_TAG_WAIT_VALUE32,
+        GDS_TAG_WRITE_VALUE32,
+        GDS_TAG_WRITE_MEMORY
+} gds_tag_t;
 
 typedef struct gds_descriptor {
         gds_tag_t tag; /**< selector for union below */
@@ -253,6 +278,7 @@ typedef struct gds_descriptor {
                 gds_wait_request_t  *wait;
                 gds_wait_value32_t   wait32;
                 gds_write_value32_t  write32;
+                gds_write_memory_t   writemem;
         };
 } gds_descriptor_t;
 
