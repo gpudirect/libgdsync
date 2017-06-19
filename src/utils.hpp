@@ -102,7 +102,8 @@ static inline int gds_curesult_to_errno(CUresult result)
 {
         int retcode = 0;
         switch (result) {
-        case CUDA_SUCCESS: retcode = 0; break;
+        case CUDA_SUCCESS:             retcode = 0; break;
+        case CUDA_ERROR_NOT_SUPPORTED: retcode = EPERM; break;
         case CUDA_ERROR_INVALID_VALUE: retcode = EINVAL; break;
         case CUDA_ERROR_OUT_OF_MEMORY: retcode = ENOMEM; break;
         // TODO: add missing cases
