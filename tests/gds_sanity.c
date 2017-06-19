@@ -226,10 +226,7 @@ int main(int argc, char *argv[])
                                 // d_vals[0-2] = {1,2,3}
 #if HAS_WRITE_MEMORY
                                 descs[k].tag = GDS_TAG_WRITE_MEMORY;
-                                descs[k].writemem.ptr = use_gpu_buf ? d_vals : h_vals;
-                                descs[k].writemem.src = src_data;
-                                descs[k].writemem.length = sizeof(src_data);
-                                descs[k].writemem.flags = mem_type;
+                                GDSCHECK(gds_prepare_write_memory(&descs[k].writemem, (uint8_t*)d_vals, (uint8_t*)src_data, sizeof(src_data[0]), mem_type));
 #else
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
                                 descs[k].write32.ptr = use_gpu_buf ? d_vals : h_vals;
@@ -288,7 +285,7 @@ int main(int argc, char *argv[])
                                         exit(EXIT_FAILURE);
                                 }
                                 else {
-                                        gpu_err("stream order violation\n");
+                                        gpu_err("%d: stream order violation\n", i);
                                         ++n_errors;
                                 }
                         }
