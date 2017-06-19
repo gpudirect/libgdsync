@@ -471,6 +471,30 @@ out:
 
 //-----------------------------------------------------------------------------
 
+int gds_prepare_write_memory(gds_write_memory_t *desc, uint8_t *dest, const uint8_t *src, size_t count, int flags)
+{
+        int ret = 0;
+        assert(desc);
+        if (!is_valid(memtype_from_flags(flags))) {
+                gds_err("invalid memory type in flags\n");
+                ret = EINVAL;
+                goto out;
+        }
+        if (flags & ~(GDS_WRITE_MEMORY_POST_BARRIER_SYS|GDS_MEMORY_MASK)) {
+                gds_err("invalid flags\n");
+                ret = EINVAL;
+                goto out;
+        }
+        desc->dest = dest;
+        desc->src = src;
+        desc->count = count;
+        desc->flags = flags;
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, gds_wait_cond_flag_t cond_flags, int flags)
 {
         int retcode = 0;
@@ -570,6 +594,7 @@ static int get_wait_info(size_t n_descs, gds_descriptor_t *descs, size_t &n_wait
                 case GDS_TAG_SEND:
                 case GDS_TAG_WAIT_VALUE32:
                 case GDS_TAG_WRITE_VALUE32:
+                case GDS_TAG_WRITE_MEMORY:
                         break;
                 default:
                         gds_err("invalid tag\n");
@@ -579,9 +604,10 @@ static int get_wait_info(size_t n_descs, gds_descriptor_t *descs, size_t &n_wait
         return ret;
 }
 
-static size_t calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs)
+static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem_ops)
 {
-        size_t n_mem_ops = 0;
+        int ret = 0;
+        n_mem_ops = 0;
         size_t i;
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
@@ -594,13 +620,15 @@ static size_t calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs)
                         break;
                 case GDS_TAG_WAIT_VALUE32:
                 case GDS_TAG_WRITE_VALUE32:
+                case GDS_TAG_WRITE_MEMORY:
                         n_mem_ops += 2; // ditto
                         break;
                 default:
                         gds_err("invalid tag\n");
+                        ret = EINVAL;
                 }
         }
-        return n_mem_ops;
+        return ret;
 }
 
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags)
@@ -614,8 +642,17 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         size_t last_wait = 0;
         bool move_flush = false;
 
-        n_mem_ops = calc_n_mem_ops(n_descs, descs);
-        get_wait_info(n_descs, descs, n_waits, last_wait);
+        ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
+        if (ret) {
+                gds_err("error %d in calc_n_mem_ops\n", ret);
+                goto out;
+        }
+
+        ret = get_wait_info(n_descs, descs, n_waits, last_wait);
+        if (ret) {
+                gds_err("error %d in get_wait_info\n", ret);
+                goto out;
+        }
 
         gds_dbg("n_descs=%zu n_waits=%zu n_mem_ops=%zu\n", n_descs, n_waits, n_mem_ops);
 
@@ -649,7 +686,8 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 case GDS_TAG_WAIT: {
                         gds_wait_request_t *wreq = desc->wait;
                         int flags = 0;
-                        if (move_flush && i != last_wait)
+                        if (move_flush && i != last_wait) {
+                                gds_dbg("discarding FLUSH!\n");
                                 flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
                         retcode = gds_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
                         if (retcode) {
@@ -674,6 +712,15 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                                 ret = retcode;
                                 goto out;
                         }
+                        break;
+                case GDS_TAG_WRITE_MEMORY:
+                        retcode = gds_fill_inlcpy(params+idx, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
+                        if (retcode) {
+                                gds_err("error %d in gds_fill_poke\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        ++idx;
                         break;
                 default:
                         gds_err("invalid tag for %d entry\n", i);
