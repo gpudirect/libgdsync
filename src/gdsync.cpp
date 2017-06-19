@@ -626,7 +626,7 @@ int gds_stream_batch_ops(CUstream stream, gds_op_list_t &ops, int flags)
                 cuGetErrorString(result, &err_str);
                 gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
                 retcode = gds_curesult_to_errno(result);
-                gds_err("nops=%d flags=%08x\n", nops, cuflags);
+                gds_err("retcode=%d nops=%d flags=%08x, dumping memops:\n", retcode, nops, cuflags);
                 gds_dump_params(ops);
                 goto out;
         }
