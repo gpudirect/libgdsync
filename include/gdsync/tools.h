@@ -46,15 +46,4 @@ typedef struct gds_mem_desc {
 int gds_alloc_mapped_memory(gds_mem_desc_t *desc, size_t size, int flags);
 int gds_free_mapped_memory(gds_mem_desc_t *desc);
 
-// flags is combination of gds_memory_type and gds_poll_flags
-int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, gds_wait_cond_flag_t cond_flag, int flags);
-int gds_stream_post_poke_dword(CUstream stream, uint32_t *ptr, uint32_t value, int flags);
-int gds_stream_post_inline_copy(CUstream stream, void *ptr, void *src, size_t nbytes, int flags);
-int gds_stream_post_polls_and_pokes(CUstream stream, 
-				    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
-				    size_t n_pokes, uint32_t *poke_ptrs[], uint32_t poke_values[], int poke_flags[]);
-int gds_stream_post_polls_and_immediate_copies(CUstream stream, 
-						size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
-						size_t n_imms, void *imm_ptrs[], void *imm_datas[], size_t imm_bytes[], int imm_flags[]);
-
 GDS_END_DECLS

@@ -495,67 +495,6 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, gds_wait_cond_flag_t cond_flags, int flags)
-{
-        int retcode = 0;
-        gds_op_list_t param;
-        retcode = gds_fill_poll(param, ptr, magic, cond_flags, flags);
-        if (retcode) {
-                gds_err("error in fill_poll\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_poke_dword(CUstream stream, uint32_t *ptr, uint32_t value, int flags)
-{
-        int retcode = 0;
-        gds_op_list_t param;
-        retcode = gds_fill_poke(param, ptr, value, flags);
-        if (retcode) {
-                gds_err("error in fill_poke\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_inline_copy(CUstream stream, void *ptr, void *src, size_t nbytes, int flags)
-{
-        int retcode = 0;
-        gds_op_list_t param;
-
-        retcode = gds_fill_inlcpy(param, ptr, src, nbytes, flags);
-        if (retcode) {
-                gds_err("error in fill_poke\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
 static bool no_network_descs_after_entry(size_t n_descs, gds_descriptor_t *descs, size_t idx)
 {
         bool ret = true;
