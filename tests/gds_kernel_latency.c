@@ -149,51 +149,6 @@ struct pingpong_dest {
 	union ibv_gid gid;
 };
 
-static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
-			  int sl, struct pingpong_dest *dest, int sgid_idx)
-{
-	struct ibv_ah_attr ah_attr = {
-		.is_global     = 0,
-		.dlid          = dest->lid,
-		.sl            = sl,
-		.src_path_bits = 0,
-		.port_num      = port
-	};
-	struct ibv_qp_attr attr = {
-		.qp_state		= IBV_QPS_RTR
-	};
-
-	if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
-		fprintf(stderr, "Failed to modify QP to RTR\n");
-		return 1;
-	}
-
-	attr.qp_state	    = IBV_QPS_RTS;
-	attr.sq_psn	    = my_psn;
-
-	if (ibv_modify_qp(ctx->qp, &attr,
-			  IBV_QP_STATE              |
-			  IBV_QP_SQ_PSN)) {
-		fprintf(stderr, "Failed to modify QP to RTS\n");
-		return 1;
-	}
-
-	if (dest->gid.global.interface_id) {
-		ah_attr.is_global = 1;
-		ah_attr.grh.hop_limit = 1;
-		ah_attr.grh.dgid = dest->gid;
-		ah_attr.grh.sgid_index = sgid_idx;
-	}
-
-	ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
-	if (!ctx->ah) {
-		fprintf(stderr, "Failed to create AH\n");
-		return 1;
-	}
-
-	return 0;
-}
-
 static inline unsigned long align_to(unsigned long val, unsigned long pow2)
 {
 	return (val + pow2 - 1) & ~(pow2 - 1);
@@ -1025,6 +980,12 @@ int main(int argc, char *argv[])
                         .src_path_bits = 0,
                         .port_num      = ib_port
                 };
+                if (rem_dest->gid.global.interface_id) {
+                        ah_attr.is_global = 1;
+                        ah_attr.grh.hop_limit = 1;
+                        ah_attr.grh.dgid = rem_dest->gid;
+                        ah_attr.grh.sgid_index = gidx;
+                }
 
                 ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
                 if (!ctx->ah) {
