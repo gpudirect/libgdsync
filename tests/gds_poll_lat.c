@@ -164,7 +164,11 @@ int main(int argc, char *argv[])
                 for (i=0; i<n_bg_streams; ++i) {
                         CUCHECK(cuStreamCreate(&bg_streams[i], 0));
                         //gpu_post_poll_dword_on_stream(str[i], h_bg_buf+i, 1, GDS_WAIT_COND_GEQ, GDS_MEMORY_HOST);
-                        gds_stream_post_poll_dword(bg_streams[i], h_bg_buf+i, 1, GDS_WAIT_COND_GEQ, GDS_MEMORY_HOST);
+                        //GDSCHECK(gds_stream_post_poll_dword(bg_streams[i], h_bg_buf+i, 1, GDS_WAIT_COND_GEQ, GDS_MEMORY_HOST));
+                        gds_descriptor_t desc;
+                        desc.tag = GDS_TAG_WAIT_VALUE32;
+                        GDSCHECK(gds_prepare_wait_value32(&desc.wait32, h_bg_buf+i, 1, GDS_WAIT_COND_GEQ, GDS_MEMORY_HOST));
+                        GDSCHECK(gds_stream_post_descriptors(bg_streams[i], 1, &desc, 0));
                 }
         }
 
