@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
         int use_flush = 0;
         int use_combined = 0;
         int use_membar = 0;
+        int use_wrmem = 0;
         int wait_key = -1;
         CUstream gpu_stream;
 
@@ -44,7 +45,7 @@ int main(int argc, char *argv[])
 
         while(1) {            
                 int c;
-                c = getopt(argc, argv, "cd:p:n:s:hfgP:mW:");
+                c = getopt(argc, argv, "cd:p:n:s:hfgP:mW:w");
                 if (c == -1)
                         break;
 
@@ -77,22 +78,32 @@ int main(int argc, char *argv[])
                         break;
                 case 'f':
                         use_flush = 1;
-                        printf("INFO enabling flush\n");
+                        gpu_info("enabling flush\n");
                         break;
                 case 'g':
                         use_gpu_buf = 1;
-                        printf("INFO polling on GPU buffer\n");
+                        gpu_info("polling on GPU buffer\n");
                         break;
+                case 'w':
+                        use_wrmem = 1;
+                        gpu_info("enabling use of WRITE_MEMORY\n");
+                        break;
+                case '?':
                 case 'h':
                         printf(" %s [-n <iters>][-s <sleep us>][-p # bg streams][-P # pokes][ckhfgomW]\n", argv[0]);
                         exit(EXIT_SUCCESS);
                         break;
                 default:
-                        printf("ERROR: invalid option\n");
+                        gpu_err("invalid option '%c'\n", c);
                         exit(EXIT_FAILURE);
                 }
         }
 
+        if (n_pokes < 1) {
+                gpu_err("n_pokes must be 1 at least\n");
+                exit(EXIT_FAILURE);
+        }
+        
         CUstream bg_streams[n_bg_streams];
         memset(bg_streams, 0, sizeof(bg_streams));
 
@@ -103,28 +114,26 @@ int main(int argc, char *argv[])
         const char *tags = "postpoll|que poke|   sleep|  set dw|pollpoke|str sync";
         if ( /*prof_init(&prof, 1000, 1000, "1ms", 50, 1, tags)*/
                 prof_init(&prof, 100, 100, "100ns", 25*4*2, 5, tags)) {
-                fprintf(stderr, "error in prof_init init.\n");
+                gpu_err("error in prof_init init.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (gpu_init(gpu_id, CU_CTX_SCHED_AUTO)) {
-		fprintf(stderr, "error in GPU init.\n");
+		gpu_err("error in GPU init.\n");
 		exit(EXIT_FAILURE);
 	}
 
         CUCHECK(cuStreamCreate(&gpu_stream, 0));
 
-        puts("");
-        printf("number iterations %d\n", num_iters);
-        printf("num dwords per poke %zu\n", n_pokes);
-        printf("use poll flush %d\n", use_flush);
-        printf("use poke membar %d\n", use_membar);
-        printf("use %d background streams\n", n_bg_streams);
-        printf("sleep %dus\n", sleep_us);
-        printf("buffer size %zd\n", size);
-        printf("poll on %s buffer\n", use_gpu_buf?"GPU":"CPU");
-        printf("write on %s buffer\n", use_gpu_buf?"GPU":"CPU");
-        puts("");
+        gpu_info("number iterations %d\n", num_iters);
+        gpu_info("num dwords per poke %zu\n", n_pokes);
+        gpu_info("use poll flush %d\n", use_flush);
+        gpu_info("use poke membar %d\n", use_membar);
+        gpu_info("use %d background streams\n", n_bg_streams);
+        gpu_info("sleep %dus\n", sleep_us);
+        gpu_info("buffer size %zd\n", size);
+        gpu_info("poll on %s buffer\n", use_gpu_buf?"GPU":"CPU");
+        gpu_info("write on %s buffer\n", use_gpu_buf?"GPU":"CPU");
 
         gds_mem_desc_t desc =  {0,};
         ret = gds_alloc_mapped_memory(&desc, size, use_gpu_buf?GDS_MEMORY_GPU:GDS_MEMORY_HOST);
@@ -134,7 +143,7 @@ int main(int argc, char *argv[])
         }
         CUdeviceptr d_buf = desc.d_ptr;
         void *h_buf = desc.h_ptr;
-        printf("allocated d_buf=%p h_buf=%p\n", (void*)d_buf, h_buf);
+        gpu_info("allocated d_buf=%p h_buf=%p\n", (void*)d_buf, h_buf);
         memset(h_buf, 0, size);
 
         gds_mem_desc_t desc_data =  {0,};
@@ -145,7 +154,7 @@ int main(int argc, char *argv[])
         }
         CUdeviceptr d_data = desc_data.d_ptr;
         uint32_t *h_data = desc_data.h_ptr;
-        printf("allocated d_data=%p h_data=%p\n", (void*)d_data, h_data);
+        gpu_info("allocated d_data=%p h_data=%p\n", (void*)d_data, h_data);
         memset(h_data, 0, size);
 
         int i;
@@ -158,7 +167,7 @@ int main(int argc, char *argv[])
 
         uint32_t *h_bg_buf = NULL;
         if (n_bg_streams) {
-                printf("launching background %dx poll\n", n_bg_streams);
+                gpu_info("launching background %dx poll\n", n_bg_streams);
                 ASSERT(!posix_memalign((void*)&h_bg_buf, page_size, size)); 
                 memset(h_bg_buf, 0, size);
                 for (i=0; i<n_bg_streams; ++i) {
@@ -172,7 +181,7 @@ int main(int argc, char *argv[])
                 }
         }
 
-        printf("starting test...\n");
+        gpu_info("starting test...\n");
         perf_start();
         gds_us_t delta_t = 0;
         int warmup = 5;
@@ -198,9 +207,7 @@ int main(int argc, char *argv[])
                 int k;
 
                 descs[0].tag = GDS_TAG_WAIT_VALUE32;
-                ret = gds_prepare_wait_value32(&descs[0].wait32, use_gpu_buf ? d_ptr : h_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
-                if (ret)
-                        exit(EXIT_FAILURE);
+                GDSCHECK(gds_prepare_wait_value32(&descs[0].wait32, use_gpu_buf ? d_ptr : h_ptr, value, GDS_WAIT_COND_GEQ, poll_flags));
 
                 for (k=0; k<n_pokes; ++k) {
                         size_t off = ((k+i*n_pokes) % (size/sizeof(uint32_t)));
@@ -209,13 +216,23 @@ int main(int argc, char *argv[])
                         if (use_membar && (k==n_pokes-1))
                                 dflags |= GDS_WRITE_PRE_BARRIER;
 
-                        descs[1+k].tag = GDS_TAG_WRITE_VALUE32;
-                        ret = gds_prepare_write_value32(&descs[1+k].write32,
-                                                        ptr,
-                                                        0xd4d00000|(j<<8)|k,
-                                                        dflags);
-                        if (ret)
-                                exit(EXIT_FAILURE);
+                        if (!use_wrmem) {
+                                gpu_dbg("poke %d WRITE_VALUE32\n", k);
+                                descs[1+k].tag = GDS_TAG_WRITE_VALUE32;
+                                GDSCHECK(gds_prepare_write_value32(&descs[1+k].write32,
+                                                                   ptr,
+                                                                   0xd4d00000|(j<<8)|k,
+                                                                   dflags));
+                        } else {
+                                gpu_dbg("poke %d WRITE_MEMORY\n", k);
+                                descs[1+k].tag = GDS_TAG_WRITE_MEMORY;
+                                uint32_t word = 0xd4d00000|(j<<8)|k;
+                                GDSCHECK(gds_prepare_write_memory(&descs[1+k].writemem,
+                                                                  (uint8_t*)ptr,
+                                                                  (uint8_t*)&word,
+                                                                  sizeof(word),
+                                                                  dflags));
+                        }
 
                         poke_hptrs[k] =  h_data  + off;
                         ACCESS_ONCE(*poke_hptrs[k]) = 0;
@@ -224,22 +241,13 @@ int main(int argc, char *argv[])
                 }
 
                 if (use_combined) {
-                        ret = gds_stream_post_descriptors(gpu_stream, 1+n_pokes, descs, 0);
-                        if (ret)
-                                exit(EXIT_FAILURE);
+                        GDSCHECK(gds_stream_post_descriptors(gpu_stream, 1+n_pokes, descs, 0));
                         PROF(&prof, prof_idx++);
                 } else {
-                        ret = gds_stream_post_descriptors(gpu_stream, 1, descs, 0);
-                        if (ret) {
-                                gpu_err("error %d while posting wait\n", ret);
-                                exit(EXIT_FAILURE);
-                        }
+                        // splitting submission into two chunks
+                        GDSCHECK(gds_stream_post_descriptors(gpu_stream, 1, descs, 0));
                         PROF(&prof, prof_idx++);
-                        ret = gds_stream_post_descriptors(gpu_stream, n_pokes, descs+1, 0);
-                        if (ret) {
-                                gpu_err("error %d while posting write(s)\n", ret);
-                                exit(EXIT_FAILURE);
-                        }
+                        GDSCHECK(gds_stream_post_descriptors(gpu_stream, n_pokes, descs+1, 0));
                 }
 		PROF(&prof, prof_idx++);
 
@@ -297,22 +305,22 @@ int main(int argc, char *argv[])
                         delta_t += end - start;
                 }
 	}
-        printf("test finished!\n");
+        gpu_info("test finished!\n");
 
         if (num_iters > warmup) {
                 double avg_wait_us = (double)delta_t / (double)(num_iters - warmup);
-                printf("average wait time: %fus\n", avg_wait_us);
+                printf("sleep time: %d   average wait time: %fus\n", sleep_us, avg_wait_us);
         }
 
         perf_stop();
         prof_dump(&prof);
 err:
         if (n_bg_streams) {
-                printf("signaling %d background polling stream(s)\n", n_bg_streams);
+                gpu_info("signaling %d background polling stream(s)\n", n_bg_streams);
                 int s;
                 for (s=0; s<n_bg_streams; ++s) {
                         if (cuStreamQuery(bg_streams[s]) == CUDA_SUCCESS) {
-                                printf("error: bg stream[%d] is idle!\n", s);
+                                gpu_info("error: bg stream[%d] is idle!\n", s);
                         }
                         gds_atomic_set_dword(h_bg_buf+s, 1);
                 }
@@ -323,20 +331,11 @@ err:
                 }
                 free(h_bg_buf);
         }
-        printf("calling gds_free_mapped_memory\n"); //fflush(stdout); sleep(1);
-        ret = gds_free_mapped_memory(&desc);
-        if (ret) {
-                gpu_err("error (%d) while freeing mem\n", ret);
-                goto out;
-        }
+        gpu_info("calling gds_free_mapped_memory\n"); //fflush(stdout); sleep(1);
+        GDSCHECK(gds_free_mapped_memory(&desc));
+        GDSCHECK(ret = gds_free_mapped_memory(&desc_data));
 
-        ret = gds_free_mapped_memory(&desc_data);
-        if (ret) {
-                gpu_err("error (%d) while freeing mem\n", ret);
-                goto out;
-        }
 out:
-
 	gpu_finalize();
         return ret;
 }
