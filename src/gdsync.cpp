@@ -124,6 +124,16 @@ const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
 
 //-----------------------------------------------------------------------------
 
+static bool gpu_does_support_nor(gds_peer *peer)
+{
+        return false; 
+}
+
+static bool gds_memop_enabled(gds_peer *peer)
+{
+        return true;
+}
+
 // BUG: this feature is GPU device dependent
 static bool gds_enable_write64()
 {
@@ -145,12 +155,12 @@ static bool gds_enable_inlcpy()
 {
         static int gds_disable_inlcpy = -1;
         if (-1 == gds_disable_inlcpy) {
-                const char *env = getenv("GDS_DISABLE_INLINECOPY");
+                const char *env = getenv("GDS_DISABLE_WRITEMEMORY");
                 if (env)
                         gds_disable_inlcpy = !!atoi(env);
                 else
                         gds_disable_inlcpy = 0;
-                gds_dbg("GDS_DISABLE_INLINECOPY=%d\n", gds_disable_inlcpy);
+                gds_dbg("GDS_DISABLE_WRITEMEMORY=%d\n", gds_disable_inlcpy);
         }
         return GDS_HAS_INLINE_COPY && !gds_disable_inlcpy;
 }
@@ -167,7 +177,7 @@ static bool gds_simulate_write64()
                 gds_dbg("GDS_SIMULATE_WRITE64=%d\n", gds_simulate_write64);
 
                 if (gds_simulate_write64 && gds_enable_inlcpy()) {
-                        gds_warn("INLINECOPY has priority over SIMULATE_WRITE64, using the former\n");
+                        gds_warn("WRITEMEMORY has priority over SIMULATE_WRITE64, using the former\n");
                         gds_simulate_write64 = 0;
                 }
         }
