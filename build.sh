@@ -2,7 +2,7 @@
 
 [ ! -d config ] && mkdir -p config
 
-[ ! -e configure ] && ./autogen.sh
+[ ! -e configure ] && autoreconf -fv -i
 
 [ ! -d build ] && mkdir build
 
