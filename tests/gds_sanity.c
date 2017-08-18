@@ -190,6 +190,8 @@ int main(int argc, char *argv[])
 
                         uint32_t src_data[CHUNK_SIZE] = {1, 2, 3};
 
+                        mem_type = GDS_MEMORY_GPU;
+
                         if (0 == round) {
                                 gds_descriptor_t descs[10];
                                 int k = 0;

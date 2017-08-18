@@ -221,7 +221,7 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
 
     ret=gds_stream_post_descriptors(stream, 1, descs, 0);
     if (ret) {
-        gds_err("error %d in gds_prepare_send\n", ret);
+        gds_err("error %d in gds_stream_post_descriptors\n", ret);
         goto out;
     }
 
