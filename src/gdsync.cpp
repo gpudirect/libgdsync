@@ -1107,19 +1107,42 @@ void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
 
 int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t *request, uint32_t *dw, uint32_t val)
 {
-        int retcode = 0;
-        int n_mem_ops = 0;
-        int idx = 0;
+    int retcode = 0;
+    int n_mem_ops = 0;
+    int idx = 0;
+    int k=0;
+    gds_descriptor_t * descs=NULL;
 
-        assert(request);
+    assert(request);
+    assert(count);
 
-        for (int i = 0; i < count; i++) {
-                n_mem_ops += request[i].peek.entries;
-        }
+    descs = (gds_descriptor_t *) calloc(count, sizeof(gds_descriptor_t));
+    if(!descs)
+    {
+        gds_err("Calloc for %d elements\n", count);
+        retcode=1;
+        goto out;
+    }
 
-        gds_dbg("count=%d dw=%p val=%08x space for n_mem_ops=%d\n", count, dw, val, n_mem_ops);
+    for (k=0; k<count; k++) {
+        descs[k].tag = GDS_TAG_WAIT;
+        descs[k].wait = &request[k];
+    }
 
-        CUstreamBatchMemOpParams params[n_mem_ops+1];
+    retcode=gds_stream_post_descriptors(stream, count, descs, 0);
+    if (retcode) {
+        gds_err("error %d in gds_stream_post_descriptors\n", retcode);
+        goto out;
+    }
+
+#if 0
+    for (int i = 0; i < count; i++) {
+        n_mem_ops += request[i].peek.entries;
+    }
+
+    gds_dbg("count=%d dw=%p val=%08x space for n_mem_ops=%d\n", count, dw, val, n_mem_ops);
+
+    CUstreamBatchMemOpParams params[n_mem_ops+1];
 
 	for (int j=0; j<count; j++) {
                 gds_dbg("peek request:%d\n", j);
@@ -1146,6 +1169,8 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
                 gds_err("error %d in stream_batch_ops\n", retcode);
                 goto out;
         }
+#endif
+
 out:
         return retcode;
 }
