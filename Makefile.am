@@ -54,10 +54,10 @@ tests_gds_kernel_loopback_latency_LDADD = $(top_builddir)/src/libgdsync.la $(LIB
 SUFFIXES= .cu
 
 .cu.o:
-	$(NVCC) $(CPPFLAGS) $(NVCCFLAGS)  -c -o $@ $<
+	$(NVCC) $(CPPFLAGS) $(AM_CPPFLAGS) $(NVCCFLAGS)  -c -o $@ $<
 
 
 .cu.lo:
-	$(LIBTOOL) --tag=CC --mode=compile $(NVCC) -o $@ -c $< $(CPPFLAGS) $(NVCCFLAGS)
+	$(LIBTOOL) --tag=CC --mode=compile $(NVCC) -o $@ -c $< $(CPPFLAGS) $(AM_CPPFLAGS) $(NVCCFLAGS)
 
 endif
