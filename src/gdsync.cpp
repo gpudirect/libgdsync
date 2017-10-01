@@ -1120,7 +1120,7 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
     if(!descs)
     {
         gds_err("Calloc for %d elements\n", count);
-        retcode=1;
+        retcode=ENOMEM;
         goto out;
     }
 
@@ -1132,44 +1132,9 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
     retcode=gds_stream_post_descriptors(stream, count, descs, 0);
     if (retcode) {
         gds_err("error %d in gds_stream_post_descriptors\n", retcode);
+        if(descs) free(descs);
         goto out;
     }
-
-#if 0
-    for (int i = 0; i < count; i++) {
-        n_mem_ops += request[i].peek.entries;
-    }
-
-    gds_dbg("count=%d dw=%p val=%08x space for n_mem_ops=%d\n", count, dw, val, n_mem_ops);
-
-    CUstreamBatchMemOpParams params[n_mem_ops+1];
-
-	for (int j=0; j<count; j++) {
-                gds_dbg("peek request:%d\n", j);
-                retcode = gds_post_ops(request[j].peek.entries, request[j].peek.storage, params, idx);
-                if (retcode) {
-                        goto out;
-                }
-        }
-        gds_dbg("idx=%d\n", idx);
-	assert(idx <= n_mem_ops);
-
-        if (dw) {
-                // assume host mem
-                retcode = gds_fill_poke(params + idx, dw, val, GDS_MEMORY_HOST);
-                if (retcode) {
-                        gds_err("error %d at tracking entry\n", retcode);
-                        goto out;
-                }
-                ++idx;
-        }
-
-        retcode = gds_stream_batch_ops(stream, idx, params, 0);
-        if (retcode) {
-                gds_err("error %d in stream_batch_ops\n", retcode);
-                goto out;
-        }
-#endif
 
 out:
         return retcode;

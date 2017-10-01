@@ -102,7 +102,7 @@ static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, en
           )
         {
                 gds_err("erroneous ibv_exp_rollback_flags flag input value\n");
-                ret=1;
+                ret=EINVAL;
                 goto out;
         } 
 
@@ -203,105 +203,83 @@ out:
 
 int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
-    int ret = 0, ret_roll = 0;
-    gds_send_request_t send_info;
-    gds_descriptor_t descs[1];
-    
-    assert(qp);
-    assert(p_ewr);
+        int ret = 0, ret_roll = 0;
+        gds_send_request_t send_info;
+        gds_descriptor_t descs[1];
 
-    ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
-    if (ret) {
-        gds_err("error %d in gds_prepare_send\n", ret);
-        goto out;
-    }
+        assert(qp);
+        assert(p_ewr);
 
-    descs[0].tag = GDS_TAG_SEND;
-    descs[0].send = &send_info;
-
-    ret=gds_stream_post_descriptors(stream, 1, descs, 0);
-    if (ret) {
-        gds_err("error %d in gds_stream_post_descriptors\n", ret);
-        goto out;
-    }
-
-#if 0
-    ret = gds_post_pokes(stream, 1, &send_info, NULL, 0);
-    if (ret) {
-        gds_err("error %d in gds_post_pokes\n", ret);
-        ret_roll = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
-        if (ret_roll) {
-                gds_err("error %d in gds_rollback_qp\n", ret_roll);
+        ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
+        if (ret) {
+                gds_err("error %d in gds_prepare_send\n", ret);
+                goto out;
         }
-        goto out;
-    }
- #endif
 
-    out:
-       return ret;
+        descs[0].tag = GDS_TAG_SEND;
+        descs[0].send = &send_info;
+
+        ret=gds_stream_post_descriptors(stream, 1, descs, 0);
+        if (ret) {
+                gds_err("error %d in gds_stream_post_descriptors\n", ret);
+                goto out;
+        }
+
+        out:
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request)
 {
-    int ret = 0;
-    //struct ibv_exp_send_ex_info *info = (struct ibv_exp_send_ex_info *) request;
-    //ret = gds_post_pokes(stream, 1, request, NULL, 0);
-    ret = gds_stream_post_send_all(stream, 1, request);
-    if (ret) {
-        gds_err("gds_stream_post_send_all (%d)\n", ret);
-    }
-    return ret;
+        int ret = 0;
+        ret = gds_stream_post_send_all(stream, 1, request);
+        if (ret) {
+                gds_err("gds_stream_post_send_all (%d)\n", ret);
+        }
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request)
 {
-    int ret = 0, k = 0;
-    gds_descriptor_t * descs = NULL;
+        int ret = 0, k = 0;
+        gds_descriptor_t * descs = NULL;
 
-    //struct ibv_exp_send_ex_info *info = (struct ibv_exp_send_ex_info *) request;
-    assert(request);
-    assert(count);
+        assert(request);
+        assert(count);
 
-    descs = (gds_descriptor_t *) calloc(count, sizeof(gds_descriptor_t));
-    if(!descs)
-    {
-        gds_err("Calloc for %d elements\n", count);
-        ret=1;
-        goto out;
-    }
+        descs = (gds_descriptor_t *) calloc(count, sizeof(gds_descriptor_t));
+        if(!descs)
+        {
+                gds_err("Calloc for %d elements\n", count);
+                ret=ENOMEM;
+                goto out;
+        }
 
-    for (k=0; k<count; k++) {
-        descs[k].tag = GDS_TAG_SEND;
-        descs[k].send = &request[k];
-    }
+        for (k=0; k<count; k++) {
+                descs[k].tag = GDS_TAG_SEND;
+                descs[k].send = &request[k];
+        }
 
-    ret=gds_stream_post_descriptors(stream, count, descs, 0);
-    if (ret) {
-        gds_err("error %d in gds_stream_post_descriptors\n", ret);
-        goto out;
-    }
+        ret=gds_stream_post_descriptors(stream, count, descs, 0);
+        if (ret) {
+                gds_err("error %d in gds_stream_post_descriptors\n", ret);
+                if(descs) free(descs);
+                goto out;
+        }
 
-#if 0
-    ret = gds_post_pokes(stream, count, request, NULL, 0);
-    if (ret) {
-            gds_err("error in gds_post_pokes (%d)\n", ret);
-    }
-#endif
-
-    out:
-        return ret;
+        out:
+            return ret;
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
 {
-	int retcode = 0;
-
+        int retcode = 0;
         if (flags != 0) {
                 gds_err("invalid flags != 0\n");
                 return EINVAL;
@@ -319,25 +297,24 @@ int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flag
                 goto out;
         }
         //gds_dump_wait_request(request, 1);
-out:
-
-	return retcode;
+        out:
+	       return retcode;
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val)
 {
-	int ret = 0;
+        int ret = 0;
         unsigned MAX_NUM_ENTRIES = sizeof(request->wr)/sizeof(request->wr[0]);
         unsigned n = request->peek.entries;
         struct peer_op_wr *wr = request->peek.storage;
 
         if (n + 1 > MAX_NUM_ENTRIES) {
-		gds_err("no space left to stuff a poke\n");
-		ret = EINVAL;
-		goto out;
-	}
+            gds_err("no space left to stuff a poke\n");
+            ret = EINVAL;
+            goto out;
+        }
 
         // at least 1 op
         assert(n);
@@ -346,15 +323,15 @@ int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val)
         for (; n; --n) wr = wr->next;
         assert(wr);
 
-	wr->type = IBV_EXP_PEER_OP_STORE_DWORD;
-	wr->wr.dword_va.data = val;
-	wr->wr.dword_va.target_id = 0; // direct mapping, offset IS the address
-	wr->wr.dword_va.offset = (ptrdiff_t)(dw-(uint32_t*)0);
+        wr->type = IBV_EXP_PEER_OP_STORE_DWORD;
+        wr->wr.dword_va.data = val;
+        wr->wr.dword_va.target_id = 0; // direct mapping, offset IS the address
+        wr->wr.dword_va.offset = (ptrdiff_t)(dw-(uint32_t*)0);
 
         ++request->peek.entries;
 
-out:
-	return ret;
+        out:
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -405,7 +382,7 @@ int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags)
                 goto out;
         }
 
-	ret = gds_stream_post_wait_cq(stream, &request);
+        ret = gds_stream_post_wait_cq(stream, &request);
         if (ret) {
                 gds_err("error %d in gds_stream_post_wait_cq_ex\n", ret);
                 int retcode2 = gds_abort_wait_cq(cq, &request);
@@ -497,7 +474,7 @@ out:
 int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, gds_wait_cond_flag_t cond_flags, int flags)
 {
         int retcode = 0;
-	CUstreamBatchMemOpParams param[1];
+        CUstreamBatchMemOpParams param[1];
         retcode = gds_fill_poll(param, ptr, magic, cond_flags, flags);
         if (retcode) {
                 gds_err("error in fill_poll\n");
@@ -517,7 +494,7 @@ out:
 int gds_stream_post_poke_dword(CUstream stream, uint32_t *ptr, uint32_t value, int flags)
 {
         int retcode = 0;
-	CUstreamBatchMemOpParams param[1];
+        CUstreamBatchMemOpParams param[1];
         retcode = gds_fill_poke(param, ptr, value, flags);
         if (retcode) {
                 gds_err("error in fill_poke\n");
@@ -537,7 +514,7 @@ out:
 int gds_stream_post_inline_copy(CUstream stream, void *ptr, void *src, size_t nbytes, int flags)
 {
         int retcode = 0;
-	CUstreamBatchMemOpParams param[1];
+        CUstreamBatchMemOpParams param[1];
 
         retcode = gds_fill_inlcpy(param, ptr, src, nbytes, flags);
         if (retcode) {
