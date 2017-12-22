@@ -10,10 +10,15 @@ cd build
 echo "CUDADRV=$CUDADRV"
 if [ ! -e Makefile ]; then
     echo "configuring..."
+    WITHCUDADRV=
+    if [ "x$CUDADRV" != "x" ]; then
+        WITHCUDADRV="--with-cuda-driver=${CUDADRV}"
+    fi
+
     ../configure \
         --prefix=$PREFIX \
         --with-libibverbs=$PREFIX \
-        --with-cuda-driver=$CUDADRV \
+        $WITHCUDADRV \
         --with-cuda-toolkit=$CUDA \
         --with-gdrcopy=$PREFIX \
         --with-mpi=$MPI_HOME \
