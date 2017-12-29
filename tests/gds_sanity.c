@@ -203,7 +203,7 @@ int main(int argc, char *argv[])
                                 //printf("%d: wait at %p for 0x%x\n", i, d_signal, value);
                                 // wait for CPU signal
                                 descs[k].tag = GDS_TAG_WAIT_VALUE32;
-                                descs[k].wait32.ptr   = d_signal;
+                                descs[k].wait32.ptr   = use_gpu_buf ? d_signal : h_signal;
                                 descs[k].wait32.value = value;
                                 descs[k].wait32.cond_flags = GDS_WAIT_COND_EQ;
                                 descs[k].wait32.flags = poll_flags;
@@ -240,7 +240,7 @@ int main(int argc, char *argv[])
 
                                 // while (d_vals[0] != 1);
                                 descs[k].tag = GDS_TAG_WAIT_VALUE32;
-                                descs[k].wait32.ptr   = d_vals;
+                                descs[k].wait32.ptr   = use_gpu_buf ? d_vals : h_vals;
                                 descs[k].wait32.value = 0;
                                 descs[k].wait32.cond_flags = GDS_WAIT_COND_EQ;
                                 descs[k].wait32.flags = poll_flags;
