@@ -298,7 +298,7 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
                 gds_info("INLINECOPY addr:%p alias:%p src:%p len=%zu flags:%08x\n",
                         (void*)param->writeMemory.address,
                         (void*)param->writeMemory.alias,
-                        (void*)param->writeMemory.srcData,
+                        (void*)param->writeMemory.src,
                         param->writeMemory.byteCount,
                         param->writeMemory.flags);
                 break;
@@ -396,7 +396,7 @@ static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, siz
         gds_dbg("op=%d addr=%p src=%p size=%zd flags=%08x\n",
                 param.operation,
                 (void*)param.writeMemory.address,
-                param.writeMemory.srcData,
+                param.writeMemory.src,
                 param.writeMemory.byteCount,
                 param.writeMemory.flags);
         ops.push_back(param);
