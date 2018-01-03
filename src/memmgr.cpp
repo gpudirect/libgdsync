@@ -181,8 +181,10 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
                 }
                 else if ((res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) ||
                          (res == CUDA_ERROR_ALREADY_MAPPED)) {
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
                         // older CUDA driver versions seem to return CUDA_ERROR_ALREADY_MAPPED 
-                        gds_warn("page=%p size=%zu is already registered with CUDA\n", (void*)page_addr, len);
+                        gds_warn("page=%p size=%zu is already registered with CUDA (%d:%s)\n", (void*)page_addr, len, res, err_str);
                         cuda_registered = true;
                 }
                 else if (res == CUDA_ERROR_NOT_INITIALIZED) {

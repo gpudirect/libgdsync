@@ -670,7 +670,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         }
         retcode = gds_stream_batch_ops(stream, params, 0);
         if (retcode) {
-                gds_err("error %d in batch_ops\n", retcode);
+                gds_err("error %d in gds_stream_batch_ops\n", retcode);
                 ret = retcode;
                 goto out;
         }
