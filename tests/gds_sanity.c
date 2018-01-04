@@ -134,6 +134,7 @@ int main(int argc, char *argv[])
         printf("poll on %s buffer\n", use_gpu_buf?"GPU":"CPU");
         printf("write on %s buffer\n", use_gpu_buf?"GPU":"CPU");
         puts("");
+        
 
         int mem_type = use_gpu_buf ? GDS_MEMORY_GPU : GDS_MEMORY_HOST;
 
@@ -172,99 +173,103 @@ int main(int argc, char *argv[])
         int n_errors = 0;
 #define CHUNK_SIZE 3
         int round;
+        int print_dots = 0;
         for (i = 0, value = 1; i < num_iters; ++i, ++value) {
                 for (round = 0; round < 2; ++round) {
                         ASSERT(value <= INT_MAX);
-
                         uint32_t *h_signal = (uint32_t*)h_buf +  ((0) % (size/sizeof(uint32_t)));
                         uint32_t *d_signal = (uint32_t*)d_buf +  ((0) % (size/sizeof(uint32_t)));
+                        uint32_t   *signal = (mem_type == GDS_MEMORY_GPU ? d_signal : h_signal);
 
                         uint32_t *h_done   = (uint32_t*)h_buf +  ((1) % (size/sizeof(uint32_t)));
                         uint32_t *d_done   = (uint32_t*)d_buf +  ((1) % (size/sizeof(uint32_t)));
+                        uint32_t   *done   = (mem_type == GDS_MEMORY_GPU ? d_done : h_done);
 
                         uint32_t *h_dbg    = (uint32_t*)h_buf +  ((2) % (size/sizeof(uint32_t)));
                         uint32_t *d_dbg    = (uint32_t*)d_buf +  ((2) % (size/sizeof(uint32_t)));
+                        uint32_t   *dbg    = (mem_type == GDS_MEMORY_GPU ? d_dbg : h_dbg);
 
+                        // CHUNK_SIZE contiguous blocks of dwords
+                        ASSERT(size >= CHUNK_SIZE*sizeof(uint32_t));
                         uint32_t *h_vals   = (uint32_t*)h_data + ((i*CHUNK_SIZE) % (size/sizeof(uint32_t)));
                         uint32_t *d_vals   = (uint32_t*)d_data + ((i*CHUNK_SIZE) % (size/sizeof(uint32_t)));
+                        uint32_t   *vals   = (mem_type == GDS_MEMORY_GPU ? d_vals : h_vals);
 
                         uint32_t src_data[CHUNK_SIZE] = {1, 2, 3};
+                        int ii;
+                        //uint32_t src_data[CHUNK_SIZE];
+                        //for (ii=0; ii<CHUNK_SIZE; ++ii) src_data[ii] = 1+ii;
 
                         if (0 == round) {
-                                gds_descriptor_t descs[10];
+                                gds_descriptor_t descs[10+CHUNK_SIZE];
                                 int k = 0;
 
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                descs[k].write32.ptr = use_gpu_buf ? d_dbg : h_dbg;
-                                descs[k].write32.value = 0xA000|i;
-                                descs[k].write32.flags = mem_type;
+                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, dbg, 0xA000|i, mem_type));
                                 ++k;
 
-                                //printf("%d: wait at %p for 0x%x\n", i, d_signal, value);
                                 // wait for CPU signal
+                                // while (d_signal != 0);
                                 descs[k].tag = GDS_TAG_WAIT_VALUE32;
-                                descs[k].wait32.ptr   = use_gpu_buf ? d_signal : h_signal;
-                                descs[k].wait32.value = value;
-                                descs[k].wait32.cond_flags = GDS_WAIT_COND_EQ;
-                                descs[k].wait32.flags = poll_flags;
+                                GDSCHECK(gds_prepare_wait_value32(&descs[k].wait32, signal, value, GDS_WAIT_COND_EQ, poll_flags));
                                 ++k;
 
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                descs[k].write32.ptr = use_gpu_buf ? d_dbg : h_dbg;
-                                descs[k].write32.value = 0xB000|i;
-                                descs[k].write32.flags = mem_type;
+                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, dbg, 0xB000|i, mem_type));
                                 ++k;
 
-#if 1
                                 // d_vals[0] = 0
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                descs[k].write32.ptr = use_gpu_buf ? d_vals : h_vals;
-                                descs[k].write32.value = 0;
-                                descs[k].write32.flags = mem_type;
+                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals, 0, mem_type));
                                 ++k;
 
-                                // d_vals[0-2] = {1,2,3}
+                                // overwrite d_vals[0...CHUNK_SIZE-1]={1,2,...}
+                                // if CPU sees d_vals[0]==0, something went wrong with WRITE_MEMORY below
+#define HAS_WRITE_MEMORY 0
 #if HAS_WRITE_MEMORY
+#warning using write memory
                                 descs[k].tag = GDS_TAG_WRITE_MEMORY;
-                                GDSCHECK(gds_prepare_write_memory(&descs[k].writemem, (uint8_t*)d_vals, (uint8_t*)src_data, sizeof(src_data[0]), mem_type));
+                                GDSCHECK(gds_prepare_write_memory(&descs[k].writemem, (uint8_t*)vals, (uint8_t*)src_data, sizeof(src_data), mem_type));
+                                ++k;
 #else
-                                descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                descs[k].write32.ptr = use_gpu_buf ? d_vals : h_vals;
-                                descs[k].write32.value = src_data[0];
-                                descs[k].write32.flags = mem_type;
+                                for (ii=0; ii<CHUNK_SIZE; ++ii) {
+                                        descs[k].tag = GDS_TAG_WRITE_VALUE32;
+                                        GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals+ii, src_data[ii], mem_type));
+                                        ++k;
+                                }
 #endif
+                                // while (d_vals[0] != 0);
+                                // will be updated to 0 by CPU
+                                descs[k].tag = GDS_TAG_WAIT_VALUE32;
+                                GDSCHECK(gds_prepare_wait_value32(&descs[k].wait32, vals, 0, GDS_WAIT_COND_EQ, poll_flags));
                                 ++k;
 
-                                // while (d_vals[0] != 1);
-                                descs[k].tag = GDS_TAG_WAIT_VALUE32;
-                                descs[k].wait32.ptr   = use_gpu_buf ? d_vals : h_vals;
-                                descs[k].wait32.value = 0;
-                                descs[k].wait32.cond_flags = GDS_WAIT_COND_EQ;
-                                descs[k].wait32.flags = poll_flags;
-                                ++k;
-#endif
-                                //printf("%d: write at %p 0x%x\n", i, d_done, value);
-                                // signal CPU
+                                // done = 1;
+                                // to signal CPU
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                descs[k].write32.ptr = use_gpu_buf ? d_done : h_done;
-                                descs[k].write32.value = value;
-                                descs[k].write32.flags = mem_type;
+                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, done, value, mem_type));
                                 ++k;
-        
-                                ret = gds_stream_post_descriptors(gpu_stream, k, descs, 0);
-                                if (ret)
-                                        exit(EXIT_FAILURE);
+
+#if 0        
+                                //puts("sleeping 1s");
+                                //sleep(1);
+#endif
+
+                                GDSCHECK(gds_stream_post_descriptors(gpu_stream, k, descs, 0));
                         }
                         else {
                                 ASSERT(ACCESS_ONCE(*h_signal) == (value-1));
                                 ASSERT(ACCESS_ONCE(*h_done) == (value-1));
                                 
                                 gpu_dbg("%d:       dbg @%p:%08x\n", i, h_dbg, ACCESS_ONCE(*h_dbg));
-                                gpu_dbg("%d: set   sig @%p=%08x\n", i, h_signal, value);
+                                gpu_dbg("%d:       sig @%p:%08x\n", i, h_signal, ACCESS_ONCE(*h_signal));
+                                gpu_dbg("%d:      done @%p:%08x\n", i, h_done, ACCESS_ONCE(*h_done));
+                                gpu_dbg("%d: write sig @%p=%08x\n", i, h_signal, value);
                                 gds_atomic_set_dword(h_signal, value);
                                 gds_wmb();
                                 gpu_dbg("%d:       sig @%p:%08x\n", i, h_signal, ACCESS_ONCE(*h_signal));
-                                usleep(10);
+                                // enough for the GPU to wake up and observe the updated values in the prints below
+                                //usleep(100);
                                 gpu_dbg("%d:       dbg @%p:%08x\n", i, h_dbg, ACCESS_ONCE(*h_dbg));
                                 gpu_dbg("%d:      done @%p:%08x\n", i, h_done, ACCESS_ONCE(*h_done));
                                 gpu_dbg("%d: poll done @%p==%08x\n", i, h_done, value);
@@ -286,15 +291,20 @@ int main(int argc, char *argv[])
                                 }
                                 else {
                                         gpu_err("%d: stream order violation\n", i);
+                                        gpu_err("*done=%08x expected!=%08x &vals[0]=%08x\n", ACCESS_ONCE(*h_done), value, ACCESS_ONCE(vals[0]));
                                         ++n_errors;
                                 }
                         }
                         if (i % 1000 == 0) {
+                                print_dots = 1;
                                 printf("."); fflush(stdout);
                         }
                 }
 
         }
+
+        if (print_dots)
+                puts("");
 
         if (n_errors) {
                 gpu_err("detected n_errors=%d\n", n_errors);
