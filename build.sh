@@ -7,25 +7,29 @@
 [ ! -d build ] && mkdir build
 
 cd build
+echo "PREFIX=$PREFIX"
 echo "CUDADRV=$CUDADRV"
+echo "CUDA=$CUDA"
+echo "MPI_HOME=$MPI_HOME"
+
 if [ ! -e Makefile ]; then
     echo "configuring..."
-    WITHCUDADRV=
+    EXTRA=
     if [ "x$CUDADRV" != "x" ]; then
-        WITHCUDADRV="--with-cuda-driver=${CUDADRV}"
+        EXTRA="$EXTRA --with-cuda-driver=${CUDADRV}"
     fi
+    EXTRA="$EXTRA --enable-test"
+    EXTRA="$EXTRA --enable-extended-memops"
+    #EXTRA="$EXTRA --with-gdstools=$PREFIX"
 
     ../configure \
         --prefix=$PREFIX \
         --with-libibverbs=$PREFIX \
-        $WITHCUDADRV \
         --with-cuda-toolkit=$CUDA \
         --with-gdrcopy=$PREFIX \
         --with-mpi=$MPI_HOME \
-        --enable-test
+        $EXTRA
 
-#        --with-gdstools=$PREFIX \
-#        --enable-extended-memops
 fi
 
 make V=1 clean all install
