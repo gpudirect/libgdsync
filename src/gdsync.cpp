@@ -1107,37 +1107,37 @@ void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
 
 int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t *request, uint32_t *dw, uint32_t val)
 {
-    int retcode = 0;
-    int n_mem_ops = 0;
-    int idx = 0;
-    int k=0;
-    gds_descriptor_t * descs=NULL;
+        int retcode = 0;
+        int n_mem_ops = 0;
+        int idx = 0;
+        int k=0;
+        gds_descriptor_t * descs=NULL;
 
-    assert(request);
-    assert(count);
+        assert(request);
+        assert(count);
 
-    descs = (gds_descriptor_t *) calloc(count, sizeof(gds_descriptor_t));
-    if(!descs)
-    {
-        gds_err("Calloc for %d elements\n", count);
-        retcode=ENOMEM;
-        goto out;
-    }
+        descs = (gds_descriptor_t *) calloc(count, sizeof(gds_descriptor_t));
+        if(!descs)
+        {
+                gds_err("Calloc for %d elements\n", count);
+                retcode=ENOMEM;
+                goto out;
+        }
 
-    for (k=0; k<count; k++) {
-        descs[k].tag = GDS_TAG_WAIT;
-        descs[k].wait = &request[k];
-    }
+        for (k=0; k<count; k++) {
+                descs[k].tag = GDS_TAG_WAIT;
+                descs[k].wait = &request[k];
+        }
 
-    retcode=gds_stream_post_descriptors(stream, count, descs, 0);
-    if (retcode) {
-        gds_err("error %d in gds_stream_post_descriptors\n", retcode);
-        if(descs) free(descs);
-        goto out;
-    }
+        retcode=gds_stream_post_descriptors(stream, count, descs, 0);
+        if (retcode) {
+                gds_err("error %d in gds_stream_post_descriptors\n", retcode);
+                goto out;
+        }
 
-out:
-        return retcode;
+        out:
+                if(descs) free(descs);
+                return retcode;
 }
 
 //-----------------------------------------------------------------------------

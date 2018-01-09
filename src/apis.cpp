@@ -267,11 +267,11 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
         ret=gds_stream_post_descriptors(stream, count, descs, 0);
         if (ret) {
                 gds_err("error %d in gds_stream_post_descriptors\n", ret);
-                if(descs) free(descs);
                 goto out;
         }
 
         out:
+            if(descs) free(descs);
             return ret;
 }
 
@@ -312,7 +312,7 @@ int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val)
 
         if (n + 1 > MAX_NUM_ENTRIES) {
             gds_err("no space left to stuff a poke\n");
-            ret = EINVAL;
+            ret = ENOMEM;
             goto out;
         }
 
