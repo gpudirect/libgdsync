@@ -42,7 +42,7 @@
 #include "objs.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
-
+#include "flusher.hpp"
 //-----------------------------------------------------------------------------
 
 int gds_dbg_enabled()

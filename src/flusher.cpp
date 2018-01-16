@@ -794,7 +794,6 @@ int gds_flusher_stop_thread(pthread_t fThread)
 #define TIMER_START(n)   gettimeofday(&temp_1_##n, (struct timezone*)0)
 #define TIMER_STOP(n)    gettimeofday(&temp_2_##n, (struct timezone*)0)
 #define TIMER_ELAPSED(n) ((temp_2_##n.tv_sec-temp_1_##n.tv_sec)*1.e6+(temp_2_##n.tv_usec-temp_1_##n.tv_usec))
-#endif
 
 //-------------------------------- NVTX -----------------------------------------
 #include "nvToolsExt.h"
@@ -814,6 +813,7 @@ const int num_colors = sizeof(colors)/sizeof(uint32_t);
     nvtxRangePushEx(&eventAttrib); \
 }
 #define POP_RANGE nvtxRangePop();
+#endif
 //-------------------------------------------------------------------------------
 
 typedef int64_t gds_us_t;
@@ -846,7 +846,7 @@ void * gds_flusher_func_thread(void * arg)
     {
         gds_dbg("Thread waiting on flsign_h=%p, current last_value=%d\n", flsign_h, last_value);
         
-        PUSH_RANGE("THREAD", 1);
+        //PUSH_RANGE("THREAD", 1);
         //start = gds_get_time_us();
         while( (ACCESS_ONCE( *flsign_h )) <= last_value ) { pthread_testcancel(); }
         //end = gds_get_time_us();
@@ -873,7 +873,7 @@ void * gds_flusher_func_thread(void * arg)
         //end = gds_get_time_us();
         //delta4 = end - start;
 
-        POP_RANGE;
+        //POP_RANGE;
         //if(local_rank == 0)
         //    gds_warn("thread --> last_value: %d, while polling time: %.2f us, sign read time: %.2f us, read_d time: %.2f us, write ack time: %.2f us\n", last_value, (double)delta1, (double)delta2,  (double)delta3, (double)delta4);
     }
