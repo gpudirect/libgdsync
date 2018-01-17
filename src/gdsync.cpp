@@ -763,6 +763,8 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                             gds_err("error in gds_flusher_add_ops func (idx=%d)\n", n, idx);
                             goto out;
                         }
+                        //gds_warn("poll params\n");
+                        //gds_dump_params(idx, params);
 
                         break;
                 }
