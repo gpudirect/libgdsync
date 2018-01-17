@@ -414,8 +414,6 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
         assert(ptr);
         assert((((unsigned long)ptr) & 0x3) == 0);
 
-        bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
-
         param->operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
         param->waitValue.address = dev_ptr;
         param->waitValue.value = magic;
@@ -437,8 +435,7 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
                 retcode = EINVAL;
                 goto out;
         }
-        if (need_flush)
-                param->waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
+
         gds_dbg("op=%d addr=%p value=%08x cond=%s flags=%08x\n",
                 param->operation,
                 (void*)param->waitValue.address,
