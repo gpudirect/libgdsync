@@ -55,12 +55,12 @@ using namespace std;
 #include "memmgr.hpp"
 #include "archutils.h"
 
-typedef enum {
+typedef enum gds_flusher_type {
     GDS_FLUSHER_NONE=0,
     GDS_FLUSHER_NATIVE,
     GDS_FLUSHER_CPU,
     GDS_FLUSHER_NIC
-} gds_flusher_type;
+} gds_flusher_type_t;
 
 #define GDS_FLUSHER_OP_NATIVE 0
 #define GDS_FLUSHER_OP_CPU 2
