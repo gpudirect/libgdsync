@@ -35,34 +35,45 @@ static gds_flusher_buf flread_d;
 static gds_flusher_buf flack_d;
 static int flusher_value=0;
 static pthread_t flusher_thread;
-static int gds_flusher_service = -1;
-static int gds_gpu_has_flusher=-1;
+static int gds_use_flusher = -1;
 static int local_gpu_id=0;
 
 static const char * flusher_int_to_str(int flusher_int)
 {
-    if(flusher_int == GDS_FLUSHER_TYPE_CPU)
-        return "CPU Thread";
-    else if(flusher_int == GDS_FLUSHER_TYPE_NIC)
+    if(flusher_int == GDS_FLUSHER_NONE)
+        return "No flusher";
+    else if(flusher_int == GDS_FLUSHER_NATIVE)
+        return "GPU native flusher";
+    else if(flusher_int == GDS_FLUSHER_CPU)
+        return "CPU thread";
+    else if(flusher_int == GDS_FLUSHER_NIC)
         return "NIC RDMA PUT";
     else
         return "Unknown";
 }
 
-static inline int gds_flusher_service_active() {
-    if(gds_flusher_service == GDS_FLUSHER_TYPE_CPU || gds_flusher_service == GDS_FLUSHER_TYPE_NIC)
-        return 1;
+static inline bool gds_flusher_service_active() {
+    if(gds_use_flusher == GDS_FLUSHER_CPU || gds_use_flusher == GDS_FLUSHER_NIC)
+        return true;
     else
-        return 0;
+        return false;
 }
 #define CHECK_FLUSHER_SERVICE()                                                 \
-    if(!gds_flusher_service_active())                                           \
+    if(gds_flusher_service_active() == false)                                   \
     {                                                                           \
-        gds_dbg("Flusher service not active (%d)\n", gds_flusher_service);      \
+        gds_dbg("Flusher service not active (%d)\n", gds_use_flusher);         \
         goto out;                                                               \
     }
 
 #define ROUND_TO(V,PS) ((((V) + (PS) - 1)/(PS)) * (PS))
+
+bool gds_use_native_flusher()
+{
+    if(gds_use_flusher == GDS_FLUSHER_NATIVE)
+        return true;
+
+    return false;
+}
 
 static int gds_flusher_pin_buffer(gds_flusher_buf * fl_mem, size_t req_size, int type_mem)
 {
@@ -317,58 +328,70 @@ static int gds_flusher_prepare_put_dmem(gds_send_request_t * send_info, struct g
     return ret;
 }
 //------------------------------- COMMON ------------------------------------
-int gds_gpu_flusher_env()
+int gds_flusher_get_envars()
 {
-    if (-1 == gds_gpu_has_flusher) {
-        const char *env = getenv("GDS_GPU_HAS_FLUSHER");
-        if (env)
-            gds_gpu_has_flusher = !!atoi(env);
-        else
-            gds_gpu_has_flusher = 0;
-
-        gds_warn("GDS_GPU_HAS_FLUSHER=%d\n", gds_gpu_has_flusher);
-    }
-    return gds_gpu_has_flusher;
-}
-
-int gds_service_flusher_env()
-{
-    if (-1 == gds_flusher_service) {
-        const char *env = getenv("GDS_FLUSHER_SERVICE");
+    if (-1 == gds_use_flusher) {
+        const char *env = getenv("GDS_FLUSHER_TYPE");
         if (env)
         {
-            gds_flusher_service = atoi(env);
-            if(gds_flusher_service != GDS_FLUSHER_TYPE_CPU && gds_flusher_service != GDS_FLUSHER_TYPE_NIC)
+            gds_use_flusher = atoi(env);
+            if(
+                gds_use_flusher != GDS_FLUSHER_NONE &&
+                gds_use_flusher != GDS_FLUSHER_NATIVE &&
+                gds_use_flusher != GDS_FLUSHER_CPU &&
+                gds_use_flusher != GDS_FLUSHER_NIC
+            )
             {
-                //gds_err("Erroneous value GDS_FLUSHER_SERVICE=%d. Service not activated\n", gds_flusher_service);
-                gds_flusher_service=0;
+                gds_err("Erroneous flusher type=%d (allowed values 0-%d)\n", gds_use_flusher, GDS_FLUSHER_NIC);
+                gds_use_flusher=GDS_FLUSHER_NONE;
             }
         }
         else
-            gds_flusher_service = 0;
+            gds_use_flusher = GDS_FLUSHER_NONE;
 
-        gds_warn("GDS_FLUSHER_SERVICE=%d\n", gds_flusher_service);
+        gds_warn("GDS_FLUSHER_TYPE=%d\n", gds_use_flusher);
     }
-    return gds_flusher_service;
+    return gds_use_flusher;
 }
 
-int gds_flusher_check_envs()
+int gds_flusher_setup()
 {
-    gds_gpu_flusher_env();
+    gds_flusher_get_envars();
 
-    if(gds_gpu_has_flusher == 1)
+    if(gds_use_flusher == GDS_FLUSHER_NATIVE)
     {
-        gds_flusher_service=0;
-        gds_warn("Using GPU native flusher\n");
+//At least CUDA 9.2
+#if (CUDA_VERSION >= 9020)
+
+        int attr = 0;
+        CUresult result = CUDA_SUCCESS;
+
+        result = cuDeviceGetAttribute(&attr, CU_DEVICE_ATTRIBUTE_CAN_USE_WAIT_VALUE_FLUSH, local_gpu_id);
+        if (CUDA_SUCCESS != result) {
+            const char *err_str = NULL;
+            cuGetErrorString(result, &err_str);
+            gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
+            exit(EXIT_FAILURE);
+        }
+        if(attr == 0)
+        {
+            gds_warn("GPU #%d doesn't support native flusher\n", local_gpu_id);
+            gds_use_flusher=GDS_FLUSHER_NONE;
+        }
+#endif
+
+        if(gds_use_flusher == GDS_FLUSHER_NATIVE)
+            gds_warn("Using GPU native flusher\n");
     }
     else
     {
-        gds_service_flusher_env();
-        if(gds_flusher_service == 0)
+        if(gds_use_flusher == GDS_FLUSHER_NONE)
             gds_warn("No flusher service nor GPU native flusher\n");
         else
-            gds_warn("Using flusher service '%s' (%d)\n", flusher_int_to_str(gds_flusher_service), gds_flusher_service);
+            gds_warn("Using flusher service '%s' (%d)\n", flusher_int_to_str(gds_use_flusher), gds_use_flusher);
     }
+
+    return 0;
 }
 
 int gds_flusher_init(struct ibv_pd *pd, struct ibv_context *context, int gpu_id)
@@ -376,17 +399,16 @@ int gds_flusher_init(struct ibv_pd *pd, struct ibv_context *context, int gpu_id)
     int ret = 0;
     unsigned int flag = 1;
 
-    gds_flusher_check_envs();
-    CHECK_FLUSHER_SERVICE();
-
     local_gpu_id=gpu_id;
+    gds_flusher_setup();
+    CHECK_FLUSHER_SERVICE();
     
     flread_d.size=1*sizeof(int);
     flack_d.size=1*sizeof(int);
 
-    gds_dbg("gds_flusher_service=%d\n", gds_flusher_service);
+    gds_dbg("gds_use_flusher=%d\n", gds_use_flusher);
 
-    if(gds_flusher_service == GDS_FLUSHER_TYPE_CPU)
+    if(gds_use_flusher == GDS_FLUSHER_CPU)
     {
         // ------------------ READ WORD ------------------
         ret = gds_flusher_pin_buffer(&flread_d, flread_d.size, GDS_MEMORY_GPU);
@@ -414,7 +436,7 @@ int gds_flusher_init(struct ibv_pd *pd, struct ibv_context *context, int gpu_id)
         // ------------------ THREAD ------------------
         gds_flusher_start_thread(&flusher_thread);
     }
-    else if(gds_flusher_service == GDS_FLUSHER_TYPE_NIC)
+    else if(gds_use_flusher == GDS_FLUSHER_NIC)
     { 
         // ------------------ READ WORD ------------------
         ret = gds_flusher_pin_buffer(&flread_d, flread_d.size, GDS_MEMORY_GPU);
@@ -490,9 +512,9 @@ int gds_flusher_destroy()
 
     CHECK_FLUSHER_SERVICE();
     
-    gds_dbg("gds_flusher_service=%d\n", gds_flusher_service);
+    gds_dbg("gds_use_flusher=%d\n", gds_use_flusher);
 
-    if(gds_flusher_service == GDS_FLUSHER_TYPE_CPU)
+    if(gds_use_flusher == GDS_FLUSHER_CPU)
     {
         ret=gds_flusher_stop_thread(flusher_thread);
         if(ret)
@@ -517,7 +539,7 @@ int gds_flusher_destroy()
 
         gds_dbg("Device words unpinned\n");
     }
-    else if(gds_flusher_service == GDS_FLUSHER_TYPE_NIC)
+    else if(gds_use_flusher == GDS_FLUSHER_NIC)
     {
         if(!flusher_qp) {
             gds_err("error !flusher_qp\n");
@@ -577,22 +599,14 @@ int gds_flusher_destroy()
 
 int gds_flusher_count_op()
 {
-    if(gds_flusher_service == GDS_FLUSHER_TYPE_CPU)
+    if(gds_use_flusher == GDS_FLUSHER_CPU)
         return GDS_FLUSHER_OP_CPU;
     
-    if(gds_flusher_service == GDS_FLUSHER_TYPE_NIC)
+    if(gds_use_flusher == GDS_FLUSHER_NIC)
         return GDS_FLUSHER_OP_NIC;
 
+    //in case of native flusher or no flusher
     return 0;
-}
-
-void gds_flusher_set_flag(int * flags)
-{
-    //Enable GPU flusher if GPU has internal flusher (flusher service ignored)
-    if(gds_gpu_has_flusher == 1)
-        (*flags) |= GDS_WAIT_POST_FLUSH;
-
-    gds_dbg("flags=%x\n", (*flags));
 }
 
 //Not actually used for now!
@@ -604,7 +618,7 @@ int gds_flusher_post_stream(CUstream stream)
 
     CHECK_FLUSHER_SERVICE();
 
-    if(gds_flusher_service == GDS_FLUSHER_TYPE_CPU)
+    if(gds_use_flusher == GDS_FLUSHER_CPU)
     {
         //write32 signal
         desc[k].tag             = GDS_TAG_WRITE_VALUE32;
@@ -673,7 +687,7 @@ int gds_flusher_add_ops(CUstreamBatchMemOpParams *params, int &idx)
 
     CHECK_FLUSHER_SERVICE();
     
-    if(gds_flusher_service == GDS_FLUSHER_TYPE_CPU)
+    if(gds_use_flusher == GDS_FLUSHER_CPU)
     {
         gds_dbg("gds_fill_poke flsign_h=%p, flusher_value+1=%d, idx=%d\n", flsign_h, flusher_value+1, idx);
         ret = gds_fill_poke(params+idx, (uint32_t*)flsign_h, flusher_value+1, GDS_MEMORY_GPU);
@@ -693,7 +707,7 @@ int gds_flusher_add_ops(CUstreamBatchMemOpParams *params, int &idx)
         }
         ++idx;
     }
-    else if(gds_flusher_service == GDS_FLUSHER_TYPE_NIC)
+    else if(gds_use_flusher == GDS_FLUSHER_NIC)
     {
         ret = gds_fill_poke(params+idx, (uint32_t*)flread_d.buf_d, flusher_value+1, GDS_MEMORY_GPU);
         if(ret)
@@ -730,7 +744,7 @@ int gds_flusher_add_ops(CUstreamBatchMemOpParams *params, int &idx)
     
     }
 
-        gds_dbg("Final idx=%d\n", idx);
+    gds_dbg("Final idx=%d\n", idx);
 
     ++flusher_value;
 

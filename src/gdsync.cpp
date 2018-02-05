@@ -414,7 +414,7 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
         assert(ptr);
         assert((((unsigned long)ptr) & 0x3) == 0);
 
-        //bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
+        bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
 
         param->operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
         param->waitValue.address = dev_ptr;
@@ -439,7 +439,7 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
         }
 
         //No longer supported since CUDA 9.1
-        //if (need_flush) param->waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
+        if (need_flush) param->waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
         
         gds_dbg("op=%d addr=%p value=%08x cond=%s flags=%08x\n",
                 param->operation,
@@ -734,9 +734,9 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                         uint32_t data = op->wr.dword_va.data;
                         // TODO: properly handle a following fence instead of blidly flushing
                         int flags = 0;
-                        if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
-                                gds_flusher_set_flag(&flags);
-
+                        if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH) && gds_use_native_flusher())
+                                flags |= GDS_WAIT_POST_FLUSH;
+                            
                         gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
 
                         switch(op->type) {
@@ -1386,6 +1386,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         int old_errno = errno;
+        bool is_qp_flusher = (flags & GDS_CREATE_QP_FLUSHER);
 
         gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x errno=%d\n", pd, context, gpu_id, flags, errno);
         assert(pd);
@@ -1414,7 +1415,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         }
         qp_attr->send_cq = tx_cq;
         gds_dbg("created send_cq=%p\n", qp_attr->send_cq);
-        if(!(flags & GDS_CREATE_QP_FLUSHER))
+        if(!is_qp_flusher)
         {
                 gds_dbg("creating RX CQ\n");
                 rx_cq = gds_create_cq(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
@@ -1486,7 +1487,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
                 goto err_free_cqs;
         }
 
-        if(!(flags & GDS_CREATE_QP_FLUSHER))
+        if(!is_qp_flusher)
                 gds_warn("created gds_qp=%p\n", gqp);
         else
                 gds_warn("created flusher gds_qp=%p\n", gqp);
@@ -1497,7 +1498,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         gqp->recv_cq.cq = qp->recv_cq;
         gqp->recv_cq.curr_offset = 0;
 
-        if(!(flags & GDS_CREATE_QP_FLUSHER))
+        if(!is_qp_flusher)
         {
                 if(gds_flusher_init(pd, context, gpu_id))
                 {

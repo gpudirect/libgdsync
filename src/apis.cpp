@@ -622,8 +622,8 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         // move flush to last wait in the whole batch
         if (n_waits && no_network_descs_after_entry(n_descs, descs, last_wait)) {
                 gds_dbg("optimizing FLUSH to last wait i=%zu\n", last_wait);
-                //If GPU doesn't support native flusher
-                n_mem_ops += gds_flusher_count_op();
+                if( gds_use_native_flusher() ) move_flush=true;
+                else n_mem_ops += gds_flusher_count_op();
                 gds_dbg("optimizing FLUSH to last wait i=%zu, n_mem_ops: %d, flusher ops: %d\n", last_wait, n_mem_ops, gds_flusher_count_op());
         }
         // alternatively, remove flush for wait is next op is a wait too

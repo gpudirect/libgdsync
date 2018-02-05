@@ -55,26 +55,19 @@ using namespace std;
 #include "memmgr.hpp"
 #include "archutils.h"
 
-#define GDS_FLUSHER_TYPE_CPU 1
-#define GDS_FLUSHER_TYPE_NIC 2
+typedef enum {
+    GDS_FLUSHER_NONE=0,
+    GDS_FLUSHER_NATIVE,
+    GDS_FLUSHER_CPU,
+    GDS_FLUSHER_NIC
+} gds_flusher_type;
 
+#define GDS_FLUSHER_OP_NATIVE 0
 #define GDS_FLUSHER_OP_CPU 2
 #define GDS_FLUSHER_OP_NIC 5
 
 #define GDS_FLUSHER_PORT 1
 #define GDS_FLUSHER_QKEY 0 //0x11111111
-
-#define CUDA_CHECK(stmt)                                \
-do {                                                    \
-    cudaError_t result = (stmt);                        \
-    if (cudaSuccess != result) {                        \
-        fprintf(stderr, "[%s] [%d] cuda failed with %s \n",   \
-         __FILE__, __LINE__, cudaGetErrorString(result));\
-        exit(EXIT_FAILURE);                             \
-    }                                                   \
-    assert(cudaSuccess == result);                      \
-} while (0)
-
 
 typedef struct gds_flusher_buf {
     CUdeviceptr buf_d;
@@ -102,11 +95,12 @@ typedef struct flusher_qp_info {
 typedef flusher_qp_info * flusher_qp_info_t;
 
 //-----------------------------------------------------------------------------
-int gds_gpu_flusher_env();
+bool gds_use_native_flusher();
+int gds_flusher_setup();
+int gds_flusher_get_envars();
 int gds_flusher_init(struct ibv_pd *pd, struct ibv_context *context, int gpu_id);
 int gds_flusher_destroy();
 int gds_flusher_count_op();
-void gds_flusher_set_flag(int * flags);
 int gds_flusher_post_stream(CUstream stream);
 int gds_flusher_add_ops(CUstreamBatchMemOpParams *params, int &idx);
 
