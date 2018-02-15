@@ -20,6 +20,8 @@
 #include "test_utils.h"
 #include "gpu.h"
 
+#define CHUNK_SIZE 16
+
 int poll_dword_geq(uint32_t *ptr, uint32_t payload, gds_us_t tm)
 {
         gds_us_t start = gds_get_time_us();
@@ -171,7 +173,6 @@ int main(int argc, char *argv[])
         perf_start();
 
         int n_errors = 0;
-#define CHUNK_SIZE 3
         int round;
         int print_dots = 0;
         for (i = 0, value = 1; i < num_iters; ++i, ++value) {
@@ -195,10 +196,10 @@ int main(int argc, char *argv[])
                         uint32_t *d_vals   = (uint32_t*)d_data + ((i*CHUNK_SIZE) % (size/sizeof(uint32_t)));
                         uint32_t   *vals   = (mem_type == GDS_MEMORY_GPU ? d_vals : h_vals);
 
-                        uint32_t src_data[CHUNK_SIZE] = {1, 2, 3};
                         int ii;
-                        //uint32_t src_data[CHUNK_SIZE];
-                        //for (ii=0; ii<CHUNK_SIZE; ++ii) src_data[ii] = 1+ii;
+                        //uint32_t src_data[CHUNK_SIZE] = {1, 2, 3};
+                        uint32_t src_data[CHUNK_SIZE];
+                        for (ii=0; ii<CHUNK_SIZE; ++ii) src_data[ii] = 1+ii;
 
                         if (0 == round) {
                                 gds_descriptor_t descs[10+CHUNK_SIZE];
