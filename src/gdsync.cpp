@@ -484,15 +484,15 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
         }
 
         result = cuStreamBatchMemOp(stream, nops, params, cuflags);
-	if (CUDA_SUCCESS != result) {
+        if (CUDA_SUCCESS != result) {
                 const char *err_str = NULL;
                 cuGetErrorString(result, &err_str);
-		gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
+                gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
                 retcode = gds_curesult_to_errno(result);
                 gds_err("nops=%d flags=%08x\n", nops, cuflags);
                 gds_dump_params(nops, params);
                 goto out;
-	}
+        }
 
         if (gds_enable_dump_memops()) {
                 gds_info("nops=%d flags=%08x\n", nops, cuflags);
@@ -792,7 +792,7 @@ int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_
 
         CUstreamBatchMemOpParams params[poke_count+1];
 
-	for (int j=0; j<count; j++) {
+        for (int j=0; j<count; j++) {
                 gds_dbg("peer_commit:%d idx=%d\n", j, idx);
                 retcode = gds_post_ops(info[j].commit.entries, info[j].commit.storage, params, idx);
                 if (retcode) {
@@ -818,7 +818,7 @@ int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_
         }
 out:
 
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -921,7 +921,7 @@ int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uin
 
         assert(info);
 
-	for (int j=0; j<count; j++) {
+        for (int j=0; j<count; j++) {
                 gds_dbg("peer_commit:%d idx=%d\n", j, idx);
                 retcode = gds_post_ops_on_cpu(info[j].commit.entries, info[j].commit.storage);
                 if (retcode) {
@@ -935,21 +935,21 @@ int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uin
         }
 
 out:
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_stream_post_polls_and_pokes(CUstream stream,
-				    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
-				    size_t n_pokes, uint32_t *poke_ptrs[], uint32_t poke_values[], int poke_flags[])
+                                    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
+                                    size_t n_pokes, uint32_t *poke_ptrs[], uint32_t poke_values[], int poke_flags[])
 {
-	int retcode = 0;
-	size_t idx = 0;
-	CUstreamBatchMemOpParams params[n_polls + n_pokes];
+        int retcode = 0;
+        size_t idx = 0;
+        CUstreamBatchMemOpParams params[n_polls + n_pokes];
         gds_dbg("n_polls=%zu n_pokes=%zu\n", n_polls, n_pokes);
 
-	for (size_t j = 0; j < n_polls; ++j, ++idx) {
+        for (size_t j = 0; j < n_polls; ++j, ++idx) {
                 uint32_t *ptr = ptrs[j];
                 uint32_t magic = magics[j];
                 gds_wait_cond_flag_t cond_flag = cond_flags[j];
@@ -960,7 +960,7 @@ int gds_stream_post_polls_and_pokes(CUstream stream,
                         gds_err("error in fill_poll at entry %zu\n", j);
                         goto out;
                 }
-	}
+        }
 
         for (size_t j = 0; j < n_pokes; ++j, ++idx) {
                 uint32_t *addr = poke_ptrs[j];
@@ -983,7 +983,7 @@ int gds_stream_post_polls_and_pokes(CUstream stream,
         }
 
 out:
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -992,11 +992,11 @@ int gds_stream_post_polls_and_immediate_copies(CUstream stream,
                                                size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
                                                size_t n_imms, void *imm_ptrs[], void *imm_datas[], size_t imm_bytes[], int imm_flags[])
 {
-	int retcode = 0;
-	size_t idx = 0;
-	CUstreamBatchMemOpParams params[n_polls + n_imms];
+        int retcode = 0;
+        size_t idx = 0;
+        CUstreamBatchMemOpParams params[n_polls + n_imms];
 
-	for (size_t j = 0; j < n_polls; ++j, ++idx) {
+        for (size_t j = 0; j < n_polls; ++j, ++idx) {
                 uint32_t *ptr = ptrs[j];
                 uint32_t magic = magics[j];
                 gds_wait_cond_flag_t cond_flag = cond_flags[j];
@@ -1007,9 +1007,9 @@ int gds_stream_post_polls_and_immediate_copies(CUstream stream,
                         gds_err("error in fill_poll at entry %zu\n", j);
                         goto out;
                 }
-	}
+        }
 
-	for (size_t j = 0; j < n_imms; ++j, ++idx) {
+        for (size_t j = 0; j < n_imms; ++j, ++idx) {
                 void *ptr = imm_ptrs[j];
                 void *data = imm_datas[j];
                 size_t n_bytes = imm_bytes[j];
@@ -1029,7 +1029,7 @@ int gds_stream_post_polls_and_immediate_copies(CUstream stream,
         }
 
 out:
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -1110,44 +1110,34 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
         int retcode = 0;
         int n_mem_ops = 0;
         int idx = 0;
+        int k=0;
+        gds_descriptor_t * descs=NULL;
 
         assert(request);
+        assert(count);
 
-        for (int i = 0; i < count; i++) {
-                n_mem_ops += request[i].peek.entries;
-        }
-
-        gds_dbg("count=%d dw=%p val=%08x space for n_mem_ops=%d\n", count, dw, val, n_mem_ops);
-
-        CUstreamBatchMemOpParams params[n_mem_ops+1];
-
-	for (int j=0; j<count; j++) {
-                gds_dbg("peek request:%d\n", j);
-                retcode = gds_post_ops(request[j].peek.entries, request[j].peek.storage, params, idx);
-                if (retcode) {
-                        goto out;
-                }
-        }
-        gds_dbg("idx=%d\n", idx);
-	assert(idx <= n_mem_ops);
-
-        if (dw) {
-                // assume host mem
-                retcode = gds_fill_poke(params + idx, dw, val, GDS_MEMORY_HOST);
-                if (retcode) {
-                        gds_err("error %d at tracking entry\n", retcode);
-                        goto out;
-                }
-                ++idx;
-        }
-
-        retcode = gds_stream_batch_ops(stream, idx, params, 0);
-        if (retcode) {
-                gds_err("error %d in stream_batch_ops\n", retcode);
+        descs = (gds_descriptor_t *) calloc(count, sizeof(gds_descriptor_t));
+        if(!descs)
+        {
+                gds_err("Calloc for %d elements\n", count);
+                retcode=ENOMEM;
                 goto out;
         }
-out:
-        return retcode;
+
+        for (k=0; k<count; k++) {
+                descs[k].tag = GDS_TAG_WAIT;
+                descs[k].wait = &request[k];
+        }
+
+        retcode=gds_stream_post_descriptors(stream, count, descs, 0);
+        if (retcode) {
+                gds_err("error %d in gds_stream_post_descriptors\n", retcode);
+                goto out;
+        }
+
+        out:
+                if(descs) free(descs);
+                return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -1403,21 +1393,21 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         tx_cq = gds_create_cq(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? 
                               GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
-	if (!tx_cq) {
+        if (!tx_cq) {
                 ret = errno;
-		gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
-		goto err;
-	}
+                gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
+                goto err;
+        }
 
         gds_dbg("creating RX CQ\n");
         rx_cq = gds_create_cq(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? 
                               GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
-	if (!rx_cq) {
+        if (!rx_cq) {
                 ret = errno;
                 gds_err("error %d while creating RX CQ\n", ret);
-		goto err_free_tx_cq;
-	}
+                goto err_free_tx_cq;
+        }
 
         // peer registration
         qp_attr->send_cq = tx_cq;
@@ -1456,7 +1446,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
                 ret = EINVAL;
                 gds_err("error in ibv_exp_create_qp\n");
                 goto err_free_cqs;
-	}
+        }
 
         gqp->qp = qp;
         gqp->send_cq.cq = qp->send_cq;
@@ -1474,14 +1464,14 @@ err_free_qp:
 
 err_free_cqs:
         gds_dbg("destroying RX CQ\n");
-	ret = ibv_destroy_cq(rx_cq);
+        ret = ibv_destroy_cq(rx_cq);
         if (ret) {
                 gds_err("error %d destroying RX CQ\n", ret);
         }
 
 err_free_tx_cq:
         gds_dbg("destroying TX CQ\n");
-	ret = ibv_destroy_cq(tx_cq);
+        ret = ibv_destroy_cq(tx_cq);
         if (ret) {
                 gds_err("error %d destroying TX CQ\n", ret);
         }
