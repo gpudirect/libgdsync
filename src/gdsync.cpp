@@ -42,7 +42,7 @@
 #include "objs.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
-
+#include "flusher.hpp"
 //-----------------------------------------------------------------------------
 
 int gds_dbg_enabled()
@@ -94,6 +94,7 @@ int gds_dbg_enabled()
 // TODO: use corret value
 // TODO: make it dependent upon the particular GPU
 const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
+const size_t GDS_MAX_BATCH_OPS = 256;
 
 //-----------------------------------------------------------------------------
 
@@ -208,7 +209,7 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
         case CU_STREAM_MEM_OP_WAIT_VALUE_32:
                 gds_info("WAIT32 addr:%p alias:%p value:%08x flags:%08x\n",
                         (void*)param->waitValue.address,
-                        (void*)param->writeValue.alias,
+                        (void*)param->waitValue.alias,
                         param->waitValue.value,
                         param->waitValue.flags);
                 break;
@@ -436,8 +437,10 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
                 retcode = EINVAL;
                 goto out;
         }
-        if (need_flush)
-                param->waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
+
+        //No longer supported since CUDA 9.1
+        if (need_flush) param->waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
+        
         gds_dbg("op=%d addr=%p value=%08x cond=%s flags=%08x\n",
                 param->operation,
                 (void*)param->waitValue.address,
@@ -478,7 +481,7 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
 #endif
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
 
-        if (nops > 256) {
+        if (nops > GDS_MAX_BATCH_OPS) {
                 gds_warn("batch size might be too big, stream=%p nops=%d params=%p flags=%08x\n", stream, nops, params, flags);
                 //return EINVAL;
         }
@@ -561,7 +564,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
 
         for (; op && n < n_ops; op = op->next, ++n) {
                 //int flags = 0;
-                gds_dbg("op[%zu] type:%08x\n", n, op->type);
+                gds_dbg("op[%zu] type:%08x, idx: %d\n", n, op->type, idx);
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
                         gds_dbg("OP_FENCE: fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
@@ -731,9 +734,9 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                         uint32_t data = op->wr.dword_va.data;
                         // TODO: properly handle a following fence instead of blidly flushing
                         int flags = 0;
-                        if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
+                        if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH) && gds_use_native_flusher())
                                 flags |= GDS_WAIT_POST_FLUSH;
-
+                            
                         gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
 
                         switch(op->type) {
@@ -756,7 +759,18 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                                 goto out;
                         }
                         retcode = gds_fill_poll(params+idx, dev_ptr, data, poll_cond, flags);
-                        ++idx;                        
+                        ++idx;
+
+                        retcode = gds_flusher_add_ops(params, idx);
+                        if(retcode)
+                        {
+                            retcode = EINVAL;
+                            gds_err("error in gds_flusher_add_ops func (idx=%d)\n", n, idx);
+                            goto out;
+                        }
+                        //gds_warn("poll params\n");
+                        //gds_dump_params(idx, params);
+
                         break;
                 }
                 default:
@@ -1372,13 +1386,14 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         int old_errno = errno;
+        bool is_qp_flusher = (flags & GDS_CREATE_QP_FLUSHER);
 
         gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x errno=%d\n", pd, context, gpu_id, flags, errno);
         assert(pd);
         assert(context);
         assert(qp_attr);
 
-        if (flags & ~(GDS_CREATE_QP_WQ_ON_GPU|GDS_CREATE_QP_TX_CQ_ON_GPU|GDS_CREATE_QP_RX_CQ_ON_GPU|GDS_CREATE_QP_WQ_DBREC_ON_GPU)) {
+        if (flags & ~(GDS_CREATE_QP_WQ_ON_GPU|GDS_CREATE_QP_TX_CQ_ON_GPU|GDS_CREATE_QP_RX_CQ_ON_GPU|GDS_CREATE_QP_WQ_DBREC_ON_GPU|GDS_CREATE_QP_FLUSHER|GDS_CREATE_QP_GPU_INVALIDATE_RX_CQ|GDS_CREATE_QP_GPU_INVALIDATE_TX_CQ)) {
                 gds_err("invalid flags");
                 return NULL;
         }
@@ -1398,22 +1413,45 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
                 gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
                 goto err;
         }
-
-        gds_dbg("creating RX CQ\n");
-        rx_cq = gds_create_cq(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
-                              (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? 
-                              GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
-        if (!rx_cq) {
-                ret = errno;
-                gds_err("error %d while creating RX CQ\n", ret);
-                goto err_free_tx_cq;
-        }
-
-        // peer registration
         qp_attr->send_cq = tx_cq;
-        qp_attr->recv_cq = rx_cq;
+        gds_dbg("created send_cq=%p\n", qp_attr->send_cq);
+        if(!is_qp_flusher)
+        {
+                gds_dbg("creating RX CQ\n");
+                rx_cq = gds_create_cq(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
+                          (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? 
+                          GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
+                if (!rx_cq) {
+                        ret = errno;
+                        gds_err("error %d while creating RX CQ\n", ret);
+                        goto err_free_tx_cq;
+                }
+
+                // peer registration
+                qp_attr->recv_cq = rx_cq;        
+        }
+        //The flusher doesn't actually need CQs
+        else qp_attr->recv_cq = tx_cq;
+
+        gds_dbg("created recv_cq=%p\n", qp_attr->recv_cq);
+
         qp_attr->pd = pd;
         qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
+
+        // disable overflow checks in ibv_poll_cq(), as GPU might invalidate
+        // the CQE without updating the tracking variables
+        if (flags & GDS_CREATE_QP_GPU_INVALIDATE_RX_CQ) {
+                gds_warn("IGNORE_RQ_OVERFLOW\n");
+                qp_attr->exp_create_flags |= IBV_EXP_QP_CREATE_IGNORE_RQ_OVERFLOW;
+                qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS;
+        }
+
+        if (flags & GDS_CREATE_QP_GPU_INVALIDATE_TX_CQ) {
+                gds_warn("IGNORE_SQ_OVERFLOW\n");
+                qp_attr->exp_create_flags |= IBV_EXP_QP_CREATE_IGNORE_SQ_OVERFLOW;
+                qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS;
+        }
+
 
         gds_dbg("before gds_register_peer_ex\n");
         ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
@@ -1441,12 +1479,18 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PEER_DIRECT;
         qp_attr->peer_direct_attrs = peer_attr;
 
+        gds_dbg("Comp Mask: %x, exp_create_flags: %x\n", qp_attr->comp_mask, qp_attr->exp_create_flags);
         qp = ibv_exp_create_qp(context, qp_attr);
         if (!qp)  {
                 ret = EINVAL;
-                gds_err("error in ibv_exp_create_qp\n");
+                gds_err("error in ibv_exp_create_qp, errno: %d, %s\n", errno, strerror(errno));
                 goto err_free_cqs;
         }
+
+        if(!is_qp_flusher)
+                gds_warn("created gds_qp=%p\n", gqp);
+        else
+                gds_warn("created flusher gds_qp=%p\n", gqp);
 
         gqp->qp = qp;
         gqp->send_cq.cq = qp->send_cq;
@@ -1454,7 +1498,15 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         gqp->recv_cq.cq = qp->recv_cq;
         gqp->recv_cq.curr_offset = 0;
 
-        gds_dbg("created gds_qp=%p\n", gqp);
+        if(!is_qp_flusher)
+        {
+                if(gds_flusher_init(pd, context, gpu_id))
+                {
+                        ret = EINVAL;
+                        gds_err("error in gds_flusher_init\n");
+                        goto err_free_qp;
+                }
+        }
 
         return gqp;
 
@@ -1513,6 +1565,8 @@ int gds_destroy_qp(struct gds_qp *qp)
 
         free(qp);
 
+        gds_flusher_destroy();
+        
         return retcode;
 }
 

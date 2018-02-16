@@ -47,11 +47,14 @@ typedef enum gds_param {
 int gds_query_param(gds_param_t param, int *value);
 
 enum gds_create_qp_flags {
-    GDS_CREATE_QP_DEFAULT      = 0,
-    GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
-    GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
-    GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
-    GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
+        GDS_CREATE_QP_DEFAULT      = 0,
+        GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
+        GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
+        GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
+        GDS_CREATE_QP_GPU_INVALIDATE_TX_CQ = 1 << 3,
+        GDS_CREATE_QP_GPU_INVALIDATE_RX_CQ = 1 << 4,
+        GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
+        GDS_CREATE_QP_FLUSHER = 1<<6,
 };
 
 typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
