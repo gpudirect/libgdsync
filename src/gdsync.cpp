@@ -1305,6 +1305,27 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
 
 //-----------------------------------------------------------------------------
 
+static int gds_create_cq(gds_peer *peer, struct ibv_context *context, ibv_exp_cq_init_attr * attr)
+{
+        if(!peer || !context || !attr)
+        {
+            gds_dbg("Invalid arguments: peer=%d, context=%d, attr=%d\n", 
+                    (!peer)?1:0, (!context)?1:0, (!attr)?1:0);
+            return EINVAL;
+        }
+
+        peer->res_domain = gds_create_res_domain(context);
+        if (peer->res_domain) {
+                gds_dbg("using peer->res_domain %p\n", peer->res_domain);
+                (*attr).res_domain = peer->res_domain;
+                (*attr).comp_mask |= IBV_EXP_CQ_INIT_ATTR_RES_DOMAIN;
+        }
+        else
+            gds_dbg("not using peer->res_domain\n");
+
+        return 0;
+}
+
 struct ibv_cq *
 gds_create_cq(struct ibv_context *context, int cqe,
               void *cq_context, struct ibv_comp_channel *channel,
@@ -1333,10 +1354,11 @@ gds_create_cq(struct ibv_context *context, int cqe,
         attr.flags = 0; // see ibv_exp_cq_create_flags
         attr.peer_direct_attrs = peer_attr;
         attr.res_domain = NULL;
-        if (peer->res_domain) {
-                gds_dbg("using peer->res_domain %p for CQ\n", peer->res_domain);
-                attr.res_domain = peer->res_domain;
-                attr.comp_mask |= IBV_EXP_CQ_INIT_ATTR_RES_DOMAIN;
+
+        ret = gds_create_cq(peer, context, &attr);
+        if (ret) {
+            gds_err("error %d while creating CQ res_domain\n", ret);
+            return NULL;
         }
 
         int old_errno = errno;
@@ -1376,15 +1398,6 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
                 return NULL;
         }
 
-        gds_dbg("before gds_register_peer_ex\n");
-        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
-        if (ret) {
-                gds_err("error %d in gds_register_peer_ex\n", ret);
-                goto err_free_cqs;
-        }
-        peer->res_domain = gds_create_res_domain(context);
-        gds_dbg("created res_domain=%p for GPU %u\n", peer->res_domain, gpu_id);
-
         gds_dbg("creating TX CQ\n");
         tx_cq = gds_create_cq(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? 
@@ -1411,11 +1424,21 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         qp_attr->pd = pd;
         qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
 
+        gds_dbg("before gds_register_peer_ex\n");
+        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        if (ret) {
+                gds_err("error %d in gds_register_peer_ex\n", ret);
+                goto err_free_cqs;
+        }
+
+        peer->res_domain = gds_create_res_domain(context);
         if (peer->res_domain) {
                 gds_warn("using peer res_domain %p for QP\n", peer->res_domain);
                 qp_attr->res_domain = peer->res_domain;
                 qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_RES_DOMAIN;
         }
+        else
+            gds_dbg("not using peer res_domain for QP\n");
 
         peer->alloc_type = gds_peer::WQ;
         peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
