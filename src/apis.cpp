@@ -474,13 +474,13 @@ out:
 int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, gds_wait_cond_flag_t cond_flags, int flags)
 {
         int retcode = 0;
-        CUstreamBatchMemOpParams param[1];
+        gds_op_list_t param;
         retcode = gds_fill_poll(param, ptr, magic, cond_flags, flags);
         if (retcode) {
                 gds_err("error in fill_poll\n");
                 goto out;
         }
-        retcode = gds_stream_batch_ops(stream, 1, param, 0);
+        retcode = gds_stream_batch_ops(stream, param, 0);
         if (retcode) {
                 gds_err("error in batch_ops\n");
                 goto out;
@@ -494,13 +494,13 @@ out:
 int gds_stream_post_poke_dword(CUstream stream, uint32_t *ptr, uint32_t value, int flags)
 {
         int retcode = 0;
-        CUstreamBatchMemOpParams param[1];
+        gds_op_list_t param;
         retcode = gds_fill_poke(param, ptr, value, flags);
         if (retcode) {
                 gds_err("error in fill_poke\n");
                 goto out;
         }
-        retcode = gds_stream_batch_ops(stream, 1, param, 0);
+        retcode = gds_stream_batch_ops(stream, param, 0);
         if (retcode) {
                 gds_err("error in batch_ops\n");
                 goto out;
@@ -514,14 +514,14 @@ out:
 int gds_stream_post_inline_copy(CUstream stream, void *ptr, void *src, size_t nbytes, int flags)
 {
         int retcode = 0;
-        CUstreamBatchMemOpParams param[1];
+        gds_op_list_t param;
 
         retcode = gds_fill_inlcpy(param, ptr, src, nbytes, flags);
         if (retcode) {
                 gds_err("error in fill_poke\n");
                 goto out;
         }
-        retcode = gds_stream_batch_ops(stream, 1, param, 0);
+        retcode = gds_stream_batch_ops(stream, param, 0);
         if (retcode) {
                 gds_err("error in batch_ops\n");
                 goto out;
@@ -626,24 +626,18 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         }
         // alternatively, remove flush for wait is next op is a wait too
 
-        CUstreamBatchMemOpParams params[n_mem_ops];
+        gds_op_list_t params;
 
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
                 switch(desc->tag) {
                 case GDS_TAG_SEND: {
                         gds_send_request_t *sreq = desc->send;
-                        retcode = gds_post_ops(sreq->commit.entries, sreq->commit.storage, params, idx);
+                        retcode = gds_post_ops(sreq->commit.entries, sreq->commit.storage, params);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
                                 goto out;
-                        }
-                        // TODO: fix late checking
-                        //assert(idx <= n_mem_ops);
-                        if (idx >= n_mem_ops) {
-                                gds_err("idx=%d is past allocation (%zu)\n", idx, n_mem_ops);
-                                assert(!"corrupted heap");
                         }
                         break;
                 }
@@ -652,40 +646,36 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         int flags = 0;
                         if (move_flush && i != last_wait)
                                 flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
-                        retcode = gds_post_ops(wreq->peek.entries, wreq->peek.storage, params, idx, flags);
+                        retcode = gds_post_ops(wreq->peek.entries, wreq->peek.storage, params, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
-                        // TODO: fix late checking
-                        assert(idx <= n_mem_ops);
                         break;
                 }
                 case GDS_TAG_WAIT_VALUE32:
-                        retcode = gds_fill_poll(params+idx, desc->wait32.ptr, desc->wait32.value, desc->wait32.cond_flags, desc->wait32.flags);
+                        retcode = gds_fill_poll(params, desc->wait32.ptr, desc->wait32.value, desc->wait32.cond_flags, desc->wait32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poll\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
-                        ++idx;
                         break;
                 case GDS_TAG_WRITE_VALUE32:
-                        retcode = gds_fill_poke(params+idx, desc->write32.ptr, desc->write32.value, desc->write32.flags);
+                        retcode = gds_fill_poke(params, desc->write32.ptr, desc->write32.value, desc->write32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poke\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
-                        ++idx;
                         break;
                 default:
                         assert(0);
                         break;
                 }
         }
-        retcode = gds_stream_batch_ops(stream, idx, params, 0);
+        retcode = gds_stream_batch_ops(stream, params, 0);
         if (retcode) {
                 gds_err("error in batch_ops\n");
                 goto out;
