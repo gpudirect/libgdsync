@@ -1,69 +1,20 @@
-GPUDirect Async
-========
+# GPUDirect Async
 
-Introduction
-===
-libgdsync implements GPUDirect Async support for Infiniband verbs.
+## Introduction
 
 GPUDirect Async is all about moving control logic from third-party devices
 to the GPU.
 
-libgdsync provides APIs which are similar to Infiniband verbs but
-synchronous to CUDA streams.
+LibGDSync implements GPUDirect Async support on InfiniBand Verbs, by bridging the gap between the CUDA and the Verbs APIs. It consists of a set of low-level APIs which are still very similar to IB Verbs though operating on CUDA streams.
 
 
-Requirements
-===
-This prototype has been tested on RHEL 6.x only.
+## Requirements
 
-A recent display driver, i.e. r361, r367 or later, is required.
+### CUDA
 
-A recent CUDA Toolkit is required, minimally 8.0, because of the CUDA
-driver MemOP APIs.
-
-Note that GPU peer mappings must be explicitly enabled, more on this below.
-
-Mellanox OFED (MOFED) 4.0 or newer is required, because of the peer-direct verbs
-extensions. As an alternative, it is possible to use MOFED 3.4 and replace the stock libmlx5 
-with the one at https://github.com/gpudirect/libmlx5/tree/fixes.
-
-Peer-direct verbs are only supported on the libmlx5 low-level plug-in
-module, so either Connect-IB or ConnectX-4 HCAs are required.
-
-The Mellanox OFED GPUDirect RDMA kernel module,
-https://github.com/Mellanox/nv_peer_memory, is required to allow the HCA to
-access the GPU memory.
-
-The GDRCopy library (https://github.com/NVIDIA/gdrcopy) is required to
-create CPU-side user-space mappings of GPU memory, currently used when
-allocating verbs objects on GPU memory.
-
-
-Caveats
-===
-Tests have been done using Mellanox Connect-IB. Any HCA driven by mlx5
-driver should work.
-
-Kepler or newer Tesla/Quadro GPUs are required because of GPUDirect RDMA.
-
-A special HCA firmware setting is currently necessary in combination with GPUs
-prior to Pascal. Use `mlxconfig` to set the `NON_PREFETCHABLE_PF_BAR` parameter
-on your HCA to 1. For more information see [Mellanox Firmware Tools (MFT) User
-Manual](https://www.mellanox.com/related-docs/MFT/MFT_user_manual_4_6_0.pdf).
-
-
-Build
-===
-Git repository does not include autotools files. The first time the directory
-must be configured by running autogen.sh
-
-As an example, the build.sh script is provided. You should modify it
-according to the desired destination paths as well as the location
-of the dependencies.
-
-
-Enabling GPU peer mappings
-===
+- A recent CUDA Toolkit, minimally 8.0, because of the CUDA driver MemOP APIs.
+- A recent display driver, i.e. r361, r367 or later, is required.
+- Explicitly enable GPU peer mappings
 
 GPUDirect Async depends on the ability to create GPU peer mappings of the
 HCA BAR space.
@@ -82,6 +33,12 @@ $ cat /etc/modprobe.d/nvidia.conf
 options nvidia NVreg_RegistryDwords="PeerMappingOverride=1;"
 ```
 
+If the display driver is r387 or newer, the CUDA Memory Operations API must be [explicitly enabled](http://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html#errata-new-features) by means of *NVreg_EnableStreamMemOPs=1*:
+```shell
+$ cat /etc/modprobe.d/nvidia.conf
+options nvidia NVreg_EnableStreamMemOPs=1 NVreg_RegistryDwords="PeerMappingOverride=1;"
+```
+
 After that, either reboot or manually reload the NVIDIA kernel
 module:
 ```shell
@@ -94,8 +51,61 @@ $ modprobe nvidia
 ...
 ```
 
-Acknowledging GPUDirect Async
-===
+### Infiniband
+
+Mellanox OFED (MOFED) 4.0 or newer is required, because of the peer-direct verbs
+extensions. As an alternative, it is possible to use MOFED 3.4 and replace the stock libmlx5 with the one at https://github.com/gpudirect/libmlx5/tree/fixes.
+
+Peer-direct verbs are only supported on the libmlx5 low-level plug-in
+module, so either Connect-IB or ConnectX-4 HCAs are required.
+
+The Mellanox OFED GPUDirect [RDMA kernel module](https://github.com/Mellanox/nv_peer_memory), is required to allow the HCA to
+access the GPU memory.
+
+
+#### Caveats
+
+Tests have been done using Mellanox Connect-IB. Any HCA driven by mlx5
+driver should work.
+
+Kepler or newer Tesla/Quadro GPUs are required because of GPUDirect RDMA.
+
+A special HCA firmware setting is currently necessary in combination with GPUs
+prior to Pascal. Use `mlxconfig` to set the `NON_PREFETCHABLE_PF_BAR` parameter
+on your HCA to 1. For more information see [Mellanox Firmware Tools (MFT) User
+Manual](https://www.mellanox.com/related-docs/MFT/MFT_user_manual_4_6_0.pdf).
+
+### Additional libraries
+
+The [GDRCopy library](https://github.com/NVIDIA/gdrcopy) is required to
+create CPU-side user-space mappings of GPU memory, currently used when
+allocating verbs objects on GPU memory.
+
+### Platforms
+
+This prototype has been tested on RHEL 6.x and Ubuntu 16.04
+
+## Build
+
+Git repository does not include autotools files. The first time the directory
+must be configured by running autogen.sh
+
+As an example, the build.sh script is provided. You should modify it
+according to the desired destination paths as well as the location
+of the dependencies.
+
+Before starting to build LibGDSync, you need to have available on your system [GDRCopy](https://github.com/NVIDIA/gdrcopy) libraries and headers.
+
+## LibMP
+
+[LibMP](https://github.com/gpudirect/libmp) is a lightweight messaging library built on top of LibGDSync APIs, developed as a technology demonstrator to easily deploy the GPUDirect Async technology in applications.
+
+Applications using GPUDirect Async by means of LibMP
+
+- [HPGMG-FV Async](https://github.com/e-ago/hpgmg-cuda-async)
+- [CoMD-CUDA Async](https://github.com/e-ago/CoMD-CUDA-Async)
+
+## Acknowledging GPUDirect Async
 
 If you find this software useful in your work, please cite:
 
