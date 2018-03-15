@@ -626,6 +626,11 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         }
         // alternatively, remove flush for wait is next op is a wait too
 
+        gds_peer *peer = peer_from_stream(stream);
+        if (!peer) {
+                return EINVAL;
+        }
+
         gds_op_list_t params;
 
         for(i = 0; i < n_descs; ++i) {
@@ -633,7 +638,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 switch(desc->tag) {
                 case GDS_TAG_SEND: {
                         gds_send_request_t *sreq = desc->send;
-                        retcode = gds_post_ops(sreq->commit.entries, sreq->commit.storage, params);
+                        retcode = gds_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
@@ -646,7 +651,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         int flags = 0;
                         if (move_flush && i != last_wait)
                                 flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
-                        retcode = gds_post_ops(wreq->peek.entries, wreq->peek.storage, params, flags);
+                        retcode = gds_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
@@ -671,7 +676,9 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         }
                         break;
                 default:
-                        assert(0);
+                        gds_err("invalid tag for %d entry\n", i);
+                        ret = EINVAL;
+                        goto out;
                         break;
                 }
         }
