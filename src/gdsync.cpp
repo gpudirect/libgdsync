@@ -1445,7 +1445,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
 
         rx_cq = gds_create_cq_internal(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
-                              gqp->res_domain);
+                              gqp->res_domain, peer_attr);
         if (!rx_cq) {
                 ret = errno;
                 gds_err("error %d while creating RX CQ\n", ret);
