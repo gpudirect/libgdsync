@@ -1319,7 +1319,7 @@ gds_create_cq_internal(
         {
             gds_dbg("Invalid arguments: context=%d, peer_attr=%d\n", 
                     (!context)?1:0, (!peer_attr)?1:0);
-            return EINVAL;
+            return NULL;
         }
 
         attr.comp_mask = IBV_EXP_CQ_INIT_ATTR_PEER_DIRECT;
@@ -1335,9 +1335,10 @@ gds_create_cq_internal(
         cq = ibv_exp_create_cq(context, cqe, cq_context, channel, comp_vector, &attr);
         if (!cq) {
             gds_err("error %d in ibv_exp_create_cq, old errno %d\n", errno, old_errno);
+            return NULL;
         }
 
-        return 0;
+        return cq;
 }
 
 //Note: general create cq function, not really used for now!
@@ -1373,7 +1374,7 @@ gds_create_cq(struct ibv_context *context, int cqe,
 
         
         cq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id,
-                                    flags res_domain, peer_attr);
+                                    flags, res_domain, peer_attr);
 
         if (!cq) {
             gds_err("error in gds_create_cq_internal\n");
