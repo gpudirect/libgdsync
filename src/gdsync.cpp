@@ -1200,7 +1200,6 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->gpu_id = gpu_id;
         peer->gpu_dev = 0;
         peer->gpu_ctx = 0;
-        peer->res_domain = NULL;
 }
 
 static void gds_init_peer_attr(gds_peer_attr *attr, gds_peer *peer)
@@ -1305,7 +1304,8 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
 
 //-----------------------------------------------------------------------------
 
-static int gds_create_cq_internal(
+static struct ibv_cq *
+gds_create_cq_internal(
                                     struct ibv_context *context, int cqe,
                                     void *cq_context, struct ibv_comp_channel *channel,
                                     int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags,
@@ -1315,10 +1315,10 @@ static int gds_create_cq_internal(
         struct ibv_cq *cq = NULL;
         ibv_exp_cq_init_attr attr;
         
-        if(!peer || !context || !peer_attr)
+        if(!context || !peer_attr)
         {
-            gds_dbg("Invalid arguments: peer=%d, context=%d, peer_attr=%d\n", 
-                    (!peer)?1:0, (!context)?1:0, (!peer_attr)?1:0);
+            gds_dbg("Invalid arguments: context=%d, peer_attr=%d\n", 
+                    (!context)?1:0, (!peer_attr)?1:0);
             return EINVAL;
         }
 
@@ -1371,8 +1371,9 @@ gds_create_cq(struct ibv_context *context, int cqe,
         else
             gds_warn("NOT using res_domain\n");
 
-        cq = gds_create_cq_internal(context, cqe, cq_context, channel,
-                                    comp_vector, gpu_id, flags, res_domain, peer_attr);
+        
+        cq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id,
+                                    flags res_domain, peer_attr);
 
         if (!cq) {
             gds_err("error in gds_create_cq_internal\n");
@@ -1423,7 +1424,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
         if (ret) {
             gds_err("error %d in gds_register_peer_ex\n", ret);
-            goto err_free_cqs;
+            goto err;
         }
 
         gqp->res_domain = gds_create_res_domain(context);
@@ -1530,7 +1531,8 @@ int gds_destroy_qp(struct gds_qp *qp)
         }
 
         if(qp->res_domain) {
-            ret = ibv_exp_destroy_res_domain(qp->qp->context, qp->res_domain);
+            struct ibv_exp_destroy_res_domain_attr attr; //IBV_EXP_DESTROY_RES_DOMAIN_RESERVED
+            ret = ibv_exp_destroy_res_domain(qp->qp->context, qp->res_domain, NULL); //&attr
             if (ret) {
                     gds_err("error %d in ibv_exp_destroy_res_domain\n", ret);
                     retcode = ret;
