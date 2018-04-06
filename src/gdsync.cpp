@@ -1431,6 +1431,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         gqp->recv_cq.cq = NULL;
         gqp->recv_cq.curr_offset = 0;
         gqp->res_domain = NULL;
+        gqp->dev_context=context;
 
         // peer registration
         gds_dbg("before gds_register_peer_ex\n");
@@ -1509,50 +1510,51 @@ err:
 
 //-----------------------------------------------------------------------------
 
-int gds_destroy_qp(struct gds_qp *qp)
+int gds_destroy_qp(struct gds_qp *gqp)
 {
         int retcode = 0;
         int ret;
         
-        if(!qp) return retcode;
+        if(!gqp) return retcode;
 
-        if(qp->qp)
+        if(gqp->qp)
         {
-            ret = ibv_destroy_qp(qp->qp);
+            ret = ibv_destroy_qp(gqp->qp);
             if (ret) {
                     gds_err("error %d in destroy_qp\n", ret);
                     retcode = ret;
             }            
         }
 
-        if(qp->send_cq.cq)
+        if(gqp->send_cq.cq)
         {
-            ret = ibv_destroy_cq(qp->send_cq.cq);
+            ret = ibv_destroy_cq(gqp->send_cq.cq);
             if (ret) {
                     gds_err("error %d in destroy_cq send_cq\n", ret);
                     retcode = ret;
             }
         }
 
-        if(qp->recv_cq.cq)
+        if(gqp->recv_cq.cq)
         {
-            ret = ibv_destroy_cq(qp->recv_cq.cq);
+            ret = ibv_destroy_cq(gqp->recv_cq.cq);
             if (ret) {
                     gds_err("error %d in destroy_cq recv_cq\n", ret);
                     retcode = ret;
             }
         }
 
-        if(qp->res_domain) {
+        if(gqp->res_domain) {
             struct ibv_exp_destroy_res_domain_attr attr; //IBV_EXP_DESTROY_RES_DOMAIN_RESERVED
-            ret = ibv_exp_destroy_res_domain(qp->qp->context, qp->res_domain, NULL); //&attr
+            attr.comp_mask=0;
+            ret = ibv_exp_destroy_res_domain(gqp->dev_context, gqp->res_domain, &attr);
             if (ret) {
-                    gds_err("error %d in ibv_exp_destroy_res_domain\n", ret);
+                    gds_err("ibv_exp_destroy_res_domain error %d: %s\n", ret, strerror(ret));
                     retcode = ret;
             }            
         }
 
-        free(qp);
+        free(gqp);
 
         return retcode;
 }
