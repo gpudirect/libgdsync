@@ -1304,13 +1304,13 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
 
 //-----------------------------------------------------------------------------
 
-static struct ibv_cq *
+static struct gds_cq *
 gds_create_cq_internal(struct ibv_context *context, int cqe,
                         void *cq_context, struct ibv_comp_channel *channel,
                         int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags,
                         struct ibv_exp_res_domain * res_domain)
 {
-        struct ibv_cq *cq = NULL;
+        struct gds_cq *gcq = NULL;
         ibv_exp_cq_init_attr attr;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
@@ -1322,12 +1322,18 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
             return NULL;
         }
 
+        gcq = (struct gds_cq*)calloc(1, sizeof(struct gds_cq));
+        if (!gcq) {
+            gds_err("cannot allocate memory\n");
+            return NULL;
+        }
+
         //Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags
         //before ibv_exp_create_cq
         ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
         if (ret) {
-                gds_err("error %d while registering GPU peer\n", ret);
-                return NULL;
+            gds_err("error %d while registering GPU peer\n", ret);
+            return NULL;
         }
         assert(peer);
         assert(peer_attr);
@@ -1339,29 +1345,29 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         attr.flags = 0; // see ibv_exp_cq_create_flags
         attr.peer_direct_attrs = peer_attr;
         if (res_domain) {
-                gds_dbg("using peer->res_domain %p for CQ\n", res_domain);
-                attr.res_domain = res_domain;
-                attr.comp_mask |= IBV_EXP_CQ_INIT_ATTR_RES_DOMAIN;
+            gds_dbg("using peer->res_domain %p for CQ\n", res_domain);
+            attr.res_domain = res_domain;
+            attr.comp_mask |= IBV_EXP_CQ_INIT_ATTR_RES_DOMAIN;
         }
         
         int old_errno = errno;
-        cq = ibv_exp_create_cq(context, cqe, cq_context, channel, comp_vector, &attr);
-        if (!cq) {
+        gcq->cq = ibv_exp_create_cq(context, cqe, cq_context, channel, comp_vector, &attr);
+        if (!gcq->cq) {
             gds_err("error %d in ibv_exp_create_cq, old errno %d\n", errno, old_errno);
             return NULL;
         }
 
-        return cq;
+        return gcq;
 }
 
 //Note: general create cq function, not really used for now!
-struct ibv_cq *
+struct gds_cq *
 gds_create_cq(struct ibv_context *context, int cqe,
               void *cq_context, struct ibv_comp_channel *channel,
               int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
         int ret = 0;
-        struct ibv_cq *cq = NULL;
+        struct gds_cq *gcq = NULL;
         //TODO: leak of res_domain
         struct ibv_exp_res_domain * res_domain;
         gds_dbg("cqe=%d gpu_id=%d cq_flags=%08x\n", cqe, gpu_id, flags);
@@ -1386,14 +1392,14 @@ gds_create_cq(struct ibv_context *context, int cqe,
             gds_warn("NOT using res_domain\n");
 
         
-        cq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id, flags, res_domain);
+        gcq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id, flags, res_domain);
 
-        if (!cq) {
+        if (!gcq) {
             gds_err("error in gds_create_cq_internal\n");
             return NULL;
         }
 
-        return cq;
+        return gcq;
 }
 
 //-----------------------------------------------------------------------------
@@ -1404,7 +1410,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         int ret = 0;
         struct gds_qp *gqp = NULL;
         struct ibv_qp *qp = NULL;
-        struct ibv_cq *rx_cq = NULL, *tx_cq = NULL;
+        struct gds_cq *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         int old_errno = errno;
@@ -1421,16 +1427,10 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
 
         gqp = (struct gds_qp*)calloc(1, sizeof(struct gds_qp));
         if (!gqp) {
-                gds_err("cannot allocate memory\n");
-                return NULL;
+            gds_err("cannot allocate memory\n");
+            return NULL;
         }
 
-        gqp->qp = NULL;
-        gqp->send_cq.cq = NULL;
-        gqp->send_cq.curr_offset = 0;
-        gqp->recv_cq.cq = NULL;
-        gqp->recv_cq.curr_offset = 0;
-        gqp->res_domain = NULL;
         gqp->dev_context=context;
 
         // peer registration
@@ -1447,27 +1447,27 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         else
             gds_warn("NOT using gqp->res_domain\n");
 
-        tx_cq = gds_create_cq_internal(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
+        tx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
                               gqp->res_domain);
-        if (!tx_cq) {
+        if (!tx_gcq) {
                 ret = errno;
                 gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
                 goto err;
         }
 
-        rx_cq = gds_create_cq_internal(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
+        rx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
                               gqp->res_domain);
-        if (!rx_cq) {
+        if (!rx_gcq) {
                 ret = errno;
                 gds_err("error %d while creating RX CQ\n", ret);
                 goto err;
         }
 
         // peer registration
-        qp_attr->send_cq = tx_cq;
-        qp_attr->recv_cq = rx_cq;
+        qp_attr->send_cq = tx_gcq->cq;
+        qp_attr->recv_cq = rx_gcq->cq;
         qp_attr->pd = pd;
         qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
 
