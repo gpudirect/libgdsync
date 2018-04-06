@@ -67,6 +67,7 @@ struct gds_qp {
         struct gds_cq send_cq;
         struct gds_cq recv_cq;
         struct ibv_exp_res_domain * res_domain;
+        struct ibv_context *dev_context;
 };
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
