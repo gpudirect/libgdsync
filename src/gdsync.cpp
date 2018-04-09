@@ -407,6 +407,7 @@ out:
 }
 
 //-----------------------------------------------------------------------------
+static bool hotfix_print=false;
 
 static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
 {
@@ -418,6 +419,17 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
         assert((((unsigned long)ptr) & 0x3) == 0);
 
         bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
+
+//Flag CU_STREAM_WAIT_VALUE_FLUSH generates an error with CUDA 9.x
+#if defined(__x86_64__) || defined (__i386__) // || defined (__ppc64le__)
+        need_flush=false;
+        if(hotfix_print == false)
+        {
+            gds_warn("RDMA consistency for pre-launched GPU work is not guaranteed at the moment");
+            hotfix_print=true;
+        }
+#endif
+
         CUstreamBatchMemOpParams param;
         param.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
         param.waitValue.address = dev_ptr;
