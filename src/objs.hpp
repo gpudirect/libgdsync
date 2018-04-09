@@ -69,7 +69,6 @@ struct gds_peer {
         int gpu_id;
         CUdevice gpu_dev;
         CUcontext gpu_ctx;
-        ibv_exp_res_domain *res_domain;
 
         // before calling ibv_exp_create_cq(), patch flags with appropriate values
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
