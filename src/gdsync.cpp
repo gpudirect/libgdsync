@@ -250,10 +250,10 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
 
 //-----------------------------------------------------------------------------
 
-void gds_dump_params(unsigned int nops, CUstreamBatchMemOpParams *params)
+void gds_dump_params(gds_op_list_t &params)
 {
-        for (unsigned int n = 0; n < nops; ++n) {
-                CUstreamBatchMemOpParams *param = params + n;
+        for (unsigned int n = 0; n < params.size(); ++n) {
+                CUstreamBatchMemOpParams *param = &params[n];
                 gds_info("param[%d]:\n", n);
                 gds_dump_param(param);
         }
@@ -261,32 +261,34 @@ void gds_dump_params(unsigned int nops, CUstreamBatchMemOpParams *params)
 
 //-----------------------------------------------------------------------------
 
-int gds_fill_membar(CUstreamBatchMemOpParams *param, int flags)
+int gds_fill_membar(gds_op_list_t &ops, int flags)
 {
         int retcode = 0;
 #if GDS_HAS_MEMBAR
+        CUstreamBatchMemOpParams param;
         if (flags & GDS_MEMBAR_FLUSH_REMOTE) {
-                param->operation = CU_STREAM_MEM_OP_FLUSH_REMOTE_WRITES;
-                param->flushRemoteWrites.flags = 0;
+                param.operation = CU_STREAM_MEM_OP_FLUSH_REMOTE_WRITES;
+                param.flushRemoteWrites.flags = 0;
                 gds_dbg("op=%d flush_remote flags=%08x\n",
-                        param->operation,
-                        param->flushRemoteWrites.flags);
+                        param.operation,
+                        param.flushRemoteWrites.flags);
         } else {
                 if (flags & GDS_MEMBAR_DEFAULT) {
-                        param->operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
-                        param->memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_DEFAULT;
+                        param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
+                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_DEFAULT;
                 } else if (flags & GDS_MEMBAR_SYS) {
-                        param->operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
-                        param->memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_SYS;
+                        param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
+                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_SYS;
                 } else {
                         gds_err("error, unsupported membar\n");
                         retcode = EINVAL;
                         goto out;
                 }
                 gds_dbg("op=%d membar flags=%08x\n",
-                        param->operation,
-                        param->memoryBarrier.flags);
+                        param.operation,
+                        param.memoryBarrier.flags);
         }
+        ops.push_back(param);
 out:
 #else
         gds_err("error, inline copy is unsupported\n");
@@ -297,10 +299,11 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, CUdeviceptr addr, void *data, size_t n_bytes, int flags)
+static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, size_t n_bytes, int flags)
 {
         int retcode = 0;
 #if GDS_HAS_INLINE_COPY
+        CUstreamBatchMemOpParams param;
         CUdeviceptr dev_ptr = addr;
 
         assert(addr);
@@ -311,19 +314,20 @@ static int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, CUdeviceptr addr, vo
 
         bool need_barrier       = (flags  & GDS_IMMCOPY_POST_TAIL_FLUSH  ) ? true : false;
 
-        param->operation = CU_STREAM_MEM_OP_INLINE_COPY;
-        param->inlineCopy.byteCount = n_bytes;
-        param->inlineCopy.srcData = data;
-        param->inlineCopy.address = dev_ptr;
-        param->inlineCopy.flags = CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
+        param.operation = CU_STREAM_MEM_OP_INLINE_COPY;
+        param.inlineCopy.byteCount = n_bytes;
+        param.inlineCopy.srcData = data;
+        param.inlineCopy.address = dev_ptr;
+        param.inlineCopy.flags = CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
         if (need_barrier)
-                param->inlineCopy.flags = 0;
+                param.inlineCopy.flags = 0;
         gds_dbg("op=%d addr=%p src=%p size=%zd flags=%08x\n",
-                param->operation,
-                (void*)param->inlineCopy.address,
-                param->inlineCopy.srcData,
-                param->inlineCopy.byteCount,
-                param->inlineCopy.flags);
+                param.operation,
+                (void*)param.inlineCopy.address,
+                param.inlineCopy.srcData,
+                param.inlineCopy.byteCount,
+                param.inlineCopy.flags);
+        ops.push_back(param);
 #else
         gds_err("error, inline copy is unsupported\n");
         retcode = EINVAL;
@@ -331,7 +335,7 @@ static int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, CUdeviceptr addr, vo
         return retcode;
 }
 
-int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, void *ptr, void *data, size_t n_bytes, int flags)
+int gds_fill_inlcpy(gds_op_list_t &ops, void *ptr, void *data, size_t n_bytes, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
@@ -341,7 +345,7 @@ int gds_fill_inlcpy(CUstreamBatchMemOpParams *param, void *ptr, void *data, size
                 goto out;
         }
 
-        retcode = gds_fill_inlcpy(param, dev_ptr, data, n_bytes, flags);
+        retcode = gds_fill_inlcpy(ops, dev_ptr, data, n_bytes, flags);
 out:
         return retcode;
 }
@@ -351,14 +355,14 @@ out:
 static void gds_enable_barrier_for_inlcpy(CUstreamBatchMemOpParams *param)
 {
 #if GDS_HAS_INLINE_COPY
-        assert(param->operation == CU_STREAM_MEM_OP_INLINE_COPY);
-        param->inlineCopy.flags &= ~CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
+        assert(param.operation == CU_STREAM_MEM_OP_INLINE_COPY);
+        param.inlineCopy.flags &= ~CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
 #endif
 }
 
 //-----------------------------------------------------------------------------
 
-static int gds_fill_poke(CUstreamBatchMemOpParams *param, CUdeviceptr addr, uint32_t value, int flags)
+static int gds_fill_poke(gds_op_list_t &ops, CUdeviceptr addr, uint32_t value, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = addr;
@@ -368,23 +372,23 @@ static int gds_fill_poke(CUstreamBatchMemOpParams *param, CUdeviceptr addr, uint
         assert((((unsigned long)addr) & 0x3) == 0); 
 
         bool need_barrier = (flags  & GDS_WRITE_PRE_BARRIER ) ? true : false;
-
-        param->operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
-        param->writeValue.address = dev_ptr;
-        param->writeValue.value = value;
-        param->writeValue.flags = CU_STREAM_WRITE_VALUE_NO_MEMORY_BARRIER;
+        CUstreamBatchMemOpParams param;
+        param.operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
+        param.writeValue.address = dev_ptr;
+        param.writeValue.value = value;
+        param.writeValue.flags = CU_STREAM_WRITE_VALUE_NO_MEMORY_BARRIER;
         if (need_barrier)
-                param->writeValue.flags = 0;
+                param.writeValue.flags = 0;
         gds_dbg("op=%d addr=%p value=%08x flags=%08x\n",
-                param->operation,
-                (void*)param->writeValue.address,
-                param->writeValue.value,
-                param->writeValue.flags);
-
+                param.operation,
+                (void*)param.writeValue.address,
+                param.writeValue.value,
+                param.writeValue.flags);
+        ops.push_back(param);
         return retcode;
 }
 
-int gds_fill_poke(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t value, int flags)
+int gds_fill_poke(gds_op_list_t &ops, uint32_t *ptr, uint32_t value, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
@@ -397,14 +401,15 @@ int gds_fill_poke(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t value
                 goto out;
         }
 
-        retcode = gds_fill_poke(param, dev_ptr, value, flags);
+        retcode = gds_fill_poke(ops, dev_ptr, value, flags);
 out:
         return retcode;
 }
 
 //-----------------------------------------------------------------------------
+static bool hotfix_print=false;
 
-static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
+static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
 {
         int retcode = 0;
         const char *cond_str = NULL;
@@ -415,20 +420,31 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
 
         bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
 
-        param->operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
-        param->waitValue.address = dev_ptr;
-        param->waitValue.value = magic;
+//Flag CU_STREAM_WAIT_VALUE_FLUSH generates an error with CUDA 9.x
+#if defined(__x86_64__) || defined (__i386__) // || defined (__ppc64le__)
+        need_flush=false;
+        if(hotfix_print == false)
+        {
+            gds_warn("RDMA consistency for pre-launched GPU work is not guaranteed at the moment");
+            hotfix_print=true;
+        }
+#endif
+
+        CUstreamBatchMemOpParams param;
+        param.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
+        param.waitValue.address = dev_ptr;
+        param.waitValue.value = magic;
         switch(cond_flag) {
         case GDS_WAIT_COND_GEQ:
-                param->waitValue.flags = CU_STREAM_WAIT_VALUE_GEQ;
+                param.waitValue.flags = CU_STREAM_WAIT_VALUE_GEQ;
                 cond_str = "CU_STREAM_WAIT_VALUE_GEQ";
                 break;
         case GDS_WAIT_COND_EQ:
-                param->waitValue.flags = CU_STREAM_WAIT_VALUE_EQ;
+                param.waitValue.flags = CU_STREAM_WAIT_VALUE_EQ;
                 cond_str = "CU_STREAM_WAIT_VALUE_EQ";
                 break;
         case GDS_WAIT_COND_AND:
-                param->waitValue.flags = CU_STREAM_WAIT_VALUE_AND;
+                param.waitValue.flags = CU_STREAM_WAIT_VALUE_AND;
                 cond_str = "CU_STREAM_WAIT_VALUE_AND";
                 break;
         default: 
@@ -437,18 +453,19 @@ static int gds_fill_poll(CUstreamBatchMemOpParams *param, CUdeviceptr ptr, uint3
                 goto out;
         }
         if (need_flush)
-                param->waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
+                param.waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
         gds_dbg("op=%d addr=%p value=%08x cond=%s flags=%08x\n",
-                param->operation,
-                (void*)param->waitValue.address,
-                param->waitValue.value,
+                param.operation,
+                (void*)param.waitValue.address,
+                param.waitValue.value,
                 cond_str,
-                param->waitValue.flags);
+                param.waitValue.flags);
+        ops.push_back(param);
 out:
         return retcode;
 }
 
-int gds_fill_poll(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags)
+int gds_fill_poll(gds_op_list_t &ops, uint32_t *ptr, uint32_t magic, int cond_flag, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
@@ -461,14 +478,14 @@ int gds_fill_poll(CUstreamBatchMemOpParams *param, uint32_t *ptr, uint32_t magic
                 goto out;
         }
 
-        retcode = gds_fill_poll(param, dev_ptr, magic, cond_flag, flags);
+        retcode = gds_fill_poll(ops, dev_ptr, magic, cond_flag, flags);
 out:
         return retcode;
 }
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *params, int flags)
+int gds_stream_batch_ops(CUstream stream, gds_op_list_t &ops, int flags)
 {
         CUresult result = CUDA_SUCCESS;
         int retcode = 0;
@@ -476,27 +493,28 @@ int gds_stream_batch_ops(CUstream stream, int nops, CUstreamBatchMemOpParams *pa
 #if GDS_HAS_WEAK_API
         cuflags |= gds_enable_weak_consistency() ? CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK : 0;
 #endif
+        size_t nops = ops.size();
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
 
         if (nops > 256) {
-                gds_warn("batch size might be too big, stream=%p nops=%d params=%p flags=%08x\n", stream, nops, params, flags);
+                gds_warn("batch size might be too big, stream=%p nops=%d flags=%08x\n", stream, nops, flags);
                 //return EINVAL;
         }
 
-        result = cuStreamBatchMemOp(stream, nops, params, cuflags);
-	if (CUDA_SUCCESS != result) {
+        result = cuStreamBatchMemOp(stream, nops, &ops[0], cuflags);
+        if (CUDA_SUCCESS != result) {
                 const char *err_str = NULL;
                 cuGetErrorString(result, &err_str);
-		gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
+                gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
                 retcode = gds_curesult_to_errno(result);
                 gds_err("nops=%d flags=%08x\n", nops, cuflags);
-                gds_dump_params(nops, params);
+                gds_dump_params(ops);
                 goto out;
-	}
+        }
 
         if (gds_enable_dump_memops()) {
                 gds_info("nops=%d flags=%08x\n", nops, cuflags);
-                gds_dump_params(nops, params);
+                gds_dump_params(ops);
         }
 
 out:        
@@ -536,14 +554,16 @@ out:
   INLCPY 128B
 */
 
-int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *params, int &idx, int post_flags)
+int gds_post_ops(size_t n_ops, struct peer_op_wr *op, gds_op_list_t &ops, int post_flags)
 {
         int retcode = 0;
         size_t n = 0;
         bool prev_was_fence = false;
         bool use_inlcpy_for_dword = false;
+        //size_t n_ops = ops.size();
+        CUstreamBatchMemOpParams param;
 
-        gds_dbg("n_ops=%zu idx=%d\n", n_ops, idx);
+        gds_dbg("n_ops=%zu idx=%d\n", n_ops);
 
         // divert the request to the same engine handling 64bits
         // to avoid out-of-order execution
@@ -577,9 +597,9 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                         else {
                                 if (!gds_enable_membar()) {
                                         if (use_inlcpy_for_dword) {
-                                                assert(idx-1 >= 0);
+                                                assert(ops.size() > 0);
                                                 gds_dbg("patching previous param\n");
-                                                gds_enable_barrier_for_inlcpy(params+idx-1);
+                                                gds_enable_barrier_for_inlcpy(&ops.back());
                                         }
                                         else {
                                                 gds_dbg("recording fence event\n");
@@ -607,8 +627,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                                                 retcode = EINVAL;
                                                 break;
                                         }
-                                        retcode = gds_fill_membar(params+idx, flags);
-                                        ++idx;
+                                        retcode = gds_fill_membar(ops, flags);
                                 }
                         }
                         break;
@@ -628,8 +647,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                                 }
                                 // tail flush is set when following fence is met
                                 //  flags |= GDS_IMMCOPY_POST_TAIL_FLUSH;
-                                retcode = gds_fill_inlcpy(params+idx, dev_ptr, &data, sizeof(data), flags);
-                                ++idx;
+                                retcode = gds_fill_inlcpy(ops, dev_ptr, &data, sizeof(data), flags);
                         }
                         else {  // A || B || C || E
                                 // can't guarantee ordering of write32+inlcpy unless
@@ -645,8 +663,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                                         flags |= GDS_WRITE_PRE_BARRIER;
                                         prev_was_fence = false;
                                 }
-                                retcode = gds_fill_poke(params+idx, dev_ptr, data, flags);
-                                ++idx;
+                                retcode = gds_fill_poke(ops, dev_ptr, data, flags);
                         }
                         break;
                 }
@@ -674,8 +691,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
 
                                 // tail flush is never useful here
                                 //flags |= GDS_IMMCOPY_POST_TAIL_FLUSH;
-                                retcode = gds_fill_inlcpy(params+idx, dev_ptr, &data, sizeof(data), flags);
-                                ++idx;
+                                retcode = gds_fill_inlcpy(ops, dev_ptr, &data, sizeof(data), flags);
                         }
                         else {
                                 uint32_t datalo = gds_qword_lo(op->wr.qword_va.data);
@@ -686,16 +702,14 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                                         flags |= GDS_WRITE_PRE_BARRIER;
                                         prev_was_fence = false;
                                 }
-                                retcode = gds_fill_poke(params+idx, dev_ptr, datalo, flags);
-                                ++idx;
+                                retcode = gds_fill_poke(ops, dev_ptr, datalo, flags);
 
                                 // get rid of the barrier, if there
                                 flags &= ~GDS_WRITE_PRE_BARRIER;
 
                                 // advance to next DWORD
                                 dev_ptr += sizeof(uint32_t);
-                                retcode = gds_fill_poke(params+idx, dev_ptr, datahi, flags);
-                                ++idx;
+                                retcode = gds_fill_poke(ops, dev_ptr, datahi, flags);
                         }
 
                         break;
@@ -718,8 +732,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                         //if (desc->need_flush) {
                         //        flags |= GDS_IMMCOPY_POST_TAIL_FLUSH;
                         //}
-                        retcode = gds_fill_inlcpy(params+idx, dev_ptr, src, len, flags);
-                        ++idx;
+                        retcode = gds_fill_inlcpy(ops, dev_ptr, src, len, flags);
                         break;
                 }
                 case IBV_EXP_PEER_OP_POLL_AND_DWORD:
@@ -755,8 +768,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                                 retcode = EINVAL;
                                 goto out;
                         }
-                        retcode = gds_fill_poll(params+idx, dev_ptr, data, poll_cond, flags);
-                        ++idx;                        
+                        retcode = gds_fill_poll(ops, dev_ptr, data, poll_cond, flags);
                         break;
                 }
                 default:
@@ -765,7 +777,7 @@ int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpParams *
                         break;
                 }
                 if (retcode) {
-                        gds_err("error in fill func at entry n=%zu (idx=%d)\n", n, idx);
+                        gds_err("error in fill func at entry n=%zu\n", n);
                         goto out;
                 }
         }
@@ -781,44 +793,37 @@ out:
 int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_t *dw, uint32_t val)
 {
         int retcode = 0;
-        int poke_count = 0;
-        int idx = 0;
+        //CUstreamBatchMemOpParams params[poke_count+1];
+        gds_op_list_t ops;
 
         assert(info);
+        assert(dw);
 
-        for (int i = 0; i < count; i++) {
-                poke_count += info[i].commit.entries + 2;
-        }
-
-        CUstreamBatchMemOpParams params[poke_count+1];
-
-	for (int j=0; j<count; j++) {
-                gds_dbg("peer_commit:%d idx=%d\n", j, idx);
-                retcode = gds_post_ops(info[j].commit.entries, info[j].commit.storage, params, idx);
+        for (int j=0; j<count; j++) {
+                gds_dbg("peer_commit:%d\n", j);
+                retcode = gds_post_ops(info[j].commit.entries, info[j].commit.storage, ops, 0);
                 if (retcode) {
                         goto out;
                 }
         }
-        assert(idx < poke_count);
 
         if (dw) {
                 // assume host mem
-                retcode = gds_fill_poke(params + idx, dw, val, GDS_MEMORY_HOST);
+                retcode = gds_fill_poke(ops, dw, val, GDS_MEMORY_HOST);
                 if (retcode) {
                         gds_err("error %d at tracking entry\n", retcode);
                         goto out;
                 }
-                ++idx;
         }
 
-        retcode = gds_stream_batch_ops(stream, idx, params, 0);
+        retcode = gds_stream_batch_ops(stream, ops, 0);
         if (retcode) {
                 gds_err("error %d in stream_batch_ops\n", retcode);
                 goto out;
         }
 out:
 
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -921,7 +926,7 @@ int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uin
 
         assert(info);
 
-	for (int j=0; j<count; j++) {
+        for (int j=0; j<count; j++) {
                 gds_dbg("peer_commit:%d idx=%d\n", j, idx);
                 retcode = gds_post_ops_on_cpu(info[j].commit.entries, info[j].commit.storage);
                 if (retcode) {
@@ -935,55 +940,53 @@ int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uin
         }
 
 out:
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_stream_post_polls_and_pokes(CUstream stream,
-				    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
-				    size_t n_pokes, uint32_t *poke_ptrs[], uint32_t poke_values[], int poke_flags[])
+                                    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
+                                    size_t n_pokes, uint32_t *poke_ptrs[], uint32_t poke_values[], int poke_flags[])
 {
-	int retcode = 0;
-	size_t idx = 0;
-	CUstreamBatchMemOpParams params[n_polls + n_pokes];
+        int retcode = 0;
+        gds_op_list_t ops;
+
         gds_dbg("n_polls=%zu n_pokes=%zu\n", n_polls, n_pokes);
 
-	for (size_t j = 0; j < n_polls; ++j, ++idx) {
+        for (size_t j = 0; j < n_polls; ++j) {
                 uint32_t *ptr = ptrs[j];
                 uint32_t magic = magics[j];
                 gds_wait_cond_flag_t cond_flag = cond_flags[j];
                 int flags = poll_flags[j];
                 gds_dbg("poll %zu: addr=%p value=%08x cond=%d flags=%08x\n", j, ptr, magic, cond_flag, flags);
-                retcode = gds_fill_poll(params+idx, ptr, magic, cond_flag, flags);
-                if (retcode) {
-                        gds_err("error in fill_poll at entry %zu\n", j);
-                        goto out;
-                }
-	}
-
-        for (size_t j = 0; j < n_pokes; ++j, ++idx) {
-                uint32_t *addr = poke_ptrs[j];
-                uint32_t value = poke_values[j];
-                int flags = poke_flags[j];
-                gds_dbg("poke %zu: addr=%p value=%08x flags=%08x\n", j, addr, value, flags);
-                retcode = gds_fill_poke(params+idx, addr, value, flags);
+                retcode = gds_fill_poll(ops, ptr, magic, cond_flag, flags);
                 if (retcode) {
                         gds_err("error in fill_poll at entry %zu\n", j);
                         goto out;
                 }
         }
 
-        assert(idx == n_polls + n_pokes);
+        for (size_t j = 0; j < n_pokes; ++j) {
+                uint32_t *addr = poke_ptrs[j];
+                uint32_t value = poke_values[j];
+                int flags = poke_flags[j];
+                gds_dbg("poke %zu: addr=%p value=%08x flags=%08x\n", j, addr, value, flags);
+                retcode = gds_fill_poke(ops, addr, value, flags);
+                if (retcode) {
+                        gds_err("error in fill_poll at entry %zu\n", j);
+                        goto out;
+                }
+        }
 
-        retcode = gds_stream_batch_ops(stream, idx, params, 0);
+        retcode = gds_stream_batch_ops(stream, ops, 0);
         if (retcode) {
                 gds_err("error in batch_ops\n");
                 goto out;
         }
 
 out:
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -992,44 +995,42 @@ int gds_stream_post_polls_and_immediate_copies(CUstream stream,
                                                size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
                                                size_t n_imms, void *imm_ptrs[], void *imm_datas[], size_t imm_bytes[], int imm_flags[])
 {
-	int retcode = 0;
-	size_t idx = 0;
-	CUstreamBatchMemOpParams params[n_polls + n_imms];
+        int retcode = 0;
+        gds_op_list_t ops;
 
-	for (size_t j = 0; j < n_polls; ++j, ++idx) {
+        for (size_t j = 0; j < n_polls; ++j) {
                 uint32_t *ptr = ptrs[j];
                 uint32_t magic = magics[j];
                 gds_wait_cond_flag_t cond_flag = cond_flags[j];
                 int flags = poll_flags[j];
 
-                retcode = gds_fill_poll(params+idx, ptr, magic, cond_flag, flags);
+                retcode = gds_fill_poll(ops, ptr, magic, cond_flag, flags);
                 if (retcode) {
                         gds_err("error in fill_poll at entry %zu\n", j);
                         goto out;
                 }
-	}
+        }
 
-	for (size_t j = 0; j < n_imms; ++j, ++idx) {
+        for (size_t j = 0; j < n_imms; ++j) {
                 void *ptr = imm_ptrs[j];
                 void *data = imm_datas[j];
                 size_t n_bytes = imm_bytes[j];
                 int flags = imm_flags[j];
-                retcode = gds_fill_inlcpy(params+idx, ptr, data, n_bytes, flags);
+                retcode = gds_fill_inlcpy(ops, ptr, data, n_bytes, flags);
                 if (retcode) {
                         gds_err("error in fill_inlcpy at entry %zu\n", j);
                         goto out;
                 }
         }
-        assert(idx == n_polls + n_imms);
 
-        retcode = gds_stream_batch_ops(stream, idx, params, 0);
+        retcode = gds_stream_batch_ops(stream, ops, 0);
         if (retcode) {
                 gds_err("error in batch_ops\n");
                 goto out;
         }
 
 out:
-	return retcode;
+        return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -1110,44 +1111,34 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
         int retcode = 0;
         int n_mem_ops = 0;
         int idx = 0;
+        int k=0;
+        gds_descriptor_t * descs=NULL;
 
         assert(request);
+        assert(count);
 
-        for (int i = 0; i < count; i++) {
-                n_mem_ops += request[i].peek.entries;
-        }
-
-        gds_dbg("count=%d dw=%p val=%08x space for n_mem_ops=%d\n", count, dw, val, n_mem_ops);
-
-        CUstreamBatchMemOpParams params[n_mem_ops+1];
-
-	for (int j=0; j<count; j++) {
-                gds_dbg("peek request:%d\n", j);
-                retcode = gds_post_ops(request[j].peek.entries, request[j].peek.storage, params, idx);
-                if (retcode) {
-                        goto out;
-                }
-        }
-        gds_dbg("idx=%d\n", idx);
-	assert(idx <= n_mem_ops);
-
-        if (dw) {
-                // assume host mem
-                retcode = gds_fill_poke(params + idx, dw, val, GDS_MEMORY_HOST);
-                if (retcode) {
-                        gds_err("error %d at tracking entry\n", retcode);
-                        goto out;
-                }
-                ++idx;
-        }
-
-        retcode = gds_stream_batch_ops(stream, idx, params, 0);
-        if (retcode) {
-                gds_err("error %d in stream_batch_ops\n", retcode);
+        descs = (gds_descriptor_t *) calloc(count, sizeof(gds_descriptor_t));
+        if(!descs)
+        {
+                gds_err("Calloc for %d elements\n", count);
+                retcode=ENOMEM;
                 goto out;
         }
-out:
-        return retcode;
+
+        for (k=0; k<count; k++) {
+                descs[k].tag = GDS_TAG_WAIT;
+                descs[k].wait = &request[k];
+        }
+
+        retcode=gds_stream_post_descriptors(stream, count, descs, 0);
+        if (retcode) {
+                gds_err("error %d in gds_stream_post_descriptors\n", retcode);
+                goto out;
+        }
+
+        out:
+                if(descs) free(descs);
+                return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -1262,6 +1253,29 @@ static void gds_init_peer_attr(gds_peer_attr *attr, gds_peer *peer)
 
 //-----------------------------------------------------------------------------
 
+static ibv_exp_res_domain *gds_create_res_domain(struct ibv_context *context)
+{
+        if (!context) {
+                gds_err("invalid context");
+                return NULL;
+        }
+
+        ibv_exp_res_domain_init_attr res_domain_attr;
+        memset(&res_domain_attr, 0, sizeof(res_domain_attr));
+
+        res_domain_attr.comp_mask |= IBV_EXP_RES_DOMAIN_THREAD_MODEL;
+        res_domain_attr.thread_model = IBV_EXP_THREAD_SINGLE;
+
+        ibv_exp_res_domain *res_domain = ibv_exp_create_res_domain(context, &res_domain_attr);
+        if (!res_domain) {
+                gds_warn("Can't create resource domain\n");
+        }
+
+        return res_domain;
+}
+
+//-----------------------------------------------------------------------------
+
 static gds_peer gpu_peer[max_gpus];
 static gds_peer_attr gpu_peer_attr[max_gpus];
 static bool gpu_registered[max_gpus];
@@ -1270,8 +1284,11 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
 {
         int ret = 0;
 
-        gds_dbg("GPU %u: registering peer\n", gpu_id);
+        gds_dbg("GPU%u: registering peer\n", gpu_id);
         
+        if (!context) {
+                return EINVAL;
+        }
         if (gpu_id >= max_gpus) {
                 gds_err("invalid gpu_id %d\n", gpu_id);
                 return EINVAL;
@@ -1281,7 +1298,7 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
         gds_peer_attr *peer_attr = &gpu_peer_attr[gpu_id];
 
         if (gpu_registered[gpu_id]) {
-                gds_dbg("gds_peer for GPU %d already initialized\n", gpu_id);
+                gds_dbg("gds_peer for GPU%u already initialized\n", gpu_id);
         } else {
                 gds_init_peer(peer, gpu_id);
                 gds_init_peer_attr(peer_attr, peer);
@@ -1299,17 +1316,73 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
 
 //-----------------------------------------------------------------------------
 
-struct ibv_cq *
+static struct gds_cq *
+gds_create_cq_internal(struct ibv_context *context, int cqe,
+                        void *cq_context, struct ibv_comp_channel *channel,
+                        int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags,
+                        struct ibv_exp_res_domain * res_domain)
+{
+        struct gds_cq *gcq = NULL;
+        ibv_exp_cq_init_attr attr;
+        gds_peer *peer = NULL;
+        gds_peer_attr *peer_attr = NULL;
+        int ret=0;
+
+        if(!context)
+        {
+            gds_dbg("Invalid input context\n");
+            return NULL;
+        }
+
+        gcq = (struct gds_cq*)calloc(1, sizeof(struct gds_cq));
+        if (!gcq) {
+            gds_err("cannot allocate memory\n");
+            return NULL;
+        }
+
+        //Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags
+        //before ibv_exp_create_cq
+        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        if (ret) {
+            gds_err("error %d while registering GPU peer\n", ret);
+            return NULL;
+        }
+        assert(peer);
+        assert(peer_attr);
+
+        peer->alloc_type = gds_peer::CQ;
+        peer->alloc_flags = flags;
+
+        attr.comp_mask = IBV_EXP_CQ_INIT_ATTR_PEER_DIRECT;
+        attr.flags = 0; // see ibv_exp_cq_create_flags
+        attr.peer_direct_attrs = peer_attr;
+        if (res_domain) {
+            gds_dbg("using peer->res_domain %p for CQ\n", res_domain);
+            attr.res_domain = res_domain;
+            attr.comp_mask |= IBV_EXP_CQ_INIT_ATTR_RES_DOMAIN;
+        }
+        
+        int old_errno = errno;
+        gcq->cq = ibv_exp_create_cq(context, cqe, cq_context, channel, comp_vector, &attr);
+        if (!gcq->cq) {
+            gds_err("error %d in ibv_exp_create_cq, old errno %d\n", errno, old_errno);
+            return NULL;
+        }
+
+        return gcq;
+}
+
+//Note: general create cq function, not really used for now!
+struct gds_cq *
 gds_create_cq(struct ibv_context *context, int cqe,
               void *cq_context, struct ibv_comp_channel *channel,
               int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
         int ret = 0;
-        struct ibv_cq *cq = NULL;
-
+        struct gds_cq *gcq = NULL;
+        //TODO: leak of res_domain
+        struct ibv_exp_res_domain * res_domain;
         gds_dbg("cqe=%d gpu_id=%d cq_flags=%08x\n", cqe, gpu_id, flags);
-
-        // TODO: add support for res_domain
 
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
@@ -1324,29 +1397,32 @@ gds_create_cq(struct ibv_context *context, int cqe,
         peer->alloc_type = gds_peer::CQ;
         peer->alloc_flags = flags;
 
-        ibv_exp_cq_init_attr attr;
-        attr.comp_mask = IBV_EXP_CQ_INIT_ATTR_PEER_DIRECT;
-        attr.flags = 0; // see ibv_exp_cq_create_flags
-        attr.res_domain = NULL;
-        attr.peer_direct_attrs = peer_attr;
+        res_domain = gds_create_res_domain(context);
+        if (res_domain)
+            gds_dbg("using res_domain %p\n", res_domain);
+        else
+            gds_warn("NOT using res_domain\n");
 
-        int old_errno = errno;
-        cq = ibv_exp_create_cq(context, cqe, cq_context, channel, comp_vector, &attr);
-        if (!cq) {
-                gds_err("error %d in ibv_exp_create_cq, old errno %d\n", errno, old_errno);
+        
+        gcq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id, flags, res_domain);
+
+        if (!gcq) {
+            gds_err("error in gds_create_cq_internal\n");
+            return NULL;
         }
 
-        return cq;
+        return gcq;
 }
 
 //-----------------------------------------------------------------------------
 
-struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
+struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
+                                gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
 {
         int ret = 0;
         struct gds_qp *gqp = NULL;
         struct ibv_qp *qp = NULL;
-        struct ibv_cq *rx_cq = NULL, *tx_cq = NULL;
+        struct gds_cq *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         int old_errno = errno;
@@ -1363,49 +1439,55 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
 
         gqp = (struct gds_qp*)calloc(1, sizeof(struct gds_qp));
         if (!gqp) {
-                gds_err("cannot allocate memory\n");
-                return NULL;
+            gds_err("cannot allocate memory\n");
+            return NULL;
         }
 
-        gds_dbg("creating TX CQ\n");
-        tx_cq = gds_create_cq(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
-                              (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? 
-                              GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
-	if (!tx_cq) {
-                ret = errno;
-		gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
-		goto err;
-	}
+        gqp->dev_context=context;
 
-        gds_dbg("creating RX CQ\n");
-        rx_cq = gds_create_cq(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
-                              (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? 
-                              GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
-	if (!rx_cq) {
-                ret = errno;
-                gds_err("error %d while creating RX CQ\n", ret);
-		goto err_free_tx_cq;
-	}
-
-        qp_attr->send_cq = tx_cq;
-        qp_attr->recv_cq = rx_cq;
-
-        qp_attr->pd = pd;
-        qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
-
+        // peer registration
         gds_dbg("before gds_register_peer_ex\n");
-
         ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
         if (ret) {
-                gds_err("error %d in gds_register_peer_ex\n", ret);
-                goto err_free_cqs;
+            gds_err("error %d in gds_register_peer_ex\n", ret);
+            goto err;
         }
+
+        gqp->res_domain = gds_create_res_domain(context);
+        if (gqp->res_domain)
+            gds_dbg("using gqp->res_domain %p\n", gqp->res_domain);
+        else
+            gds_warn("NOT using gqp->res_domain\n");
+
+        tx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
+                              (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
+                              gqp->res_domain);
+        if (!tx_gcq) {
+                ret = errno;
+                gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
+                goto err;
+        }
+
+        rx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
+                              (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
+                              gqp->res_domain);
+        if (!rx_gcq) {
+                ret = errno;
+                gds_err("error %d while creating RX CQ\n", ret);
+                goto err;
+        }
+
+        // peer registration
+        qp_attr->send_cq = tx_gcq->cq;
+        qp_attr->recv_cq = rx_gcq->cq;
+        qp_attr->pd = pd;
+        qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
 
         peer->alloc_type = gds_peer::WQ;
         peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
         if (flags & GDS_CREATE_QP_WQ_ON_GPU) {
                 gds_err("error, QP WQ on GPU is not supported yet\n");
-                goto err_free_cqs;
+                goto err;
         }
         if (flags & GDS_CREATE_QP_WQ_DBREC_ON_GPU) {
                 gds_warn("QP WQ DBREC on GPU\n");
@@ -1418,8 +1500,8 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         if (!qp)  {
                 ret = EINVAL;
                 gds_err("error in ibv_exp_create_qp\n");
-                goto err_free_cqs;
-	}
+                goto err;
+        }
 
         gqp->qp = qp;
         gqp->send_cq.cq = qp->send_cq;
@@ -1431,60 +1513,60 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
 
         return gqp;
 
-err_free_qp:
-        gds_dbg("destroying QP\n");
-        ibv_destroy_qp(qp);
-
-err_free_cqs:
-        gds_dbg("destroying RX CQ\n");
-	ret = ibv_destroy_cq(rx_cq);
-        if (ret) {
-                gds_err("error %d destroying RX CQ\n", ret);
-        }
-
-err_free_tx_cq:
-        gds_dbg("destroying TX CQ\n");
-	ret = ibv_destroy_cq(tx_cq);
-        if (ret) {
-                gds_err("error %d destroying TX CQ\n", ret);
-        }
-
 err:
-        free(gqp);
+        gds_dbg("destroying QP\n");
+        gds_destroy_qp(gqp);
 
         return NULL;
 }
 
 //-----------------------------------------------------------------------------
 
-int gds_destroy_qp(struct gds_qp *qp)
+int gds_destroy_qp(struct gds_qp *gqp)
 {
         int retcode = 0;
         int ret;
-        assert(qp);
+        
+        if(!gqp) return retcode;
 
-        assert(qp->qp);
-        ret = ibv_destroy_qp(qp->qp);
-        if (ret) {
-                gds_err("error %d in destroy_qp\n", ret);
-                retcode = ret;
+        if(gqp->qp)
+        {
+            ret = ibv_destroy_qp(gqp->qp);
+            if (ret) {
+                    gds_err("error %d in destroy_qp\n", ret);
+                    retcode = ret;
+            }            
         }
 
-        assert(qp->send_cq.cq);
-        ret = ibv_destroy_cq(qp->send_cq.cq);
-        if (ret) {
-                gds_err("error %d in destroy_cq send_cq\n", ret);
-                retcode = ret;
+        if(gqp->send_cq.cq)
+        {
+            ret = ibv_destroy_cq(gqp->send_cq.cq);
+            if (ret) {
+                    gds_err("error %d in destroy_cq send_cq\n", ret);
+                    retcode = ret;
+            }
         }
 
-        assert(qp->recv_cq.cq);
-        ret = ibv_destroy_cq(qp->recv_cq.cq);
-        if (ret) {
-                gds_err("error %d in destroy_cq recv_cq\n", ret);
-                retcode = ret;
+        if(gqp->recv_cq.cq)
+        {
+            ret = ibv_destroy_cq(gqp->recv_cq.cq);
+            if (ret) {
+                    gds_err("error %d in destroy_cq recv_cq\n", ret);
+                    retcode = ret;
+            }
         }
 
-        free(qp);
+        if(gqp->res_domain) {
+            struct ibv_exp_destroy_res_domain_attr attr; //IBV_EXP_DESTROY_RES_DOMAIN_RESERVED
+            attr.comp_mask=0;
+            ret = ibv_exp_destroy_res_domain(gqp->dev_context, gqp->res_domain, &attr);
+            if (ret) {
+                    gds_err("ibv_exp_destroy_res_domain error %d: %s\n", ret, strerror(ret));
+                    retcode = ret;
+            }            
+        }
+
+        free(gqp);
 
         return retcode;
 }

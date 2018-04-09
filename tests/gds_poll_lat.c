@@ -170,7 +170,8 @@ int main(int argc, char *argv[])
 
         printf("starting test...\n");
         perf_start();
-
+        gds_us_t delta_t = 0;
+        int warmup = 5;
 	for (i = 0, value = 1; i < num_iters; ++i, ++value) {
                 ASSERT(value <= INT_MAX);
                 uint32_t *h_ptr = (uint32_t*)h_buf + (i % (size/sizeof(uint32_t)));
@@ -193,19 +194,20 @@ int main(int argc, char *argv[])
                 int k;
 
                 descs[0].tag = GDS_TAG_WAIT_VALUE32;
-                ret = gds_prepare_wait_value32(&descs[0].wait32, d_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
+                ret = gds_prepare_wait_value32(&descs[0].wait32, use_gpu_buf ? d_ptr : h_ptr, value, GDS_WAIT_COND_GEQ, poll_flags);
                 if (ret)
                         exit(EXIT_FAILURE);
 
                 for (k=0; k<n_pokes; ++k) {
                         size_t off = ((k+i*n_pokes) % (size/sizeof(uint32_t)));
                         int dflags = use_gpu_buf ? GDS_MEMORY_GPU : GDS_MEMORY_HOST;
+                        uint32_t *ptr = (use_gpu_buf ? (uint32_t*)(d_data) : h_data) + off;
                         if (use_membar && (k==n_pokes-1))
                                 dflags |= GDS_WRITE_PRE_BARRIER;
 
                         descs[1+k].tag = GDS_TAG_WRITE_VALUE32;
                         ret = gds_prepare_write_value32(&descs[1+k].write32,
-                                                        (uint32_t*)(d_data+sizeof(uint32_t)*off),
+                                                        ptr,
                                                         0xd4d00000|(j<<8)|k,
                                                         dflags);
                         if (ret)
@@ -224,12 +226,16 @@ int main(int argc, char *argv[])
                         PROF(&prof, prof_idx++);
                 } else {
                         ret = gds_stream_post_descriptors(gpu_stream, 1, descs, 0);
-                        if (ret)
+                        if (ret) {
+                                gpu_err("error %d while posting wait\n", ret);
                                 exit(EXIT_FAILURE);
+                        }
                         PROF(&prof, prof_idx++);
                         ret = gds_stream_post_descriptors(gpu_stream, n_pokes, descs+1, 0);
-                        if (ret)
+                        if (ret) {
+                                gpu_err("error %d while posting write(s)\n", ret);
                                 exit(EXIT_FAILURE);
+                        }
                 }
 		PROF(&prof, prof_idx++);
 
@@ -262,18 +268,18 @@ int main(int argc, char *argv[])
                 //        ret = gpu_poll_poke();
                 gds_us_t tout = 100;
                 gds_us_t start = gds_get_time_us();
-                gds_us_t tmout = start + tout;
+                gds_us_t end = start;
                 while(1) {
                         uint32_t value = ACCESS_ONCE(*poke_hptrs[n_pokes-1]);
                         gpu_dbg("h_poke[%zu]=%x\n", n_pokes-1, value);
                         if (value) 
                                 break;
-                        // time-out check
-                        if ((gds_get_time_us()-start) > (long)tmout) {
+                        end = gds_get_time_us();
+                        if (end - start > tout) {
                                 gpu_warn("timeout %ldus reached!!\n", tout);
                                 goto err;
                         }
-                        //arch_cpu_relax();
+                        gds_cpu_relax();
                 }
 		PROF(&prof, prof_idx++);
                 // CUDA synchronize
@@ -282,8 +288,17 @@ int main(int argc, char *argv[])
 		PROF(&prof, prof_idx++);
 		prof_update(&prof);
 		prof_idx = 0;
+                
+                if (i > warmup) {
+                        delta_t += end - start;
+                }
 	}
         printf("test finished!\n");
+
+        if (num_iters > warmup) {
+                double avg_wait_us = (double)delta_t / (double)(num_iters - warmup);
+                printf("average wait time: %fus\n", avg_wait_us);
+        }
 
         perf_stop();
         prof_dump(&prof);

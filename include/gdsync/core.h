@@ -66,13 +66,24 @@ struct gds_qp {
         struct ibv_qp *qp;
         struct gds_cq send_cq;
         struct gds_cq recv_cq;
+        struct ibv_exp_res_domain * res_domain;
+        struct ibv_context *dev_context;
 };
 
-// consider enabling GDS_CREATE_QP_GPU_INVALIDATE_T/RX_CQ when
-// using GDS_WAIT_CQ_CONSUME_CQE below
+/* \brief: Create a peer-enabled QP attached to the specified GPU id.
+ *
+ * Peer QPs require dedicated send and recv CQs, e.g. cannot (easily)
+ * use SRQ.
+ */
+
 struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                              gds_qp_init_attr_t *qp_init_attr,
                              int gpu_id, int flags);
+
+/* \brief: Destroy a peer-enabled QP
+ *
+ * The associated CQs are destroyed as well.
+ */
 int gds_destroy_qp(struct gds_qp *qp);
 
 /* \brief: CPU-synchronous post send for peer QPs
@@ -103,7 +114,7 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
 // batched submission APIs
 
 typedef enum gds_memory_type {
-        GDS_MEMORY_GPU  = 1,
+        GDS_MEMORY_GPU  = 1, /*< use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
         GDS_MEMORY_HOST = 2,
         GDS_MEMORY_IO   = 4,
 	GDS_MEMORY_MASK = 0x7
