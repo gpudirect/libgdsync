@@ -62,17 +62,18 @@ int gds_dbg_enabled()
 
 int gds_flusher_enabled()
 {
-        static int gds_flusher_is_enabled = -1;
-        if (-1 == gds_flusher_is_enabled) {
-                const char *env = getenv("GDS_ENABLE_FLUSHER");
-                if (env) {
-                        int en = atoi(env);
-                        gds_flusher_is_enabled = !!en;
-                        gds_warn("GDS_ENABLE_FLUSHER=%s\n", env);
-                } else
-                        gds_flusher_is_enabled = 0;
-        }
-        return gds_flusher_is_enabled;
+    static int gds_flusher_is_enabled = -1;
+    if (-1 == gds_flusher_is_enabled) {
+        const char *env = getenv("GDS_ENABLE_FLUSHER");
+        if (env) {
+            int en = atoi(env);
+            gds_flusher_is_enabled = !!en;
+        } else
+            gds_flusher_is_enabled = 0;
+    
+        gds_warn("GDS_ENABLE_FLUSHER=%s\n", env);
+    }
+    return gds_flusher_is_enabled;
 }
 
 //-----------------------------------------------------------------------------
