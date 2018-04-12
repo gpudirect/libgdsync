@@ -60,6 +60,21 @@ int gds_dbg_enabled()
         return gds_dbg_is_enabled;
 }
 
+int gds_flusher_enabled()
+{
+        static int gds_flusher_is_enabled = -1;
+        if (-1 == gds_flusher_is_enabled) {
+                const char *env = getenv("GDS_ENABLE_FLUSHER");
+                if (env) {
+                        int en = atoi(env);
+                        gds_flusher_is_enabled = !!en;
+                        gdb_warn("GDS_ENABLE_FLUSHER=%s\n", env);
+                } else
+                        gds_flusher_is_enabled = 0;
+        }
+        return gds_flusher_is_enabled;
+}
+
 //-----------------------------------------------------------------------------
 // detect Async APIs
 
@@ -470,7 +485,7 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
         ops.push_back(param);
 
         //Fake wait value on 0 gmemory area
-        if(need_flush)
+        if(need_flush && gds_flusher_enabled())
         {
             CUstreamBatchMemOpParams param_flush;
             if(!fwait_gmem_done)
