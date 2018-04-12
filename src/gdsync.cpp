@@ -71,7 +71,7 @@ int gds_flusher_enabled()
         } else
             gds_flusher_is_enabled = 0;
     
-        gds_warn("GDS_ENABLE_FLUSHER=%s\n", env);
+        gds_warn("GDS_ENABLE_FLUSHER=%s\n", gds_flusher_is_enabled);
     }
     return gds_flusher_is_enabled;
 }
