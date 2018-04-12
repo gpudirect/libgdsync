@@ -68,7 +68,7 @@ int gds_flusher_enabled()
                 if (env) {
                         int en = atoi(env);
                         gds_flusher_is_enabled = !!en;
-                        gdb_warn("GDS_ENABLE_FLUSHER=%s\n", env);
+                        gds_warn("GDS_ENABLE_FLUSHER=%s\n", env);
                 } else
                         gds_flusher_is_enabled = 0;
         }
@@ -422,8 +422,6 @@ out:
 }
 
 //-----------------------------------------------------------------------------
-static bool hotfix_print=false;
-
 static bool fwait_gmem_done=false;
 static CUdeviceptr fwait_gmem;
 
@@ -438,17 +436,6 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
 
         bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
 
-#if 0
-//Flag CU_STREAM_WAIT_VALUE_FLUSH generates an error with CUDA 9.x
-#if defined(__x86_64__) || defined (__i386__) // || defined (__ppc64le__)
-        need_flush=false;
-        if(hotfix_print == false)
-        {
-            gds_warn("RDMA consistency for pre-launched GPU work is not guaranteed at the moment");
-            hotfix_print=true;
-        }
-#endif
-#endif
         CUstreamBatchMemOpParams param;
         param.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
         param.waitValue.address = dev_ptr;
