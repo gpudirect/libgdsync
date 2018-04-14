@@ -1411,7 +1411,7 @@ gds_peer *peer_from_stream(CUstream stream)
                 }
         }
         if (!peer) {
-                gds_err("cannot find peer associated to stream=%p\n", stream);
+                gds_err("cannot find GPU associated to stream=%p for which a GDS QP has been created\n", stream);
         }
         return peer;
 }
