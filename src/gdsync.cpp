@@ -1408,10 +1408,12 @@ gds_peer *peer_from_stream(CUstream stream)
                                 peer = &gpu_peer[g];
                         }
                 } else {
-                        gds_err("");
+                        //gds_warn("ignoring gpu%d for stream=%p\n", g, stream);
                 }
         }
-
+        if (!peer) {
+                gds_err("cannot find peer associated to stream=%p\n", stream);
+        }
         return peer;
 }
 
