@@ -60,6 +60,22 @@ int gds_dbg_enabled()
         return gds_dbg_is_enabled;
 }
 
+int gds_flusher_enabled()
+{
+    static int gds_flusher_is_enabled = -1;
+    if (-1 == gds_flusher_is_enabled) {
+        const char *env = getenv("GDS_ENABLE_FLUSHER");
+        if (env) {
+            int en = atoi(env);
+            gds_flusher_is_enabled = !!en;
+        } else
+            gds_flusher_is_enabled = 0;
+    
+        gds_warn("GDS_ENABLE_FLUSHER=%d\n", gds_flusher_is_enabled);
+    }
+    return gds_flusher_is_enabled;
+}
+
 //-----------------------------------------------------------------------------
 // detect Async APIs
 
@@ -407,7 +423,8 @@ out:
 }
 
 //-----------------------------------------------------------------------------
-static bool hotfix_print=false;
+static bool fwait_gmem_done=false;
+static CUdeviceptr fwait_gmem;
 
 static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
 {
@@ -419,16 +436,6 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
         assert((((unsigned long)ptr) & 0x3) == 0);
 
         bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
-
-//Flag CU_STREAM_WAIT_VALUE_FLUSH generates an error with CUDA 9.x
-#if defined(__x86_64__) || defined (__i386__) // || defined (__ppc64le__)
-        need_flush=false;
-        if(hotfix_print == false)
-        {
-            gds_warn("RDMA consistency for pre-launched GPU work is not guaranteed at the moment");
-            hotfix_print=true;
-        }
-#endif
 
         CUstreamBatchMemOpParams param;
         param.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
@@ -452,15 +459,44 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
                 retcode = EINVAL;
                 goto out;
         }
+#if 0        
         if (need_flush)
                 param.waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
+#endif
         gds_dbg("op=%d addr=%p value=%08x cond=%s flags=%08x\n",
                 param.operation,
                 (void*)param.waitValue.address,
                 param.waitValue.value,
                 cond_str,
                 param.waitValue.flags);
+
         ops.push_back(param);
+
+        //Fake wait value on 0 gmemory area
+        if(need_flush && gds_flusher_enabled())
+        {
+            CUstreamBatchMemOpParams param_flush;
+            if(!fwait_gmem_done)
+            {
+                CUCHECK(cuMemAlloc(&fwait_gmem, 1*sizeof(char)));
+                CUCHECK(cuMemsetD8(fwait_gmem, 0, 1));
+                fwait_gmem_done=true;
+            }    
+
+            param_flush.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
+            param_flush.waitValue.address = fwait_gmem;
+            param_flush.waitValue.value = 0;
+            param_flush.waitValue.flags = CU_STREAM_WAIT_VALUE_EQ;
+
+            ops.push_back(param_flush);
+
+            gds_dbg("need_flush=%d, fwait_gmem_done=%d, op=%d addr=%p value=%08x flags=%08x\n",
+                need_flush, fwait_gmem_done,
+                param_flush.operation,
+                (void*)param_flush.waitValue.address,
+                param_flush.waitValue.value,
+                param_flush.waitValue.flags);
+        }
 out:
         return retcode;
 }
