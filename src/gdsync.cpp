@@ -1281,7 +1281,6 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->gpu_id = gpu_id;
         peer->gpu_dev = dev;
         peer->gpu_ctx = 0;
-        peer->res_domain = NULL;
         peer->has_write64 = support_write64(dev) && gds_enable_write64();
         peer->has_wait_nor = support_wait_nor(dev);
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
