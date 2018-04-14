@@ -1276,7 +1276,7 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
 {
         assert(peer);
         CUdevice dev;
-        CUCHECK(cuDeviceGet(&dev, gpu_id);
+        CUCHECK(cuDeviceGet(&dev, gpu_id));
 
         peer->gpu_id = gpu_id;
         peer->gpu_dev = dev;
@@ -1358,20 +1358,32 @@ static int gds_device_from_current_context(CUdevice &dev)
         return 0;
 }
 
-static int gds_device_from_context(CUcontext ctx, CUdevice &dev)
+static int gds_device_from_context(CUcontext ctx, CUcontext cur_ctx, CUdevice &dev)
 {
         // if cur != ctx then push ctx
-        CUCHECK();
+        if (ctx != cur_ctx)
+                CUCHECK(cuCtxPushCurrent(ctx));
         gds_device_from_current_context(dev);
         // if pushed then pop ctx
+        if (ctx != cur_ctx) {
+                CUcontext top_ctx;
+                CUCHECK(cuCtxPopCurrent(&top_ctx));
+                assert(top_ctx == ctx);
+        }
         return 0;
 }
 
-static int gds_context_from_stream(CUstream stream, CUcontext &ctx)
+static int gds_device_from_stream(CUstream stream, CUdevice &dev)
 {
+        CUcontext cur_ctx, stream_ctx;
+        CUCHECK(cuCtxGetCurrent(&cur_ctx));
 #if __CUDA_API_VERSION >= 9020
-        CUCHECK(cuStreamGetCtx(stream, ctx));
+        CUCHECK(cuStreamGetCtx(stream, &stream_ctx));
+#else
+        // we assume the stream is associated to the current context
+        stream_ctx = cur_ctx;
 #endif
+        gds_device_from_context(stream_ctx, cur_ctx, dev);
         return 0;
 }
 
@@ -1382,10 +1394,9 @@ gds_peer *peer_from_stream(CUstream stream)
         gds_peer *peer = NULL;
 
 
-        if (stream != NULL && stream != CU_STREAM_LEGACY && hStream != CU_STREAM_PER_THREAD) {
+        if (stream != NULL && stream != CU_STREAM_LEGACY && stream != CU_STREAM_PER_THREAD) {
                 // this a user stream
-                gds_context_from_stream(stream, ctx);
-                gds_device_from_context(ctx, dev);
+                gds_device_from_stream(stream, dev);
         } else {
                 // this is one of the pre-defined streams
                 gds_device_from_current_context(dev);
