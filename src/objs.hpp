@@ -69,6 +69,8 @@ struct gds_peer {
         int gpu_id;
         CUdevice gpu_dev;
         CUcontext gpu_ctx;
+        bool has_memops;
+        bool has_remote_flush;
         bool has_write64;
         bool has_wait_nor;
         bool has_inlcpy;

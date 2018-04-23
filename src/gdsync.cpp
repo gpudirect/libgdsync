@@ -582,6 +582,11 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
 
         gds_dbg("n_ops=%zu idx=%d\n", n_ops);
 
+        if (!peer->has_memops) {
+                gds_err("CUDA MemOps are required\n");
+                return EINVAL;
+        }
+
         // divert the request to the same engine handling 64bits
         // to avoid out-of-order execution
         // caveat: can't use membar if inlcpy is used for 4B writes (to simulate 8B writes)
@@ -1228,8 +1233,20 @@ static int gds_unregister_va(uint64_t registration_id, uint64_t peer_id)
 static bool support_memops(CUdevice dev)
 {
         int flag = 0;
-#if __CUDA_API_VERSION >= 9020
+#if   __CUDA_API_VERSION >= 9010
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS, dev));
+#elif __CUDA_API_VERSION >= 8000
+        // CUDA MemOps are enabled on CUDA 8.0+
+        flag = 1;
+#endif
+        return !!flag;
+}
+
+static bool support_remote_flush(CUdevice dev)
+{
+        int flag = 0;
+#if __CUDA_API_VERSION >= 9020
+        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES, dev));
 #endif
         return !!flag;
 }
@@ -1281,6 +1298,8 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->gpu_id = gpu_id;
         peer->gpu_dev = dev;
         peer->gpu_ctx = 0;
+        peer->has_memops = support_memops(dev);
+        peer->has_remote_flush = support_remote_flush(dev);
         peer->has_write64 = support_write64(dev) && gds_enable_write64();
         peer->has_wait_nor = support_wait_nor(dev);
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
