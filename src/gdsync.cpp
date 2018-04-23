@@ -1233,20 +1233,27 @@ static int gds_unregister_va(uint64_t registration_id, uint64_t peer_id)
 static bool support_memops(CUdevice dev)
 {
         int flag = 0;
-#if   __CUDA_API_VERSION >= 9010
+#if   CUDA_VERSION >= 9010
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS, dev));
-#elif __CUDA_API_VERSION >= 8000
+        gds_warn("flag=%d\n", flag);
+#elif CUDA_VERSION >= 8000
         // CUDA MemOps are enabled on CUDA 8.0+
         flag = 1;
+        gds_warn("flag=%d\n", flag);
+#else
+#error "GCC error CUDA MemOp APIs is missing prior to CUDA 8.0"
 #endif
+        gds_warn("dev=%d has_memops=%d\n", dev, flag);
         return !!flag;
 }
 
 static bool support_remote_flush(CUdevice dev)
 {
         int flag = 0;
-#if __CUDA_API_VERSION >= 9020
+#if CUDA_VERSION >= 9020
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES, dev));
+#else
+#warning "Assuming CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES=0 prior to CUDA 9.2"
 #endif
         return !!flag;
 }
@@ -1254,7 +1261,7 @@ static bool support_remote_flush(CUdevice dev)
 static bool support_write64(CUdevice dev)
 {
         int flag = 0;
-#if __CUDA_API_VERSION >= 9000
+#if CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS, dev));
 #endif
         return !!flag;
@@ -1263,7 +1270,7 @@ static bool support_write64(CUdevice dev)
 static bool support_wait_nor(CUdevice dev)
 {
         int flag = 0;
-#if __CUDA_API_VERSION >= 9000
+#if CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR, dev));
 #endif
         return !!flag;
@@ -1395,7 +1402,7 @@ static int gds_device_from_stream(CUstream stream, CUdevice &dev)
 {
         CUcontext cur_ctx, stream_ctx;
         CUCHECK(cuCtxGetCurrent(&cur_ctx));
-#if __CUDA_API_VERSION >= 9020
+#if CUDA_VERSION >= 9020
         CUCHECK(cuStreamGetCtx(stream, &stream_ctx));
 #else
         // we assume the stream is associated to the current context
