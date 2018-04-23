@@ -106,5 +106,3 @@ static inline gds_peer *peer_from_id(uint64_t id)
         assert(id);
         return reinterpret_cast<gds_peer *>(id);
 }
-
-gds_peer *peer_from_stream(CUstream stream);
