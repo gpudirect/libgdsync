@@ -438,7 +438,7 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
 
 #if defined(__x86_64__) || defined (__i386__) // || defined (__ppc64le__)
         need_flush=false;
-        gds_warn_once("RDMA consistency for pre-launched GPU work is not guaranteed at the moment");
+        gds_warn_once("RDMA consistency for pre-launched GPU work is not guaranteed at the moment\n");
 #endif
 
         CUstreamBatchMemOpParams param;
