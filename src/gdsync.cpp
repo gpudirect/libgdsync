@@ -511,6 +511,7 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
                 cond_str = "CU_STREAM_WAIT_VALUE_AND";
                 break;
 #if CUDA_VERSION >= 9000
+        case GDS_WAIT_COND_NOR:
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_NOR;
                 cond_str = "CU_STREAM_WAIT_VALUE_NOR";
                 break;
@@ -1319,6 +1320,7 @@ static bool support_write64(CUdevice dev)
 #if CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS, dev));
 #endif
+        gds_dbg("dev=%d has_write64=%d\n", dev, flag);
         return !!flag;
 }
 
@@ -1328,6 +1330,7 @@ static bool support_wait_nor(CUdevice dev)
 #if CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR, dev));
 #endif
+        gds_dbg("dev=%d has_wait_nor=%d\n", dev, flag);
         return !!flag;
 }
 
