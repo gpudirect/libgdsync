@@ -452,7 +452,7 @@ static int gds_fill_poke64(gds_op_list_t &ops, CUdeviceptr addr, uint64_t value,
                 param.writeValue.flags);
         ops.push_back(param);
 #else
-        retcode = -EINVAL;
+        retcode = EINVAL;
 #endif
         return retcode;
 }
@@ -510,12 +510,16 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_AND;
                 cond_str = "CU_STREAM_WAIT_VALUE_AND";
                 break;
-#if CUDA_VERSION >= 9000
+
         case GDS_WAIT_COND_NOR:
+#if CUDA_VERSION >= 9000
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_NOR;
+#else
+                gds_err("GDS_WAIT_COND_NOR requires CUDA 9.0 at least\n");
+                retcode = EINVAL;
+#endif
                 cond_str = "CU_STREAM_WAIT_VALUE_NOR";
                 break;
-#endif
         default: 
                 gds_err("invalid wait condition flag\n");
                 retcode = EINVAL;
@@ -825,13 +829,11 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
 
                         switch(op->type) {
                         case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
-#if CUDA_VERSION >= 9000
-                                assert(peer->has_wait_nor);
+                                if (!peer->has_wait_nor) {
+                                        gds_err("IBV_EXP_PEER_OP_POLL_NOR_DWORD should have not been enabled\n");
+                                        retcode = EINVAL;
+                                }
                                 poll_cond = GDS_WAIT_COND_NOR;
-#else
-                                gds_err("IBV_EXP_PEER_OP_POLL_NOR_DWORD should have not been enabled\n");
-                                retcode = EINVAL;
-#endif
                                 break;
                         case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
                                 poll_cond = GDS_WAIT_COND_GEQ;
@@ -1299,7 +1301,7 @@ static bool support_memops(CUdevice dev)
 #else
 #error "GCC error CUDA MemOp APIs is missing prior to CUDA 8.0"
 #endif
-        gds_warn("dev=%d has_memops=%d\n", dev, flag);
+        gds_dbg("dev=%d has_memops=%d\n", dev, flag);
         return !!flag;
 }
 
@@ -1311,6 +1313,7 @@ static bool support_remote_flush(CUdevice dev)
 #else
 #warning "Assuming CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES=0 prior to CUDA 9.2"
 #endif
+        gds_dbg("dev=%d has_remote_flush=%d\n", dev, flag);
         return !!flag;
 }
 
