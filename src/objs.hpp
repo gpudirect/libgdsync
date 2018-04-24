@@ -75,9 +75,14 @@ struct gds_peer {
         bool has_wait_nor;
         bool has_inlcpy;
         bool has_membar;
+        gds_peer_attr attr;
 
-        // before calling ibv_exp_create_cq(), patch flags with appropriate values
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
+        // This field works as a ugly run-time parameters passing
+        // mechanism, as it carries tracking info during the QP creation
+        // phase, so no more than one outstanding call per peer is
+        // supported.  In practice, before calling ibv_exp_create_cq(), we
+        // patch this field with the appropriate value
         int alloc_flags; // out of gds_flags_t
 
         // register peer memory

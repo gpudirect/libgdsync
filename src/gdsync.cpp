@@ -121,8 +121,6 @@ const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
 //bool gds_has_weak_consistency = GDS_HAS_WEAK_API;
 //bool gds_has_membar = GDS_HAS_MEMBAR;
 
-static bool gpu_does_support_nor(gds_peer *peer) { return false; }
-
 //-----------------------------------------------------------------------------
 
 // BUG: this feature is GPU device dependent
@@ -427,6 +425,58 @@ out:
 }
 
 //-----------------------------------------------------------------------------
+
+static int gds_fill_poke64(gds_op_list_t &ops, CUdeviceptr addr, uint64_t value, int flags)
+{
+        int retcode = 0;
+#if CUDA_VERSION >= 9000
+        CUdeviceptr dev_ptr = addr;
+
+        // TODO: convert into errors
+        assert(addr);
+        assert((((unsigned long)addr) & 0x7) == 0); 
+
+        bool need_barrier = (flags  & GDS_WRITE_PRE_BARRIER ) ? true : false;
+
+        CUstreamBatchMemOpParams param;
+        param.operation = CU_STREAM_MEM_OP_WRITE_VALUE_64;
+        param.writeValue.address = dev_ptr;
+        param.writeValue.value64 = value;
+        param.writeValue.flags = CU_STREAM_WRITE_VALUE_NO_MEMORY_BARRIER;
+        if (need_barrier)
+                param.writeValue.flags = 0;
+        gds_dbg("op=%d addr=%p value=%08x flags=%08x\n",
+                param.operation,
+                (void*)param.writeValue.address,
+                param.writeValue.value,
+                param.writeValue.flags);
+        ops.push_back(param);
+#else
+        retcode = -EINVAL;
+#endif
+        return retcode;
+}
+
+int gds_fill_poke64(gds_op_list_t &ops, uint64_t *ptr, uint64_t value, int flags)
+{
+        int retcode = 0;
+        CUdeviceptr dev_ptr = 0;
+
+        gds_dbg("addr=%p value=%016lx flags=%08x\n", ptr, value, flags);
+
+        retcode = gds_map_mem(ptr, sizeof(*ptr), memtype_from_flags(flags), &dev_ptr);
+        if (retcode) {
+                gds_err("error %d while looking up %p\n", retcode, ptr);
+                goto out;
+        }
+
+        retcode = gds_fill_poke64(ops, dev_ptr, value, flags);
+out:
+        return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
 static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
 {
         int retcode = 0;
@@ -460,6 +510,11 @@ static int gds_fill_poll(gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, in
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_AND;
                 cond_str = "CU_STREAM_WAIT_VALUE_AND";
                 break;
+#if CUDA_VERSION >= 9000
+                param.waitValue.flags = CU_STREAM_WAIT_VALUE_NOR;
+                cond_str = "CU_STREAM_WAIT_VALUE_NOR";
+                break;
+#endif
         default: 
                 gds_err("invalid wait condition flag\n");
                 retcode = EINVAL;
@@ -709,9 +764,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                                 retcode = gds_fill_inlcpy(ops, dev_ptr, &data, sizeof(data), flags);
                         }
                         else if (peer->has_write64) {
-                                gds_err("write64 is not supported\n");
-                                retcode = EINVAL;
-                                break;
+                                retcode = gds_fill_poke64(ops, dev_ptr, data, flags);
                         }
                         else {
                                 uint32_t datalo = gds_qword_lo(op->wr.qword_va.data);
@@ -771,11 +824,13 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
 
                         switch(op->type) {
                         case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
-                                //poll_cond = GDS_WAIT_COND_NOR;
-                                // TODO: lookup and pass peer down
-                                assert(gpu_does_support_nor(NULL));
+#if CUDA_VERSION >= 9000
+                                assert(peer->has_wait_nor);
+                                poll_cond = GDS_WAIT_COND_NOR;
+#else
+                                gds_err("IBV_EXP_PEER_OP_POLL_NOR_DWORD should have not been enabled\n");
                                 retcode = EINVAL;
-                                goto out;
+#endif
                                 break;
                         case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
                                 poll_cond = GDS_WAIT_COND_GEQ;
@@ -1311,45 +1366,38 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->has_wait_nor = support_wait_nor(dev);
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
         peer->has_membar = support_membar(dev);
-}
-
-//-----------------------------------------------------------------------------
-
-static void gds_init_peer_attr(gds_peer_attr *attr, gds_peer *peer)
-{
-        assert(peer);
 
         peer->alloc_type = gds_peer::NONE;
         peer->alloc_flags = 0;
 
-        attr->peer_id = peer_to_id(peer);
-        attr->buf_alloc = gds_buf_alloc;
-        attr->buf_release = gds_buf_release;
-        attr->register_va = gds_register_va;
-        attr->unregister_va = gds_unregister_va;
+        peer->attr.peer_id = peer_to_id(peer);
+        peer->attr.buf_alloc = gds_buf_alloc;
+        peer->attr.buf_release = gds_buf_release;
+        peer->attr.register_va = gds_register_va;
+        peer->attr.unregister_va = gds_unregister_va;
 
-        attr->caps = ( IBV_EXP_PEER_OP_STORE_DWORD_CAP    | 
-                       IBV_EXP_PEER_OP_STORE_QWORD_CAP    | 
-                       IBV_EXP_PEER_OP_FENCE_CAP          | 
-                       IBV_EXP_PEER_OP_POLL_AND_DWORD_CAP );
+        peer->attr.caps = ( IBV_EXP_PEER_OP_STORE_DWORD_CAP    | 
+                            IBV_EXP_PEER_OP_STORE_QWORD_CAP    | 
+                            IBV_EXP_PEER_OP_FENCE_CAP          | 
+                            IBV_EXP_PEER_OP_POLL_AND_DWORD_CAP );
 
-        if (gpu_does_support_nor(peer))
-                attr->caps |= IBV_EXP_PEER_OP_POLL_NOR_DWORD_CAP;
+        if (peer->has_wait_nor)
+                peer->attr.caps |= IBV_EXP_PEER_OP_POLL_NOR_DWORD_CAP;
         else
-                attr->caps |= IBV_EXP_PEER_OP_POLL_GEQ_DWORD_CAP;
+                peer->attr.caps |= IBV_EXP_PEER_OP_POLL_GEQ_DWORD_CAP;
 
         if (peer->has_inlcpy) {
-                attr->caps |= IBV_EXP_PEER_OP_COPY_BLOCK_CAP;
+                peer->attr.caps |= IBV_EXP_PEER_OP_COPY_BLOCK_CAP;
         }
         else if (peer->has_write64 || gds_simulate_write64()) {
-                attr->caps |= IBV_EXP_PEER_OP_STORE_QWORD_CAP;
+                peer->attr.caps |= IBV_EXP_PEER_OP_STORE_QWORD_CAP;
         }
-        gds_dbg("caps=%016lx\n", attr->caps);
-        attr->peer_dma_op_map_len = GDS_GPU_MAX_INLINE_SIZE;
-        attr->comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
-        attr->version = 1;
+        gds_dbg("caps=%016lx\n", peer->attr.caps);
+        peer->attr.peer_dma_op_map_len = GDS_GPU_MAX_INLINE_SIZE;
+        peer->attr.comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
+        peer->attr.version = 1;
 
-        gds_dbg("peer_attr: peer_id=%"PRIx64"\n", attr->peer_id);
+        gds_dbg("peer_attr: peer_id=%"PRIx64"\n", peer->attr.peer_id);
 }
 
 //-----------------------------------------------------------------------------
@@ -1459,13 +1507,11 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
         }
 
         gds_peer *peer = &gpu_peer[gpu_id];
-        gds_peer_attr *peer_attr = &gpu_peer_attr[gpu_id];
 
         if (gpu_registered[gpu_id]) {
                 gds_dbg("gds_peer for GPU%u already initialized\n", gpu_id);
         } else {
                 gds_init_peer(peer, gpu_id);
-                gds_init_peer_attr(peer_attr, peer);
                 gpu_registered[gpu_id] = true;
         }
 
@@ -1473,7 +1519,7 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
                 *p_peer = peer;
 
         if (p_peer_attr)
-                *p_peer_attr = peer_attr;
+                *p_peer_attr = &peer->attr;
 
         return ret;
 }
