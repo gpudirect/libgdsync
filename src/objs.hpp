@@ -69,6 +69,12 @@ struct gds_peer {
         int gpu_id;
         CUdevice gpu_dev;
         CUcontext gpu_ctx;
+        bool has_memops;
+        bool has_remote_flush;
+        bool has_write64;
+        bool has_wait_nor;
+        bool has_inlcpy;
+        bool has_membar;
 
         // before calling ibv_exp_create_cq(), patch flags with appropriate values
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
@@ -100,5 +106,3 @@ static inline gds_peer *peer_from_id(uint64_t id)
         assert(id);
         return reinterpret_cast<gds_peer *>(id);
 }
-
-
