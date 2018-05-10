@@ -580,6 +580,8 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         size_t n_waits = 0;
         size_t last_wait = 0;
         bool move_flush = false;
+        gds_peer *peer = NULL;
+        gds_op_list_t params;
 
         ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
         if (ret) {
@@ -602,12 +604,10 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         }
         // alternatively, remove flush for wait is next op is a wait too
 
-        gds_peer *peer = peer_from_stream(stream);
+        peer = peer_from_stream(stream);
         if (!peer) {
                 return EINVAL;
         }
-
-        gds_op_list_t params;
 
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
@@ -628,6 +628,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         if (move_flush && i != last_wait) {
                                 gds_dbg("discarding FLUSH!\n");
                                 flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
+                        }
                         retcode = gds_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
@@ -653,13 +654,12 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         }
                         break;
                 case GDS_TAG_WRITE_MEMORY:
-                        retcode = gds_fill_inlcpy(params+idx, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
+                        retcode = gds_fill_inlcpy(params, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poke\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
-                        ++idx;
                         break;
                 default:
                         gds_err("invalid tag for %d entry\n", i);

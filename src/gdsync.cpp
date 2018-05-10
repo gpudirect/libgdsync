@@ -306,8 +306,10 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
 
 #if GDS_HAS_MEMBAR
         case CU_STREAM_MEM_OP_MEMORY_BARRIER:
-                gds_info("MEMORY_BARRIER flags:%08x\n",
-                        param->memoryBarrier.flags);
+                gds_info("MEMORY_BARRIER scope:%02x set_before=%02x set_after=%02x\n",
+                         param->memoryBarrier.scope,
+                         param->memoryBarrier.set_before,
+                         param->memoryBarrier.set_after);
                 break;
 #endif
         default:
@@ -348,7 +350,7 @@ int gds_fill_membar(gds_op_list_t &ops, int flags)
                         param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 } else if (flags & GDS_MEMBAR_SYS) {
                         param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
-                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_SCOPE_SYS;
+                        param.memoryBarrier.scope = CU_STREAM_MEMORY_BARRIER_SCOPE_SYS;
                         param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_WRITE_32 | CU_STREAM_MEMORY_BARRIER_OP_WRITE_64;
                         param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 } else {
@@ -356,9 +358,12 @@ int gds_fill_membar(gds_op_list_t &ops, int flags)
                         retcode = EINVAL;
                         goto out;
                 }
-                gds_dbg("op=%d membar flags=%08x\n",
+                gds_dbg("op=%d membar scope:%02x set_before=%02x set_after=%02x\n",
                         param.operation,
-                        param.memoryBarrier.flags);
+                        param.memoryBarrier.scope,
+                        param.memoryBarrier.set_before,
+                        param.memoryBarrier.set_after);
+
         }
         ops.push_back(param);
 out:
@@ -371,7 +376,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, size_t n_bytes, int flags)
+static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, const void *data, size_t n_bytes, int flags)
 {
         int retcode = 0;
 #if GDS_HAS_INLINE_COPY
@@ -392,7 +397,7 @@ static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, siz
         if (need_barrier)
                 param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_FENCE_SYS;
         else
-                param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER
+                param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER;
         gds_dbg("op=%d addr=%p src=%p size=%zd flags=%08x\n",
                 param.operation,
                 (void*)param.writeMemory.address,
@@ -407,7 +412,7 @@ static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, siz
         return retcode;
 }
 
-int gds_fill_inlcpy(gds_op_list_t &ops, void *ptr, void *data, size_t n_bytes, int flags)
+int gds_fill_inlcpy(gds_op_list_t &ops, void *ptr, const void *data, size_t n_bytes, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
