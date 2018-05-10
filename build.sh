@@ -28,7 +28,7 @@ if [ ! -e Makefile ]; then
         exit
     fi
     EXTRA+=" --enable-test"
-    EXTRA+=" --enable-extended-memops"
+    #EXTRA+=" --enable-extended-memops"
     #EXTRA="$EXTRA --with-gdstools=$PREFIX"
 
     ../configure \
