@@ -75,6 +75,8 @@ struct gds_peer {
         bool has_wait_nor;
         bool has_inlcpy;
         bool has_membar;
+        bool has_weak;
+        unsigned max_batch_size;
         gds_peer_attr attr;
 
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
