@@ -278,9 +278,9 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
         gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
         gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
-        //gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
-        //gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
-        //gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
         CUCHECK(cuCtxSynchronize());
 
 	ctx->context = ibv_open_device(ib_dev);
