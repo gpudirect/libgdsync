@@ -27,7 +27,7 @@ AM_CONDITIONAL(TEST_ENABLE, test x$enable_test = xyes)
 AC_ARG_ENABLE(
     [extended-memops],
     [AC_HELP_STRING([--enable-extended-memops],
-                   [Enable support for CUDA 9.0 MemOps (default=no)])],
+                   [Enable support for CUDA 10.0 MemOps (default=no)])],
     [enable_ext_memops=$enableval],
     [enable_ext_memops=no])
 AM_CONDITIONAL(EXT_MEMOPS, test x$enable_ext_memops = xyes)
@@ -169,11 +169,25 @@ dnl Checks for CUDA >= 8.0
 AC_CHECK_LIB(cuda, cuStreamBatchMemOp, [],
     AC_MSG_ERROR([cuStreamBatchMemOp() not found.  libgdsync requires CUDA 8.0 or later.]))
 
+dnl Checks for CUDA >= 9.0
+AC_CHECK_DECLS([CU_STREAM_MEM_OP_WRITE_VALUE_64], [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_STREAM_MEM_OP_WAIT_VALUE_64], [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_STREAM_WAIT_VALUE_NOR], [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS], [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR], [], [], [[#include <cuda.h>]])
+
+dnl Checks for CUDA >= 9.2
+AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS], [], [], [[#include <cuda.h>]])
+AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES], [], [], [[#include <cuda.h>]])
+
 if test x$enable_ext_memops = xyes; then
    AC_CHECK_DECLS([CU_STREAM_MEM_OP_WRITE_MEMORY],    [], [], [[#include <cuda.h>]])
    AC_CHECK_DECLS([CU_STREAM_MEM_OP_MEMORY_BARRIER], [], [], [[#include <cuda.h>]])
-   AC_CHECK_DECLS([CU_STREAM_MEM_OP_WRITE_VALUE_64], [], [], [[#include <cuda.h>]])
-   AC_CHECK_DECLS([CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK], [], [], [[#include <cuda.h>]])
+   AC_CHECK_DECLS([CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING], [], [], [[#include <cuda.h>]])
+   AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING], [], [], [[#include <cuda.h>]])
+   AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY], [], [], [[#include <cuda.h>]])
+   AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER], [], [], [[#include <cuda.h>]])
+   AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_MAXIMUM_STREAM_WRITE_MEMORY_SIZE], [], [], [[#include <cuda.h>]])
 fi
 
 AC_CONFIG_FILES([Makefile libgdsync.spec])
