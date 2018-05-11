@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
         int use_combined = 0;
         int use_membar = 0;
         int wait_key = -1;
-        CUstream gpu_stream;
+        //CUstream gpu_stream;
 
         int n_bg_streams = 0;
 
@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-        CUCHECK(cuStreamCreate(&gpu_stream, 0));
+        //CUCHECK(cuStreamCreate(&gpu_stream, 0));
 
         puts("");
         printf("number iterations %d\n", num_iters);
