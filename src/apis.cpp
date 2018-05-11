@@ -48,7 +48,8 @@
 #include "objs.hpp"
 #include "utils.hpp"
 #include "memmgr.hpp"
-//#include "mem.hpp"
+#include "utils.hpp"
+#include "archutils.h"
 
 
 //-----------------------------------------------------------------------------
@@ -674,6 +675,131 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 ret = retcode;
                 goto out;
         }
+
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
+{
+        size_t i;
+        int ret = 0;
+        int retcode = 0;
+#if 1
+        for(i = 0; i < n_descs; ++i) {
+                gds_descriptor_t *desc = descs + i;
+                switch(desc->tag) {
+                case GDS_TAG_SEND: {
+                        gds_send_request_t *sreq = desc->send;
+                        retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage);
+                        if (retcode) {
+                                gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        break;
+                }
+                case GDS_TAG_WAIT: {
+                        gds_wait_request_t *wreq = desc->wait;
+                        retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage);
+                        if (retcode) {
+                                gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        break;
+                }
+                case GDS_TAG_WAIT_VALUE32: {
+                        uint32_t *ptr = desc->wait32.ptr;
+                        uint32_t value = desc->wait32.value;
+                        bool flush = false;
+                        if (desc->wait32.flags & GDS_WAIT_POST_FLUSH) {
+                                gds_err("GDS_WAIT_POST_FLUSH flag is not supported yet\n");
+                                flush = true;
+                        }
+                        gds_memory_type_t mem_type = (gds_memory_type_t)(desc->wait32.flags & GDS_MEMORY_MASK);
+                        switch(mem_type) {
+                        case GDS_MEMORY_GPU:
+                                // dereferencing ptr may fail if ptr points to CUDA device memory
+                        case GDS_MEMORY_HOST:
+                        case GDS_MEMORY_IO:
+                                break;
+                        default:
+                                gds_err("invalid memory type 0x%02x in WAIT_VALUE32\n", mem_type);
+                                ret = EINVAL;
+                                goto out;
+                                break;
+                        }
+                        bool done = false;
+                        do {
+                                uint32_t data = ACCESS_ONCE(*ptr);
+                                switch(desc->wait32.cond_flags) {
+                                case GDS_WAIT_COND_GEQ:
+                                        done = ((int32_t)data - (int32_t)value >= 0);
+                                        break;
+                                case GDS_WAIT_COND_EQ:
+                                        done = (data == value);
+                                        break;
+                                case GDS_WAIT_COND_AND:
+                                        done = (data & value);
+                                        break;
+                                case GDS_WAIT_COND_NOR:
+                                        done = ~(data | value);
+                                        break;
+                                default:
+                                        gds_err("invalid condition flags 0x%02x in WAIT_VALUE32\n", desc->wait32.cond_flags);
+                                        goto out;
+                                        break;
+                                }
+                                if (done)
+                                        break;
+                                // TODO: more aggressive CPU relaxing needed here to avoid starving I/O fabric
+                                arch_cpu_relax();
+                        } while(true);
+                        break;
+                }
+                case GDS_TAG_WRITE_VALUE32: {
+                        uint32_t *ptr = desc->write32.ptr;
+                        uint32_t value = desc->write32.value;
+                        gds_memory_type_t mem_type = (gds_memory_type_t)(desc->write32.flags & GDS_MEMORY_MASK);
+                        switch(mem_type) {
+                        case GDS_MEMORY_GPU:
+                                // dereferencing ptr may fail if ptr points to CUDA device memory
+                        case GDS_MEMORY_HOST:
+                        case GDS_MEMORY_IO:
+                                break;
+                        default:
+                                gds_err("invalid memory type 0x%02x in WRITE_VALUE32\n", mem_type);
+                                ret = EINVAL;
+                                goto out;
+                                break;
+                        }
+                        bool barrier = (desc->write32.flags & GDS_WRITE_PRE_BARRIER);
+                        if (barrier)
+                                wmb();
+                        ACCESS_ONCE(*ptr) = value;
+                        break;
+                }
+                case GDS_TAG_WRITE_MEMORY: {
+                        void *dest = desc->writemem.dest;
+                        const void *src = desc->writemem.src;
+                        size_t nbytes = desc->writemem.count;
+                        bool barrier = (desc->writemem.flags & GDS_WRITE_MEMORY_POST_BARRIER_SYS);
+                        memcpy(dest, src, nbytes);
+                        if (barrier)
+                                wmb();
+                        break;
+                }
+                default:
+                        gds_err("invalid tag for %d entry\n", i);
+                        ret = EINVAL;
+                        goto out;
+                        break;
+                }
+        }
+#endif
 
 out:
         return ret;

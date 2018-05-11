@@ -189,7 +189,7 @@ enum gds_post_ops_flags {
 
 struct gds_peer;
 int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
-
+int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op);
 gds_peer *peer_from_stream(CUstream stream);
 
 //-----------------------------------------------------------------------------

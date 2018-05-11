@@ -932,7 +932,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
+int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
 {
         int retcode = 0;
         size_t n = 0;
