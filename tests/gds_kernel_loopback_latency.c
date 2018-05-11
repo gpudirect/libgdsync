@@ -794,6 +794,9 @@ int main(int argc, char *argv[])
 		case 'P':
 			peersync = !peersync;
                         printf("INFO: switching PeerSync %s\n", peersync?"ON":"OFF");
+                        if (!peersync) {
+                                printf("ERROR: switching PeerSync OFF is not supported yet\n");
+                        }
 			break;
 
 		case 'Q':
