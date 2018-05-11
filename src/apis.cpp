@@ -50,6 +50,7 @@
 #include "memmgr.hpp"
 #include "utils.hpp"
 #include "archutils.h"
+#include "mlnxutils.h"
 
 
 //-----------------------------------------------------------------------------
@@ -687,13 +688,13 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
         size_t i;
         int ret = 0;
         int retcode = 0;
-#if 1
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
                 switch(desc->tag) {
                 case GDS_TAG_SEND: {
+                        gds_dbg("desc[%d] SEND\n", i);
                         gds_send_request_t *sreq = desc->send;
-                        retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage);
+                        retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
                                 ret = retcode;
@@ -702,8 +703,9 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         break;
                 }
                 case GDS_TAG_WAIT: {
+                        gds_dbg("desc[%d] WAIT\n", i);
                         gds_wait_request_t *wreq = desc->wait;
-                        retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage);
+                        retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
                                 ret = retcode;
@@ -712,6 +714,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         break;
                 }
                 case GDS_TAG_WAIT_VALUE32: {
+                        gds_dbg("desc[%d] WAIT_VALUE32\n", i);
                         uint32_t *ptr = desc->wait32.ptr;
                         uint32_t value = desc->wait32.value;
                         bool flush = false;
@@ -734,7 +737,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         }
                         bool done = false;
                         do {
-                                uint32_t data = ACCESS_ONCE(*ptr);
+                                uint32_t data = gds_atomic_get(ptr);
                                 switch(desc->wait32.cond_flags) {
                                 case GDS_WAIT_COND_GEQ:
                                         done = ((int32_t)data - (int32_t)value >= 0);
@@ -761,6 +764,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         break;
                 }
                 case GDS_TAG_WRITE_VALUE32: {
+                        gds_dbg("desc[%d] WRITE_VALUE32\n", i);
                         uint32_t *ptr = desc->write32.ptr;
                         uint32_t value = desc->write32.value;
                         gds_memory_type_t mem_type = (gds_memory_type_t)(desc->write32.flags & GDS_MEMORY_MASK);
@@ -779,7 +783,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         bool barrier = (desc->write32.flags & GDS_WRITE_PRE_BARRIER);
                         if (barrier)
                                 wmb();
-                        ACCESS_ONCE(*ptr) = value;
+                        gds_atomic_set(ptr, value);
                         break;
                 }
                 case GDS_TAG_WRITE_MEMORY: {
@@ -787,7 +791,22 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         const void *src = desc->writemem.src;
                         size_t nbytes = desc->writemem.count;
                         bool barrier = (desc->writemem.flags & GDS_WRITE_MEMORY_POST_BARRIER_SYS);
-                        memcpy(dest, src, nbytes);
+                        gds_memory_type_t mem_type = memtype_from_flags(desc->writemem.flags);
+                        gds_dbg("desc[%d] WRITE_MEMORY dest=%p src=%p len=%zu memtype=%02x\n", i, dest, src, nbytes, mem_type);
+                        switch(mem_type) {
+                        case GDS_MEMORY_GPU:
+                        case GDS_MEMORY_HOST:
+                                memcpy(dest, src, nbytes);
+                                break;
+                        case GDS_MEMORY_IO:
+                                assert(nbytes % sizeof(uint64_t));
+                                assert(((unsigned long)dest & 0x7) == 0);
+                                gds_bf_copy((uint64_t*)dest, (uint64_t*)src, nbytes);
+                                break;
+                        default:
+                                assert(!"invalid mem type");
+                                break;
+                        }
                         if (barrier)
                                 wmb();
                         break;
@@ -799,8 +818,6 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         break;
                 }
         }
-#endif
-
 out:
         return ret;
 }
