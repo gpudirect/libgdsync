@@ -27,14 +27,27 @@ if [ ! -e Makefile ]; then
         echo "ERROR: CUDA toolkit path not passed"
         exit
     fi
+    if [ "x$OFED" != "x" ]; then
+        echo "picking OFED libibverbs from $OFED"
+        EXTRA+=" --with-libibverbs=$OFED"
+    else
+        echo "WARNING: assuming IB Verbs is installed in /usr"
+        EXTRA+=" --with-libibverbs=/usr"
+    fi
+
+    if [ "x$GDRCOPY" != "x" ]; then
+        EXTRA+=" --with-gdrcopy=$GDRCOPY"
+    else
+        echo "WARNING: assuming GDRcopy is installed in /usr"
+        EXTRA+=" --with-gdrcopy=/usr"
+    fi
+
     EXTRA+=" --enable-test"
-    #EXTRA+=" --enable-extended-memops"
+    EXTRA+=" --enable-extended-memops"
     #EXTRA="$EXTRA --with-gdstools=$PREFIX"
 
     ../configure \
         --prefix=$PREFIX \
-        --with-libibverbs=$PREFIX \
-        --with-gdrcopy=$PREFIX \
         --with-mpi=$MPI_HOME \
         $EXTRA
 
