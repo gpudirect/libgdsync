@@ -95,12 +95,9 @@ int gds_flusher_enabled()
 #define GDS_HAS_INLINE_COPY 0
 #endif
 
-#if HAVE_DECL_CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK
-#warning "enabling consistency extension"
-#define GDS_HAS_WEAK_API    1
+#if HAVE_DECL_CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING
 #else
-#define GDS_HAS_WEAK_API    0
-#define CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK 1
+#define CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING 0x1
 #endif
 
 #if HAVE_DECL_CU_STREAM_MEM_OP_MEMORY_BARRIER
@@ -199,42 +196,9 @@ static bool gds_enable_membar()
         return GDS_HAS_MEMBAR && !gds_disable_membar;
 }
 
-// pre-req: an active CUDA context
-static bool gds_detect_weak_consistency()
-{
-        bool has_hidden_flag = false;
-        gds_dbg("testing hidden weak flag\n");
-        do {
-                CUstreamBatchMemOpParams params[2];
-                CUresult res;
-                res = cuStreamBatchMemOp(0, 0, params, 0);
-                if (res != CUDA_SUCCESS) {
-                        const char *err_str = NULL;
-                        cuGetErrorString(res, &err_str);
-                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
-                        break;
-                }
-                res = cuStreamBatchMemOp(0, 0, params, CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK);
-                if (res ==  CUDA_ERROR_INVALID_VALUE) {
-                        gds_dbg("weak flag is not supported\n");
-                        break;
-                } else if (res != CUDA_SUCCESS) {
-                        const char *err_str = NULL;
-                        cuGetErrorString(res, &err_str);
-                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
-                        break;
-                }
-                gds_dbg("detected hidden weak consistency flag\n");
-                has_hidden_flag = true;
-        } while(0);
-        return has_hidden_flag;
-}
-
 static bool gds_enable_weak_consistency()
 {
         static int gds_disable_weak_consistency = -1;
-        static bool test_hidden_flag = true;
-        static bool has_hidden_flag = false;
         if (-1 == gds_disable_weak_consistency) {
                 const char *env = getenv("GDS_DISABLE_WEAK_CONSISTENCY");
                 if (env)
@@ -243,13 +207,9 @@ static bool gds_enable_weak_consistency()
                         gds_disable_weak_consistency = 1; // disabled by default
                 gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
         }
-        if (!GDS_HAS_WEAK_API && test_hidden_flag) {
-                test_hidden_flag = false;
-                has_hidden_flag = gds_detect_weak_consistency();
-        }
-        gds_dbg("GDS_HAS_WEAK_API=%d has_hidden_flag=%d gds_disable_weak_consistency=%d\n",
-                GDS_HAS_WEAK_API, has_hidden_flag, gds_disable_weak_consistency);
-        return !gds_disable_weak_consistency && (GDS_HAS_WEAK_API || has_hidden_flag);
+        gds_dbg("gds_disable_weak_consistency=%d\n",
+                gds_disable_weak_consistency);
+        return !gds_disable_weak_consistency;
 }
 
 //-----------------------------------------------------------------------------
@@ -622,16 +582,19 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_batch_ops(CUstream stream, gds_op_list_t &ops, int flags)
+int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &ops, int flags)
 {
         CUresult result = CUDA_SUCCESS;
         int retcode = 0;
         unsigned int cuflags = 0;
-        cuflags |= gds_enable_weak_consistency() ? CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK : 0;
         size_t nops = ops.size();
+
+        if (gds_enable_weak_consistency() && peer->has_weak)
+                cuflags |= CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING;
+
         gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
 
-        if (nops > 256) {
+        if (nops > peer->max_batch_size) {
                 gds_warn("batch size might be too big, stream=%p nops=%d flags=%08x\n", stream, nops, flags);
                 //return EINVAL;
         }
@@ -957,7 +920,7 @@ int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_
                 }
         }
 
-        retcode = gds_stream_batch_ops(stream, ops, 0);
+        retcode = gds_stream_batch_ops(peer, stream, ops, 0);
         if (retcode) {
                 gds_err("error %d in stream_batch_ops\n", retcode);
                 goto out;
@@ -1259,15 +1222,14 @@ static int gds_unregister_va(uint64_t registration_id, uint64_t peer_id)
 static bool support_memops(CUdevice dev)
 {
         int flag = 0;
-#if   CUDA_VERSION >= 9010
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS
+        // on  CUDA_VERSION >= 9010
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS, dev));
-        gds_warn("flag=%d\n", flag);
 #elif CUDA_VERSION >= 8000
-        // CUDA MemOps are enabled on CUDA 8.0+
+        // CUDA MemOps are always enabled on CUDA 8.0+
         flag = 1;
-        gds_warn("flag=%d\n", flag);
 #else
-#error "GCC error CUDA MemOp APIs is missing prior to CUDA 8.0"
+#error "CUDA MemOp APIs are missing prior to CUDA 8.0"
 #endif
         gds_dbg("dev=%d has_memops=%d\n", dev, flag);
         return !!flag;
@@ -1276,7 +1238,8 @@ static bool support_memops(CUdevice dev)
 static bool support_remote_flush(CUdevice dev)
 {
         int flag = 0;
-#if CUDA_VERSION >= 9020
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES
+        // on CUDA_VERSION >= 9020
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES, dev));
 #else
 #warning "Assuming CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES=0 prior to CUDA 9.2"
@@ -1288,7 +1251,8 @@ static bool support_remote_flush(CUdevice dev)
 static bool support_write64(CUdevice dev)
 {
         int flag = 0;
-#if CUDA_VERSION >= 9000
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS
+        // on CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS, dev));
 #endif
         gds_dbg("dev=%d has_write64=%d\n", dev, flag);
@@ -1298,8 +1262,11 @@ static bool support_write64(CUdevice dev)
 static bool support_wait_nor(CUdevice dev)
 {
         int flag = 0;
-#if CUDA_VERSION >= 9000
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR
+        // on CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR, dev));
+#else
+        gds_dbg("hardcoding has_wait_nor=0\n");
 #endif
         gds_dbg("dev=%d has_wait_nor=%d\n", dev, flag);
         return !!flag;
@@ -1308,13 +1275,77 @@ static bool support_wait_nor(CUdevice dev)
 static bool support_inlcpy(CUdevice dev)
 {
         int flag = 0;
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY
+        // on CUDA_VERSION >= 1000
+        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY, dev));
+#else
+        gds_dbg("hardcoding has_inlcpy=0\n");
+#endif
+        gds_dbg("dev=%d has_inlcpy=%d\n", dev, flag);
         return !!flag;
 }
 
 static bool support_membar(CUdevice dev)
 {
         int flag = 0;
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER
+        // on CUDA_VERSION >= 1000
+        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER, dev));
+#else
+        gds_dbg("hardcoding has_membar=0\n");
+#endif
+        gds_dbg("dev=%d has_membar=%d\n", dev, flag);
         return !!flag;
+}
+
+static bool support_weak_consistency(CUdevice dev)
+{
+        int flag = 0;
+        CUdevice cur_dev;
+        bool has_hidden_flag = false;
+
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING
+        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING, dev));
+#endif
+
+        CUCHECK(cuCtxGetDevice(&cur_dev));
+        if (cur_dev != dev) {
+                gds_err("device context is not current, cannot detect weak consistency flag\n");
+                goto done;
+        }
+
+        do {
+                gds_dbg("testing hidden weak flag\n");
+                        
+                CUstreamBatchMemOpParams params[2];
+                CUresult res;
+                res = cuStreamBatchMemOp(0, 0, params, 0);
+                if (res != CUDA_SUCCESS) {
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
+                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
+                        break;
+                }
+                res = cuStreamBatchMemOp(0, 0, params, CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING);
+                if (res ==  CUDA_ERROR_INVALID_VALUE) {
+                        gds_dbg("weak flag is not supported\n");
+                        break;
+                } else if (res != CUDA_SUCCESS) {
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
+                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
+                        break;
+                }
+                gds_dbg("detected hidden weak consistency flag\n");
+                has_hidden_flag = true;
+        } while(0);
+
+        if (flag && !has_hidden_flag) {
+                gds_err("GPU dev=%d relaxed ordering device attribute and detection do not agree\n");
+        }
+done:                
+        gds_dbg("dev=%d has_weak=%d\n", dev, has_hidden_flag);
+        return has_hidden_flag;
 }
 
 //-----------------------------------------------------------------------------
@@ -1340,6 +1371,9 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->has_wait_nor = support_wait_nor(dev);
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
         peer->has_membar = support_membar(dev);
+        peer->has_weak = support_weak_consistency(dev);
+
+        peer->max_batch_size = 256;
 
         peer->alloc_type = gds_peer::NONE;
         peer->alloc_flags = 0;
@@ -1372,6 +1406,8 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->attr.peer_dma_op_map_len = GDS_GPU_MAX_INLINE_SIZE;
         peer->attr.comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
         peer->attr.version = 1;
+
+        gpu_registered[gpu_id] = true;
 
         gds_dbg("peer_attr: peer_id=%"PRIx64"\n", peer->attr.peer_id);
 }
@@ -1475,6 +1511,7 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
         gds_dbg("GPU%u: registering peer\n", gpu_id);
         
         if (!context) {
+                gds_err("invalid IBV context\n");
                 return EINVAL;
         }
         if (gpu_id >= max_gpus) {
@@ -1488,7 +1525,6 @@ int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer 
                 gds_dbg("gds_peer for GPU%u already initialized\n", gpu_id);
         } else {
                 gds_init_peer(peer, gpu_id);
-                gpu_registered[gpu_id] = true;
         }
 
         if (p_peer)

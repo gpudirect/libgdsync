@@ -668,7 +668,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 }
         }
-        retcode = gds_stream_batch_ops(stream, params, 0);
+        retcode = gds_stream_batch_ops(peer, stream, params, 0);
         if (retcode) {
                 gds_err("error %d in gds_stream_batch_ops\n", retcode);
                 ret = retcode;

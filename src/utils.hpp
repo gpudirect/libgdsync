@@ -179,7 +179,9 @@ int gds_fill_inlcpy(gds_op_list_t &param, void *ptr, const void *data, size_t n_
 int gds_fill_poke(gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
 int gds_fill_poke64(gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
 int gds_fill_poll(gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
-int gds_stream_batch_ops(CUstream stream, gds_op_list_t &params, int flags);
+
+struct gds_peer;
+int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params, int flags);
 
 enum gds_post_ops_flags {
         GDS_POST_OPS_DISCARD_WAIT_FLUSH = 1<<0
