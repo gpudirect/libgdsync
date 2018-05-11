@@ -296,7 +296,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
  * - It is provided for convenience only.
  * - It might fail if trying to access CUDA device memory pointers
  */
-int gds_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags);
+int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags);
 
 
 /*
