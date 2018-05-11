@@ -120,6 +120,7 @@ typedef enum gds_memory_type {
 	GDS_MEMORY_MASK = 0x7
 } gds_memory_type_t;
 
+// Note: those flags below must not overlap with gds_memory_type_t
 typedef enum gds_wait_flags {
 	GDS_WAIT_POST_FLUSH = 1<<3,
 } gds_wait_flags_t;
@@ -136,6 +137,7 @@ typedef enum gds_membar_flags {
 	GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
 	GDS_MEMBAR_DEFAULT      = 1<<5,
 	GDS_MEMBAR_SYS          = 1<<6,
+	GDS_MEMBAR_MLX5         = 1<<7,
 } gds_membar_flags_t;
 
 enum {

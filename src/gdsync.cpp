@@ -343,16 +343,17 @@ int gds_fill_membar(gds_op_list_t &ops, int flags)
                         param.operation,
                         param.flushRemoteWrites.flags);
         } else {
+                param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
+                if (flags & GDS_MEMBAR_MLX5) {
+                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_WRITE_32 | CU_STREAM_MEMORY_BARRIER_OP_WRITE_64;
+                } else {
+                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_ALL;
+                }
+                param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 if (flags & GDS_MEMBAR_DEFAULT) {
-                        param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
                         param.memoryBarrier.scope = CU_STREAM_MEMORY_BARRIER_SCOPE_GPU;
-                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_WRITE_32 | CU_STREAM_MEMORY_BARRIER_OP_WRITE_64;
-                        param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 } else if (flags & GDS_MEMBAR_SYS) {
-                        param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
                         param.memoryBarrier.scope = CU_STREAM_MEMORY_BARRIER_SCOPE_SYS;
-                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_WRITE_32 | CU_STREAM_MEMORY_BARRIER_OP_WRITE_64;
-                        param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 } else {
                         gds_err("error, unsupported membar\n");
                         retcode = EINVAL;
@@ -755,11 +756,11 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                                         int flags = 0;
                                         if (fence_mem == IBV_EXP_PEER_FENCE_MEM_PEER) {
                                                 gds_dbg("using light membar\n");
-                                                flags = GDS_MEMBAR_DEFAULT;
+                                                flags = GDS_MEMBAR_DEFAULT | GDS_MEMBAR_MLX5;
                                         }
                                         else if (fence_mem == IBV_EXP_PEER_FENCE_MEM_SYS) {
                                                 gds_dbg("using heavy membar\n");
-                                                flags = GDS_MEMBAR_SYS;
+                                                flags = GDS_MEMBAR_SYS | GDS_MEMBAR_MLX5;
                                         }
                                         else {
                                                 gds_err("unsupported fence combination\n");
