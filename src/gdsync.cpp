@@ -107,7 +107,7 @@ int gds_flusher_enabled()
 #define GDS_HAS_MEMBAR      0
 #endif
 
-// TODO: use corret value
+// TODO: use correct value
 // TODO: make it dependent upon the particular GPU
 const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
 
