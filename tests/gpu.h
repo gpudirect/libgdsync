@@ -81,6 +81,43 @@
 
 #define CUDACHECK(stmt) __CUDACHECK(stmt, #stmt)
 
+
+//----
+
+#ifdef USE_PROFILE
+#include <cuda_profiler_api.h>
+#define CUDA_PROFILER_START_ON_LEVEL(start) { if(start){cudaProfilerStart();} }
+#define CUDA_PROFILER_STOP_ON_LEVEL(stop)   { if(stop){cudaProfilerStop();cudaDeviceReset();exit(0);} }
+#else
+#define CUDA_PROFILER_START_ON_LEVEL(start) { }
+#define CUDA_PROFILER_STOP_ON_LEVEL(stop)   { }
+#endif
+
+#ifdef USE_NVTX
+#include "nvToolsExt.h"
+#define NVTX_PUSH(name,cid) do { \
+        cudaDeviceSynchronize(); \
+	uint32_t colors[] = { 0x0000ff00, 0x000000ff, 0x00ffff00, 0x00ff00ff, 0x0000ffff, 0x00ff0000, 0x00ffffff }; \
+	int num_colors = sizeof(colors)/sizeof(uint32_t); \
+	int color_id = cid; \
+	color_id = color_id%num_colors;\
+	nvtxEventAttributes_t eventAttrib = {0}; \
+	eventAttrib.version = NVTX_VERSION; \
+	eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE; \
+	eventAttrib.colorType = NVTX_COLOR_ARGB; \
+	eventAttrib.color = colors[color_id]; \
+	eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII; \
+	eventAttrib.message.ascii = name; \
+	nvtxRangePushEx(&eventAttrib); \
+} while(0)
+#define NVTX_POP() do { /*cudaDeviceSynchronize();*/ nvtxRangePop(); } while(0)
+#else
+#define NVTX_PUSH(name,cid) do {} while(0)
+#define NVTX_POP() do {} while(0)
+#endif
+
+//----
+
 enum gpu_msg_level {
     GPU_MSG_DEBUG = 1,
     GPU_MSG_INFO,

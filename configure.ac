@@ -106,12 +106,30 @@ AC_ARG_WITH(cuda-driver,
 )
 
 dnl Specify GPU Arch
-AC_ARG_ENABLE(gpu-arch,
- AC_HELP_STRING([--enable-gpu-arch=arch], [ Set GPU arch: sm_20, sm_21, sm_30, sm_35, sm_50, sm_52 (default: sm_35)]),
- [ gpu_arch=${enableval} ],
- [ gpu_arch="sm_35" ]
+AC_ARG_WITH(
+    [gpu-arch],
+    AC_HELP_STRING([--with-gpu-arch=arch],
+                   [ Set GPU arch: sm_30, sm_35, sm_50, sm_52, sm_60, sm_70 (default: sm_35)]),
+    [ gpu_arch=${withval} ],
+    [ gpu_arch="sm_35" ]
 )
 
+AC_ARG_ENABLE(
+    [nvtx],
+    [AC_HELP_STRING([--enable-nvtx],
+                    [Use NVTX profiling extensions (default=no)])],
+    [enable_nvtx=$enableval],
+    [enable_nvtx=no])
+if test x$enable_nvtx = x || test x$with_nvtx = xno; then
+    want_nvtx=no
+    LIBNVTX=
+else
+    want_nvtx=yes
+    CPPFLAGS="$CPPFLAGS -DUSE_NVTX"
+    LIBNVTX=-lnvToolsExt
+    echo "enabling use of NV Tools Ext"
+    AC_SUBST(LIBNVTX)
+fi
 
 dnl Checks for programs
 AC_PROG_CC
