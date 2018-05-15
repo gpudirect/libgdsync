@@ -137,6 +137,8 @@ enum gpu_msg_level {
 #define gpu_info(FMT, ARGS...) gpu_msg(GPU_MSG_INFO,  "INFO: ", FMT, ## ARGS)
 #define gpu_infoc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gpu_info(FMT, ## ARGS); } while(0)
 #define gpu_warn(FMT, ARGS...) gpu_msg(GPU_MSG_WARN,  "WARN: ", FMT, ## ARGS)
+#define gpu_warnc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gpu_msg(GPU_MSG_WARN,  "WARN: ", FMT, ## ARGS); } while(0)
+#define gpu_warn_once(FMT, ARGS...) gpu_warnc(1, FMT, ##ARGS)
 #define gpu_err(FMT, ARGS...)  gpu_msg(GPU_MSG_ERROR, "ERR:  ", FMT, ##ARGS)
 
 // oversubscribe SM by factor 2
