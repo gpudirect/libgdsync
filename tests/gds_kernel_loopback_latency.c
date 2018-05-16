@@ -707,7 +707,7 @@ static void usage(const char *argv0)
 	printf("  -S, --gpu-calc-size=<size>  size of GPU compute buffer (default 128KB)\n");
 	printf("  -G, --gpu-id           use specified GPU (default 0)\n");
 	printf("  -B, --batch-length=<n> max batch length (default 20)\n");
-	printf("  -P, --peersync            enable GPUDirect PeerSync support (default enabled)\n");
+	printf("  -P, --peersync            disable GPUDirect PeerSync support (default enabled)\n");
 	printf("  -C, --peersync-gpu-cq     enable GPUDirect PeerSync GPU CQ support (default disabled)\n");
 	printf("  -D, --peersync-gpu-dbrec  enable QP DBREC on GPU memory (default disabled)\n");
 	printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
