@@ -71,12 +71,8 @@ int prof_idx = 0;
 
 //-----------------------------------------------------------------------------
 
-#if 1
-#define dbg(FMT, ARGS...)  do {} while(0)
-#else
-#define dbg_msg(FMT, ARGS...)   fprintf(stderr, "DBG [%s] " FMT, __FUNCTION__ ,##ARGS)
-#define dbg(FMT, ARGS...)  dbg_msg("DBG:  ", FMT, ## ARGS)
-#endif
+
+#define dbg(FMT, ARGS...)  gpu_dbg(FMT, ## ARGS)
 
 #define min(A,B) ((A)<(B)?(A):(B))
 
@@ -115,6 +111,7 @@ struct pingpong_context {
         int                      consume_rx_cqe;
         int                      gpumem;
         int                      use_desc_apis;
+        int                      skip_kernel_launch;
 };
 
 static int my_rank = 0, comm_size = 1;
@@ -215,7 +212,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                             int consume_rx_cqe,
                                             int sched_mode,
                                             int use_gpumem,
-                                            int use_desc_apis)
+                                            int use_desc_apis,
+                                            int skip_kernel_launch)
 {
 	struct pingpong_context *ctx;
 
@@ -234,6 +232,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 	ctx->gpu_id   = gpu_id;
         ctx->gpumem   = use_gpumem;
         ctx->use_desc_apis = use_desc_apis;
+        ctx->skip_kernel_launch = skip_kernel_launch;
 
         size_t alloc_size = 3 * align_to(size + 40, page_size);
 	if (ctx->gpumem) {
@@ -274,14 +273,16 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         memset(ctx->rx_flag, 0, alloc_size);
         gpu_register_host_mem(ctx->rx_flag, alloc_size);
 
-        // pipe-cleaner
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
-        gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
-        CUCHECK(cuCtxSynchronize());
+        if (!ctx->skip_kernel_launch) {
+                // pipe-cleaner
+                gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
+                gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
+                gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
+                gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+                gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+                gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
+                CUCHECK(cuCtxSynchronize());
+        }
 
 	ctx->context = ibv_open_device(ib_dev);
 	if (!ctx->context) {
@@ -459,6 +460,34 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 	return i;
 }
 
+// will be needed when implementing the !peersync !use_desc_apis case
+static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
+{
+        int ret = 0;
+	struct ibv_sge list = {
+		.addr	= (uintptr_t) ctx->txbuf,
+		.length = ctx->size,
+		.lkey	= ctx->mr->lkey
+	};
+	gds_send_wr ewr = {
+		.wr_id	    = PINGPONG_SEND_WRID,
+		.sg_list    = &list,
+		.num_sge    = 1,
+		.exp_opcode = IBV_EXP_WR_SEND,
+		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.wr         = {
+			.ud = {
+				 .ah          = ctx->ah,
+				 .remote_qpn  = qpn,
+				 .remote_qkey = 0x11111111
+			 }
+		},
+		.comp_mask = 0
+	};
+	gds_send_wr *bad_ewr;
+	return gds_post_send(ctx->gds_qp, &ewr, &bad_ewr);
+}
+
 static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *gpu_stream)
 {
         int ret = 0;
@@ -483,8 +512,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 		.comp_mask = 0
 	};
 	gds_send_wr *bad_ewr;
-    //printf("gpu_post_send_on_stream\n");
-    return gds_stream_queue_send(*gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
+	return gds_stream_queue_send(*gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
 }
 
 static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
@@ -515,6 +543,35 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
     return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
 }
 
+typedef struct work_desc {
+        gds_send_request_t send_rq;
+        gds_wait_request_t wait_tx_rq;
+        gds_wait_request_t wait_rx_rq;
+#define N_WORK_DESCS 3
+        gds_descriptor_t descs[N_WORK_DESCS];
+} work_desc_t;
+
+static void post_work_cb(CUstream hStream, CUresult status, void *userData)\
+{
+        int retcode;
+        work_desc_t *wdesc = (work_desc_t *)userData;
+        gpu_dbg("stream callback wdesc=%p\n", wdesc);
+        assert(wdesc);
+        NVTX_PUSH("", 1);
+        if (status != CUDA_SUCCESS) {
+                fprintf(stderr,"ERROR: CUresult %d in stream callback\n", status);
+                goto out;
+        }
+        assert(sizeof(wdesc->descs)/sizeof(wdesc->descs[0]) == N_WORK_DESCS);
+        retcode = gds_post_descriptors(sizeof(wdesc->descs)/sizeof(wdesc->descs[0]), wdesc->descs, 0);
+        if (retcode) {
+                fprintf(stderr,"ERROR: error %d returned by gds_post_descriptors, going on...\n", retcode);
+        }
+        free(wdesc);
+out:
+        NVTX_POP();
+}
+
 static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uint32_t qpn, int is_client)
 {
         int retcode = 0;
@@ -540,49 +597,55 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
         
         PROF(&prof, prof_idx++);
 
-        gds_send_request_t send_rq[posted_recv];
-        gds_wait_request_t wait_tx_rq[posted_recv];
-        gds_wait_request_t wait_rx_rq[posted_recv];
-        gds_descriptor_t descs[3];
 	for (i = 0; i < posted_recv; ++i) {
                 if (ctx->use_desc_apis) {
+                        work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
                         int k = 0;
-                        ret = pp_prepare_gpu_send(ctx, qpn, &send_rq[i]);
+                        ret = pp_prepare_gpu_send(ctx, qpn, &wdesc->send_rq);
                         if (ret) {
                                 retcode = -ret;
                                 break;
                         }
-                        descs[k].tag = GDS_TAG_SEND;
-                        descs[k].send = &send_rq[i];
+                        assert(k < N_WORK_DESCS);
+                        wdesc->descs[k].tag = GDS_TAG_SEND;
+                        wdesc->descs[k].send = &wdesc->send_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wait_tx_rq[i], 0);
+                        ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
                         }
-                        descs[k].tag = GDS_TAG_WAIT;
-                        descs[k].wait = &wait_tx_rq[i];
+                        assert(k < N_WORK_DESCS);
+                        wdesc->descs[k].tag = GDS_TAG_WAIT;
+                        wdesc->descs[k].wait = &wdesc->wait_tx_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wait_rx_rq[i], 0);
+                        ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
                         }
-                        descs[k].tag = GDS_TAG_WAIT;
-                        descs[k].wait = &wait_rx_rq[i];
+                        assert(k < N_WORK_DESCS);
+                        wdesc->descs[k].tag = GDS_TAG_WAIT;
+                        wdesc->descs[k].wait = &wdesc->wait_rx_rq;
                         ++k;
 
-                        ret = gds_stream_post_descriptors(gpu_stream_server, k, descs, 0);
-                        if (ret) {
-                                retcode = -ret;
-                                break;
+                        if (ctx->peersync) {
+                                ret = gds_stream_post_descriptors(gpu_stream_server, k, wdesc->descs, 0);
+                                free(wdesc);
+                                if (ret) {
+                                        retcode = -ret;
+                                        break;
+                                }
+                        } else {
+                                gpu_dbg("adding post_work_cb to stream=%p\n", gpu_stream_server);
+                                CUCHECK(cuStreamAddCallback(gpu_stream_server, post_work_cb, wdesc, 0));
                         }
-                } else {
+                } else if (ctx->peersync) {
                         ret = pp_post_gpu_send(ctx, qpn, &gpu_stream_server);
                         if (ret) {
-                                fprintf(stderr,"ERROR: error %d in pp_post_gpu_send, posted_recv=%d posted_so_far=%d is_client=%d \n",
+                                gpu_err("error %d in pp_post_gpu_send, posted_recv=%d posted_so_far=%d is_client=%d \n",
                                         ret, posted_recv, i, is_client);
                                 retcode = -ret;
                                 break;
@@ -591,7 +654,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->send_cq, 0);
                         if (ret) {
                                 // TODO: rollback gpu send
-                                fprintf(stderr, "ERROR: error %d in gds_stream_wait_cq\n", ret);
+                                gpu_err("error %d in gds_stream_wait_cq\n", ret);
                                 retcode = -ret;
                                 break;
                         }
@@ -599,14 +662,21 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
                         if (ret) {
                                 // TODO: rollback gpu send and wait send_cq
-                                fprintf(stderr, "ERROR: error %d in gds_stream_wait_cq\n", ret);
+                                gpu_err("error %d in gds_stream_wait_cq\n", ret);
                                 //exit(EXIT_FAILURE);
                                 retcode = -ret;
                                 break;
                         }
+                } else {
+                        gpu_err("!peersync case only supported when using descriptor APIs\n");
+                        retcode = -EINVAL;
+                        break;
                 }
-		if (ctx->calc_size)
+		if (ctx->skip_kernel_launch) {
+                        gpu_warn_once("NOT LAUNCHING ANY KERNEL AT ALL\n");
+                } else {
 			gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
+                }
 
         }
         PROF(&prof, prof_idx++);
@@ -616,7 +686,6 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 //sleep(1);
         }
 
-out:
 	return retcode;
 }
 
@@ -644,6 +713,7 @@ static void usage(const char *argv0)
 	printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
 	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
+	printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
 }
 
 int main(int argc, char *argv[])
@@ -682,6 +752,7 @@ int main(int argc, char *argv[])
         int                      wait_key = -1;
         int                      use_gpumem = 0;
         int                      use_desc_apis = 0;
+        int                      skip_kernel_launch = 0;
 
         fprintf(stdout, "libgdsync build version 0x%08x, major=%d minor=%d\n", GDS_API_VERSION, GDS_API_MAJOR_VERSION, GDS_API_MINOR_VERSION);
 
@@ -723,10 +794,11 @@ int main(int argc, char *argv[])
 			{ .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
 			{ .name = "gpu-mem",         .has_arg = 0, .val = 'E' },
 			{ .name = "wait-key",        .has_arg = 1, .val = 'W' },
+			{ .name = "skip-kernel-launch", .has_arg = 0, .val = 'K' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:W:EU", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:W:EUK", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -755,10 +827,12 @@ int main(int argc, char *argv[])
 
 		case 's':
 			size = strtol(optarg, NULL, 0);
+                        printf("INFO: message size=%d\n", size);
 			break;
 
 		case 'S':
 			calc_size = strtol(optarg, NULL, 0);
+                        printf("INFO: kernel calc size=%d\n", calc_size);
 			break;
 
 		case 'r':
@@ -795,7 +869,7 @@ int main(int argc, char *argv[])
 			peersync = !peersync;
                         printf("INFO: switching PeerSync %s\n", peersync?"ON":"OFF");
                         if (!peersync) {
-                                printf("ERROR: switching PeerSync OFF is not supported yet\n");
+                                printf("WARNING: PeerSync OFF is approximated using CUDA stream callbacks\n");
                         }
 			break;
 
@@ -841,6 +915,11 @@ int main(int argc, char *argv[])
                 case 'U':
                         use_desc_apis = 1;
                         printf("INFO: use_desc_apis=%d\n", use_desc_apis);
+                        break;
+
+                case 'K':
+                        skip_kernel_launch = 1;
+                        printf("INFO: skip_kernel_launch=%d\n", skip_kernel_launch);
                         break;
 
 		default:
@@ -911,7 +990,7 @@ int main(int argc, char *argv[])
                 }
         }
         printf("use gpumem: %d\n", use_gpumem);
-	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis);
+	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis, skip_kernel_launch);
 	if (!ctx)
 		return 1;
 
@@ -1044,13 +1123,13 @@ int main(int argc, char *argv[])
                 //printf("before tracking\n"); fflush(stdout);
                 int ret = gpu_wait_tracking_event(1000*1000);
                 if (ret == ENOMEM) {
-                        dbg("gpu_wait_tracking_event nothing to do (%d)\n", ret);
+                        gpu_dbg("gpu_wait_tracking_event nothing to do (%d)\n", ret);
                 } else if (ret == EAGAIN) {
-                        fprintf(stderr, "gpu_wait_tracking_event timout (%d), retrying\n", ret);
+                        gpu_err("gpu_wait_tracking_event timout (%d), retrying\n", ret);
                         prof_reset(&prof);
                         continue;
                 } else if (ret) {
-                        fprintf(stderr, "gpu_wait_tracking_event failed (%d)\n", ret);
+                        gpu_err("gpu_wait_tracking_event failed (%d)\n", ret);
                         got_error = ret;
                 }
                 //gpu_infoc(20, "after tracking\n");
@@ -1134,9 +1213,9 @@ int main(int argc, char *argv[])
                         routs -= last_batch_len;
                         //prev_batch_len = last_batch_len;
                         if (n_tx_ev != last_batch_len)
-                                dbg("[%d] partially completed batch, got tx ev %d, batch len %d\n", iter, n_tx_ev, last_batch_len);
+                                gpu_dbg("[%d] partially completed batch, got tx ev %d, batch len %d\n", iter, n_tx_ev, last_batch_len);
                         if (n_rx_ev != last_batch_len)
-                                dbg("[%d] partially completed batch, got rx ev %d, batch len %d\n", iter, n_rx_ev, last_batch_len);
+                                gpu_dbg("[%d] partially completed batch, got rx ev %d, batch len %d\n", iter, n_rx_ev, last_batch_len);
                         if (nposted < iters) {
                                 //fprintf(stdout, "rcnt=%d scnt=%d routs=%d nposted=%d\n", rcnt, scnt, routs, nposted); fflush(stdout);
                                 // potentially submit new work
