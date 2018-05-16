@@ -120,14 +120,14 @@ AC_ARG_ENABLE(
                     [Use NVTX profiling extensions (default=no)])],
     [enable_nvtx=$enableval],
     [enable_nvtx=no])
-if test x$enable_nvtx = x || test x$with_nvtx = xno; then
+if test x$enable_nvtx = x || test x$enable_nvtx = xno; then
     want_nvtx=no
     LIBNVTX=
 else
     want_nvtx=yes
     CPPFLAGS="$CPPFLAGS -DUSE_NVTX"
     LIBNVTX=-lnvToolsExt
-    echo "enabling use of NV Tools Ext"
+    AC_MSG_NOTICE([Enabling use of NVTX])
     AC_SUBST(LIBNVTX)
 fi
 
