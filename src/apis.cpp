@@ -585,6 +585,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         gds_peer *peer = NULL;
         gds_op_list_t params;
 
+
         ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
         if (ret) {
                 gds_err("error %d in calc_n_mem_ops\n", ret);
