@@ -217,10 +217,12 @@ int gpu_launch_kernel(size_t size, int is_peersync)
 int gpu_launch_kernel_on_stream(size_t size, int is_peersync, CUstream s)
 {
         int ret = 0;
-        if (0 == size)
+        if (0 == size) {
+                gpu_warn_once("void kernel has extremely low launch latency\n");
                 gpu_launch_void_kernel_on_stream(s);
-        else
+        } else {
                 gpu_launch_calc_kernel_on_stream(size, s);
+        }
         assert(cudaSuccess == cudaGetLastError());
         return ret;
 }

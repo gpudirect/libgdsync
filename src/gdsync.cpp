@@ -107,7 +107,7 @@ int gds_flusher_enabled()
 #define GDS_HAS_MEMBAR      0
 #endif
 
-// TODO: use corret value
+// TODO: use correct value
 // TODO: make it dependent upon the particular GPU
 const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
 
@@ -932,17 +932,18 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
+int gds_post_ops_on_cpu(size_t n_ops, struct peer_op_wr *op, int post_flags)
 {
         int retcode = 0;
         size_t n = 0;
-
-        for (; op && n < n_descs; op = op->next, ++n) {
+        gds_dbg("n_ops=%zu op=%p post_flags=0x%x\n", n_ops, op, post_flags);
+        for (; op && n < n_ops; op = op->next, ++n) {
                 //int flags = 0;
-                gds_dbg("op[%zu] type:%08x\n", n, op->type);
+                gds_dbg("op[%zu]=%p\n", n, op);
+                //gds_dbg("op[%zu]=%p type:%08x\n", n, op, op->type);
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
+                        gds_dbg("FENCE flags=%"PRIu64"\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
                         uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
@@ -978,30 +979,58 @@ static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
                         uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
                         uint32_t data = op->wr.dword_va.data;
                         // A || B || C || E
+                        gds_dbg("STORE_DWORD ptr=%p data=%08"PRIx32"\n", ptr, data);
                         ACCESS_ONCE(*ptr) = data;
-                        gds_dbg("%p <- %08x\n", ptr, data);
                         break;
                 }
                 case IBV_EXP_PEER_OP_STORE_QWORD: {
                         uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.qword_va.target_id)->va + op->wr.qword_va.offset);
                         uint64_t data = op->wr.qword_va.data;
+                        gds_dbg("STORE_QWORD ptr=%p data=%016"PRIx64"\n", ptr, data);
                         ACCESS_ONCE(*ptr) = data;
-                        gds_dbg("%p <- %016"PRIx64"\n", ptr, data);
                         break;
                 }
                 case IBV_EXP_PEER_OP_COPY_BLOCK: {
                         uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.copy_op.target_id)->va + op->wr.copy_op.offset);
                         uint64_t *src = (uint64_t*)op->wr.copy_op.src;
                         size_t n_bytes = op->wr.copy_op.len;
+                        gds_dbg("COPY_BLOCK ptr=%p src=%p len=%zu\n", ptr, src, n_bytes);
                         gds_bf_copy(ptr, src, n_bytes);
-                        gds_dbg("%p <- %p len=%zu\n", ptr, src, n_bytes);
                         break;
                 }
                 case IBV_EXP_PEER_OP_POLL_AND_DWORD:
                 case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
                 case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
-                        gds_err("polling is not supported\n");
-                        retcode = EINVAL;
+                        int poll_cond;
+                        uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
+                        uint32_t value = op->wr.dword_va.data;
+                        bool flush = true;
+                        if (post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH)
+                                flush = false;
+                        gds_dbg("WAIT_32 dev_ptr=%p data=%"PRIx32"\n", ptr, value);
+                        bool done = false;
+                        do {
+                                uint32_t data = gds_atomic_get(ptr);
+                                switch(op->type) {
+                                case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
+                                        done = ~(data | value);
+                                        break;
+                                case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
+                                        done = ((int32_t)data - (int32_t)value >= 0);
+                                        break;
+                                case IBV_EXP_PEER_OP_POLL_AND_DWORD:
+                                        done = (data & value);
+                                        break;
+                                default:
+                                        gds_err("invalid op type %02x\n", op->type);
+                                        retcode = EINVAL;
+                                        goto out;
+                                }
+                                if (done)
+                                        break;
+                                // TODO: more aggressive CPU relaxing needed here to avoid starving I/O fabric
+                                arch_cpu_relax();
+                        } while(true);
                         break;
                 }
                 default:
@@ -1010,12 +1039,10 @@ static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
                         break;
                 }
                 if (retcode) {
-                        gds_err("error in fill func at entry n=%zu\n", n);
+                        gds_err("error %d at entry n=%zu\n", retcode, n);
                         goto out;
                 }
         }
-
-        assert(n_descs == n);
 
 out:
         return retcode;
