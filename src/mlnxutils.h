@@ -66,9 +66,10 @@
 
 #endif
 // no WQ wrap-around check!!!
-static void gds_bf_copy(uint64_t *dest, uint64_t *src, size_t n_bytes)
+static inline void gds_bf_copy(uint64_t *dest, uint64_t *src, size_t n_bytes)
 {
         assert(n_bytes % sizeof(uint64_t) == 0);
+        assert(n_bytes < 128);
 	while (n_bytes > 0) {
 		COPY_64B_NT(dest, src);
 		n_bytes -= 8 * sizeof(*dest);

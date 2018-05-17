@@ -285,9 +285,33 @@ typedef struct gds_descriptor {
 } gds_descriptor_t;
 
 /**
- * flags: must be 0
+ * \brief: post descriptors for peer QPs synchronized to the specified CUDA stream
+ *
+ * \param flags - must be 0
+ *
+ * \return
+ * 0 on success or one standard errno error
+ *
  */
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags);
+
+/**
+ * \brief: CPU-synchronous post descriptors for peer QPs
+ *
+ *
+ * \param flags - must be 0
+ *
+ * \return
+ * 0 on success or one standard errno error
+ * 
+ *
+ * Notes:
+ * - This API might have higher overhead than issuing multiple ibv_post_send. 
+ * - It is provided for convenience only.
+ * - It might fail if trying to access CUDA device memory pointers
+ */
+int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags);
+
 
 /*
  * Local variables:
