@@ -84,6 +84,7 @@ enum {
 };
 
 static int page_size;
+int stream_cb_error = 0;
 
 struct pingpong_context {
 	struct ibv_context	*context;
@@ -566,6 +567,7 @@ static void post_work_cb(CUstream hStream, CUresult status, void *userData)\
         retcode = gds_post_descriptors(sizeof(wdesc->descs)/sizeof(wdesc->descs[0]), wdesc->descs, 0);
         if (retcode) {
                 fprintf(stderr,"ERROR: error %d returned by gds_post_descriptors, going on...\n", retcode);
+                stream_cb_error = 1;
         }
 out:
         free(wdesc);
@@ -1123,7 +1125,7 @@ int main(int argc, char *argv[])
         prof_idx = 0;
         int got_error = 0;
         int iter = 0;
-	while ((rcnt < iters && scnt < iters) && !got_error) {
+	while ((rcnt < iters && scnt < iters) && !got_error && !stream_cb_error) {
                 ++iter;
                 PROF(&prof, prof_idx++);
 
@@ -1247,10 +1249,10 @@ int main(int argc, char *argv[])
                 //fprintf(stdout, "%d %d\n", rcnt, scnt); fflush(stdout);
 
 
-                if (got_error) {
+                if (got_error || stream_cb_error) {
                         //fprintf(stderr, "sleeping 10s then exiting for error\n");
                         //sleep(10);
-                        fprintf(stderr, "exiting for error\n");
+                        gpu_err("[%d] exiting due to error(s)\n", my_rank);
                         return 1;
                 }
 
