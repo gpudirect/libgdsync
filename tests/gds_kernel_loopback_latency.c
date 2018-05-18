@@ -84,6 +84,7 @@ enum {
 };
 
 static int page_size;
+int stream_cb_error = 0;
 
 struct pingpong_context {
 	struct ibv_context	*context;
@@ -236,8 +237,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 
         size_t alloc_size = 3 * align_to(size + 40, page_size);
 	if (ctx->gpumem) {
-                printf("allocating GPU memory buf\n");
 		ctx->buf = gpu_malloc(page_size, alloc_size);
+                printf("allocated GPU buffer address at %p\n", ctx->buf);
 	} else {
                 printf("allocating CPU memory buf\n");
 		ctx->buf = memalign(page_size, alloc_size);
@@ -488,7 +489,7 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 	return gds_post_send(ctx->gds_qp, &ewr, &bad_ewr);
 }
 
-static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *gpu_stream)
+static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *p_gpu_stream)
 {
         int ret = 0;
 	struct ibv_sge list = {
@@ -512,7 +513,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 		.comp_mask = 0
 	};
 	gds_send_wr *bad_ewr;
-	return gds_stream_queue_send(*gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
+	return gds_stream_queue_send(*p_gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
 }
 
 static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
@@ -539,8 +540,8 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		.comp_mask = 0
 	};
 	gds_send_wr *bad_ewr;
-    //printf("gpu_post_send_on_stream\n");
-    return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
+        //printf("gpu_post_send_on_stream\n");
+        return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
 }
 
 typedef struct work_desc {
@@ -566,9 +567,10 @@ static void post_work_cb(CUstream hStream, CUresult status, void *userData)\
         retcode = gds_post_descriptors(sizeof(wdesc->descs)/sizeof(wdesc->descs[0]), wdesc->descs, 0);
         if (retcode) {
                 fprintf(stderr,"ERROR: error %d returned by gds_post_descriptors, going on...\n", retcode);
+                stream_cb_error = 1;
         }
-        free(wdesc);
 out:
+        free(wdesc);
         NVTX_POP();
 }
 
@@ -927,6 +929,13 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
+
+        if (!peersync && !use_desc_apis) {
+                gpu_err("!peersync case only supported when using descriptor APIs, enabling them\n");
+                use_desc_apis = 1;
+                return 1;
+        }
+
         assert(comm_size == 1);
         char *hostnames[1] = {"localhost"};
 
@@ -1116,7 +1125,7 @@ int main(int argc, char *argv[])
         prof_idx = 0;
         int got_error = 0;
         int iter = 0;
-	while ((rcnt < iters && scnt < iters) && !got_error) {
+	while ((rcnt < iters && scnt < iters) && !got_error && !stream_cb_error) {
                 ++iter;
                 PROF(&prof, prof_idx++);
 
@@ -1204,6 +1213,7 @@ int main(int argc, char *argv[])
                                 }
                         }
                 }
+
                 PROF(&prof, prof_idx++);
                 if (1 && (n_tx_ev || n_rx_ev)) {
                         //fprintf(stderr, "iter=%d n_rx_ev=%d, n_tx_ev=%d\n", iter, n_rx_ev, n_tx_ev); fflush(stdout);
@@ -1239,10 +1249,10 @@ int main(int argc, char *argv[])
                 //fprintf(stdout, "%d %d\n", rcnt, scnt); fflush(stdout);
 
 
-                if (got_error) {
+                if (got_error || stream_cb_error) {
                         //fprintf(stderr, "sleeping 10s then exiting for error\n");
                         //sleep(10);
-                        fprintf(stderr, "exiting for error\n");
+                        gpu_err("[%d] exiting due to error(s)\n", my_rank);
                         return 1;
                 }
 
