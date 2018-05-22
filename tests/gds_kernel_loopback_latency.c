@@ -558,7 +558,7 @@ static void post_work_cb(CUstream hStream, CUresult status, void *userData)\
         work_desc_t *wdesc = (work_desc_t *)userData;
         gpu_dbg("stream callback wdesc=%p\n", wdesc);
         assert(wdesc);
-        NVTX_PUSH("", 1);
+        NVTX_PUSH("work_cb", 1);
         if (status != CUDA_SUCCESS) {
                 fprintf(stderr,"ERROR: CUresult %d in stream callback\n", status);
                 goto out;
@@ -585,6 +585,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
         if (n_posts <= 0)
                 return 0;
 
+        NVTX_PUSH("post recv", 1);
         posted_recv = pp_post_recv(ctx, n_posts);
         if (posted_recv < 0) {
                 fprintf(stderr,"ERROR: can't post recv (%d) n_posts=%d is_client=%d\n", 
@@ -596,9 +597,11 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 if (!posted_recv)
                         return 0;
         }
+        NVTX_POP();
         
         PROF(&prof, prof_idx++);
 
+        NVTX_PUSH("post send+wait", 1);
 	for (i = 0; i < posted_recv; ++i) {
                 if (ctx->use_desc_apis) {
                         work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
@@ -687,6 +690,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 gpu_post_release_tracking_event(&gpu_stream_server);
                 //sleep(1);
         }
+        NVTX_POP();
 
 	return retcode;
 }
