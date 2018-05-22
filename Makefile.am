@@ -40,8 +40,6 @@ tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lmpi $(LIBGDS
 tests_rstest_SOURCES = tests/rstest.cpp
 tests_rstest_LDADD = 
 
-#tests_gds_poll_lat_CFLAGS = -DUSE_PROF -DUSE_PERF -I/ivylogin/home/drossetti/work/p4/cuda_a/sw/dev/gpu_drv/cuda_a/drivers/gpgpu/cuda/inc
-#tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernels.cu tests/perfutil.c tests/perf.c
 tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernels.cu
 tests_gds_poll_lat_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lmpi $(LIBNVTX) -lcuda -lcudart
 
