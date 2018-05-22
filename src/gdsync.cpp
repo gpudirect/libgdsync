@@ -1480,6 +1480,7 @@ static int gds_register_peer_by_ordinal(unsigned gpu_id, gds_peer **p_peer, gds_
 
 static void gds_ordinal_from_device(CUdevice dev, unsigned &gpu_id)
 {
+        // FIXME: this is super ugly and may break in the future
         gpu_id = (unsigned)dev;
         gds_dbg("gpu_id=%u for dev=%d\n", gpu_id, dev);
 }
