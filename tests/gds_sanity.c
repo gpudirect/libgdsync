@@ -55,38 +55,18 @@ int main(int argc, char *argv[])
 	size_t size = 1024*64;
         int use_gpu_buf = 0;
         int use_flush = 0;
-        int use_combined = 0;
         int use_membar = 0;
-        int wait_key = -1;
         CUstream gpu_stream;
-
-        int n_bg_streams = 0;
-
-        size_t n_pokes = 1;
 
         while(1) {            
                 int c;
-                c = getopt(argc, argv, "cd:p:n:s:hfgP:mW:");
+                c = getopt(argc, argv, "d:n:s:hfgm");
                 if (c == -1)
                         break;
 
                 switch(c) {
                 case 'd':
                         gpu_id = strtol(optarg, NULL, 0);
-                        break;
-                case 'W':
-                        wait_key = strtol(optarg, NULL, 0);
-                        break;
-                case 'p':
-                        n_bg_streams = strtol(optarg, NULL, 0);
-                        break;
-                case 'c':
-                        // merge poll and multiple pokes
-                        use_combined = 1;
-                        break;
-                case 'P':
-                        // multiple pokes
-                        n_pokes = strtol(optarg, NULL, 0);
                         break;
                 case 'm':
                         use_membar = 1;
@@ -106,7 +86,7 @@ int main(int argc, char *argv[])
                         printf("INFO polling on GPU buffer\n");
                         break;
                 case 'h':
-                        printf(" %s [-n <iters>][-s <sleep us>][-p # bg streams][-P # pokes][ckhfgomW]\n", argv[0]);
+                        printf(" %s [-d <gpu ordinal>][-n <iters>][-s <sleep us>][hfgm]\n", argv[0]);
                         exit(EXIT_SUCCESS);
                         break;
                 default:
@@ -114,9 +94,6 @@ int main(int argc, char *argv[])
                         exit(EXIT_FAILURE);
                 }
         }
-
-        CUstream bg_streams[n_bg_streams];
-        memset(bg_streams, 0, sizeof(bg_streams));
 
 	if (gpu_init(gpu_id, CU_CTX_SCHED_AUTO)) {
 		fprintf(stderr, "error in GPU init.\n");
@@ -127,10 +104,8 @@ int main(int argc, char *argv[])
 
         puts("");
         printf("number iterations %d\n", num_iters);
-        printf("num dwords per poke %zu\n", n_pokes);
         printf("use poll flush %d\n", use_flush);
         printf("use poke membar %d\n", use_membar);
-        printf("use %d background streams\n", n_bg_streams);
         printf("sleep %dus\n", sleep_us);
         printf("buffer size %zd\n", size);
         printf("poll on %s buffer\n", use_gpu_buf?"GPU":"CPU");
