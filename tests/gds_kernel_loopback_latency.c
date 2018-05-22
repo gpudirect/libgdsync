@@ -449,7 +449,9 @@ static int block_server_stream(struct pingpong_context *ctx)
         gds_atomic_set_dword(desc.wait32.ptr, 0);
         gds_wmb();
 
+        gpu_dbg("before gds_stream_post_descriptors\n");
         CUCHECK(gds_stream_post_descriptors(gpu_stream_server, 1, &desc, 0));
+        gpu_dbg("after gds_stream_post_descriptors\n");
         return 0;
 }
 
@@ -488,11 +490,11 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 	};
 	struct ibv_recv_wr *bad_wr;
 	int i;
-
+        gpu_dbg("posting %d recvs\n", n);
 	for (i = 0; i < n; ++i)
 		if (ibv_post_recv(ctx->qp, &wr, &bad_wr))
 			break;
-
+        gpu_dbg("posted %d recvs\n", i);
 	return i;
 }
 
@@ -615,10 +617,12 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 	int i, ret = 0;
         int posted_recv = 0;
 
-        //printf("post_work posting %d\n", n_posts);
+        gpu_dbg("n_posts=%d rcnt=%d is_client=%d\n", n_posts, rcnt, is_client);
 
-        if (n_posts <= 0)
+        if (n_posts <= 0) {
+                gpu_dbg("nothing to do\n");
                 return 0;
+        }
 
         NVTX_PUSH("post recv", 1);
         posted_recv = pp_post_recv(ctx, n_posts);
@@ -672,7 +676,9 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         ++k;
 
                         if (ctx->peersync) {
+                                gpu_dbg("before gds_stream_post_descriptors\n");
                                 ret = gds_stream_post_descriptors(gpu_stream_server, k, wdesc->descs, 0);
+                                gpu_dbg("after gds_stream_post_descriptors\n");
                                 free(wdesc);
                                 if (ret) {
                                         retcode = -ret;
@@ -992,12 +998,8 @@ int main(int argc, char *argv[])
         }
 
         const char *tags = NULL;
-        if (peersync) {
-                tags = "wait trk|pollrxcq|polltxcq|postrecv|postwork| poketrk";
-        } else {
-                tags = "krn laun|krn sync|postsend|<------>|<------>| sent ev";
-        }
-        prof_init(&prof, 10000, 10000, "10us", 60, 2, tags);
+        tags = "wait trk|pollrxcq|polltxcq|postrecv|postwork| poketrk";
+        prof_init(&prof, 100000, 100000, "100us", 60, 2, tags);
         //prof_init(&prof, 100, 100, "100ns", 25*4, 2, tags);
         prof_disable(&prof);
 
@@ -1123,8 +1125,15 @@ int main(int argc, char *argv[])
         int batch;
 
         for (batch=0; batch<n_batches; ++batch) {
+                PROF(&prof, prof_idx++);
+                PROF(&prof, prof_idx++);
+                PROF(&prof, prof_idx++);
+                PROF(&prof, prof_idx++);
+
                 n_post = min(min(ctx->rx_depth/2, iters-nposted), max_batch_len);
+                gpu_dbg("batch=%d n_post=%d\n", batch, n_post);
                 n_posted = pp_post_work(ctx, n_post, 0, rem_dest->qpn, servername?1:0);
+                PROF(&prof, prof_idx++);
                 if (n_posted < 0) {
                         fprintf(stderr, "ERROR: got error %d\n", n_posted);
                         ret = 1;
@@ -1300,6 +1309,9 @@ int main(int argc, char *argv[])
                                 nposted += n;
                                 //fprintf(stdout, "n_post=%d n=%d\n", n_post, n);
                         }
+                } else {
+                        PROF(&prof, prof_idx++);
+                        PROF(&prof, prof_idx++);
                 }
                 //usleep(10);
                 PROF(&prof, prof_idx++);
