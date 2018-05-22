@@ -1383,11 +1383,9 @@ static bool gpu_registered[max_gpus];
 
 //-----------------------------------------------------------------------------
 
-static void gds_init_peer(gds_peer *peer, int gpu_id)
+static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
 {
         assert(peer);
-        CUdevice dev;
-        CUCHECK(cuDeviceGet(&dev, gpu_id));
 
         peer->gpu_id = gpu_id;
         peer->gpu_dev = dev;
@@ -1441,6 +1439,137 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
 
 //-----------------------------------------------------------------------------
 
+static int gds_register_peer(CUdevice dev, unsigned gpu_id, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
+{
+        int ret = 0;
+
+        gds_dbg("GPU%u: registering peer\n", gpu_id);
+        
+        if (gpu_id >= max_gpus) {
+                gds_err("invalid gpu_id %d\n", gpu_id);
+                return EINVAL;
+        }
+
+        gds_peer *peer = &gpu_peer[gpu_id];
+
+        if (gpu_registered[gpu_id]) {
+                gds_dbg("gds_peer for GPU%u already initialized\n", gpu_id);
+        } else {
+                gds_init_peer(peer, dev, gpu_id);
+        }
+
+        if (p_peer)
+                *p_peer = peer;
+
+        if (p_peer_attr)
+                *p_peer_attr = &peer->attr;
+
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_register_peer_by_ordinal(unsigned gpu_id, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
+{
+        CUdevice dev;
+        CUCHECK(cuDeviceGet(&dev, gpu_id));
+        return gds_register_peer(dev, gpu_id, p_peer, p_peer_attr);
+}
+
+//-----------------------------------------------------------------------------
+
+static void gds_ordinal_from_device(CUdevice dev, unsigned &gpu_id)
+{
+        gpu_id = (unsigned)dev;
+        gds_dbg("gpu_id=%u for dev=%d\n", gpu_id, dev);
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_register_peer_by_dev(CUdevice dev, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
+{
+        unsigned gpu_id;
+        gds_ordinal_from_device(dev, gpu_id);
+        return gds_register_peer(dev, gpu_id, p_peer, p_peer_attr);
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_device_from_current_context(CUdevice &dev)
+{
+        CUCHECK(cuCtxGetDevice(&dev));
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_device_from_context(CUcontext ctx, CUcontext cur_ctx, CUdevice &dev)
+{
+        // if cur != ctx then push ctx
+        if (ctx != cur_ctx)
+                CUCHECK(cuCtxPushCurrent(ctx));
+        gds_device_from_current_context(dev);
+        // if pushed then pop ctx
+        if (ctx != cur_ctx) {
+                CUcontext top_ctx;
+                CUCHECK(cuCtxPopCurrent(&top_ctx));
+                assert(top_ctx == ctx);
+        }
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_device_from_stream(CUstream stream, CUdevice &dev)
+{
+        CUcontext cur_ctx, stream_ctx;
+        CUCHECK(cuCtxGetCurrent(&cur_ctx));
+#if CUDA_VERSION >= 9020
+        CUCHECK(cuStreamGetCtx(stream, &stream_ctx));
+#else
+        // we assume the stream is associated to the current context
+        stream_ctx = cur_ctx;
+#endif
+        gds_device_from_context(stream_ctx, cur_ctx, dev);
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+gds_peer *peer_from_stream(CUstream stream)
+{
+        CUdevice dev = -1;
+        gds_peer *peer = NULL;
+
+        if (stream != NULL && stream != CU_STREAM_LEGACY && stream != CU_STREAM_PER_THREAD) {
+                // this a user stream
+                gds_device_from_stream(stream, dev);
+        } else {
+                // this is one of the pre-defined streams
+                gds_device_from_current_context(dev);
+        }
+
+        // look for pre-registered GPU
+        for(unsigned gpu_id=0; gpu_id<max_gpus; ++gpu_id) {
+                if (gpu_registered[gpu_id] && (gpu_peer[gpu_id].gpu_dev == dev)) {
+                        peer = &gpu_peer[gpu_id];
+                        break;
+                }
+        }
+        // otherwise, register this GPU
+        if (!peer) {
+                gds_peer_attr *peer_attr = NULL;
+                int ret = gds_register_peer_by_dev(dev, &peer, &peer_attr);
+                if (ret) {
+                        gds_err("error %d while registering GPU dev=%d\n", ret, dev);
+                        return NULL;
+                }
+        }
+        return peer;
+}
+
+//-----------------------------------------------------------------------------
+
 static ibv_exp_res_domain *gds_create_res_domain(struct ibv_context *context)
 {
         if (!context) {
@@ -1460,107 +1589,6 @@ static ibv_exp_res_domain *gds_create_res_domain(struct ibv_context *context)
         }
 
         return res_domain;
-}
-
-//-----------------------------------------------------------------------------
-
-static int gds_device_from_current_context(CUdevice &dev)
-{
-        CUCHECK(cuCtxGetDevice(&dev));
-        return 0;
-}
-
-static int gds_device_from_context(CUcontext ctx, CUcontext cur_ctx, CUdevice &dev)
-{
-        // if cur != ctx then push ctx
-        if (ctx != cur_ctx)
-                CUCHECK(cuCtxPushCurrent(ctx));
-        gds_device_from_current_context(dev);
-        // if pushed then pop ctx
-        if (ctx != cur_ctx) {
-                CUcontext top_ctx;
-                CUCHECK(cuCtxPopCurrent(&top_ctx));
-                assert(top_ctx == ctx);
-        }
-        return 0;
-}
-
-static int gds_device_from_stream(CUstream stream, CUdevice &dev)
-{
-        CUcontext cur_ctx, stream_ctx;
-        CUCHECK(cuCtxGetCurrent(&cur_ctx));
-#if CUDA_VERSION >= 9020
-        CUCHECK(cuStreamGetCtx(stream, &stream_ctx));
-#else
-        // we assume the stream is associated to the current context
-        stream_ctx = cur_ctx;
-#endif
-        gds_device_from_context(stream_ctx, cur_ctx, dev);
-        return 0;
-}
-
-gds_peer *peer_from_stream(CUstream stream)
-{
-        CUcontext ctx = NULL;
-        CUdevice dev;
-        gds_peer *peer = NULL;
-
-
-        if (stream != NULL && stream != CU_STREAM_LEGACY && stream != CU_STREAM_PER_THREAD) {
-                // this a user stream
-                gds_device_from_stream(stream, dev);
-        } else {
-                // this is one of the pre-defined streams
-                gds_device_from_current_context(dev);
-        }
-
-        for(int g=0; g<max_gpus; ++g) {
-                if (gpu_registered[g]) {
-                        if (gpu_peer[g].gpu_dev == dev) {
-                                peer = &gpu_peer[g];
-                        }
-                } else {
-                        //gds_warn("ignoring gpu%d for stream=%p\n", g, stream);
-                }
-        }
-        if (!peer) {
-                gds_err("cannot find GPU associated to stream=%p for which a GDS QP has been created\n", stream);
-        }
-        return peer;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
-{
-        int ret = 0;
-
-        gds_dbg("GPU%u: registering peer\n", gpu_id);
-        
-        if (!context) {
-                gds_err("invalid IBV context\n");
-                return EINVAL;
-        }
-        if (gpu_id >= max_gpus) {
-                gds_err("invalid gpu_id %d\n", gpu_id);
-                return EINVAL;
-        }
-
-        gds_peer *peer = &gpu_peer[gpu_id];
-
-        if (gpu_registered[gpu_id]) {
-                gds_dbg("gds_peer for GPU%u already initialized\n", gpu_id);
-        } else {
-                gds_init_peer(peer, gpu_id);
-        }
-
-        if (p_peer)
-                *p_peer = peer;
-
-        if (p_peer_attr)
-                *p_peer_attr = &peer->attr;
-
-        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -1591,7 +1619,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 
         //Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags
         //before ibv_exp_create_cq
-        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
             gds_err("error %d while registering GPU peer\n", ret);
             return NULL;
@@ -1635,7 +1663,7 @@ gds_create_cq(struct ibv_context *context, int cqe,
 
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
-        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
                 gds_err("error %d while registering GPU peer\n", ret);
                 return NULL;
@@ -1696,7 +1724,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
 
         // peer registration
         gds_dbg("before gds_register_peer_ex\n");
-        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
             gds_err("error %d in gds_register_peer_ex\n", ret);
             goto err;
