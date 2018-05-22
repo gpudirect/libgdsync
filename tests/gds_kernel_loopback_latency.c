@@ -272,13 +272,14 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 		memset(ctx->buf, 0, alloc_size);
 
         memset(ctx->rx_flag, 0, alloc_size);
-        gpu_register_host_mem(ctx->rx_flag, alloc_size);
+        //gpu_register_host_mem(ctx->rx_flag, alloc_size);
 
         if (!ctx->skip_kernel_launch) {
                 // pipe-cleaner
                 gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
                 gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
                 gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_server);
+                // client stream is not really used
                 gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
                 gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
                 gpu_launch_kernel_on_stream(ctx->calc_size, ctx->peersync, gpu_stream_client);
@@ -437,6 +438,40 @@ int pp_close_ctx(struct pingpong_context *ctx)
 	free(ctx);
 
 	return 0;
+}
+
+static int block_server_stream(struct pingpong_context *ctx)
+{
+        gds_descriptor_t desc;
+        desc.tag = GDS_TAG_WAIT_VALUE32;
+        gds_prepare_wait_value32(&desc.wait32, (uint32_t *)ctx->rx_flag, 1, GDS_WAIT_COND_GEQ, GDS_MEMORY_HOST);
+
+        gds_atomic_set_dword(desc.wait32.ptr, 0);
+        gds_wmb();
+
+        CUCHECK(gds_stream_post_descriptors(gpu_stream_server, 1, &desc, 0));
+        return 0;
+}
+
+static int unblock_server_stream(struct pingpong_context *ctx)
+{
+        int retcode = 0;
+        usleep(100);
+        int ret = cuStreamQuery(gpu_stream_server);
+        switch (ret) {
+        case CUDA_ERROR_NOT_READY:
+                break;
+        case CUDA_SUCCESS:
+                gpu_err("unexpected idle stream\n");
+                retcode = EINVAL;
+                break;
+        default:
+                gpu_err("unexpected error %d in stream query\n", ret);
+                retcode = EINVAL;
+                break;
+        }
+        gds_atomic_set_dword((uint32_t *)ctx->rx_flag, 1);
+        return 0;
 }
 
 static int pp_post_recv(struct pingpong_context *ctx, int n)
@@ -720,6 +755,7 @@ static void usage(const char *argv0)
 	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
 	printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
+	printf("  -L, --hide-cpu-launch-latency try to prelaunch work on blocked stream then unblock\n");
 }
 
 int main(int argc, char *argv[])
@@ -759,6 +795,7 @@ int main(int argc, char *argv[])
         int                      use_gpumem = 0;
         int                      use_desc_apis = 0;
         int                      skip_kernel_launch = 0;
+        int                      hide_cpu_launch_latency = 0;
 
         fprintf(stdout, "libgdsync build version 0x%08x, major=%d minor=%d\n", GDS_API_VERSION, GDS_API_MAJOR_VERSION, GDS_API_MINOR_VERSION);
 
@@ -801,10 +838,11 @@ int main(int argc, char *argv[])
 			{ .name = "gpu-mem",         .has_arg = 0, .val = 'E' },
 			{ .name = "wait-key",        .has_arg = 1, .val = 'W' },
 			{ .name = "skip-kernel-launch", .has_arg = 0, .val = 'K' },
+			{ .name = "hide-cpu-launch-latency", .has_arg = 0, .val = 'L' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:W:EUK", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:S:B:PCDQM:W:EUKL", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -926,6 +964,11 @@ int main(int argc, char *argv[])
                 case 'K':
                         skip_kernel_launch = 1;
                         printf("INFO: skip_kernel_launch=%d\n", skip_kernel_launch);
+                        break;
+
+                case 'L':
+                        hide_cpu_launch_latency = 1;
+                        printf("INFO: hide_cpu_launch_latency=%d\n", hide_cpu_launch_latency);
                         break;
 
 		default:
@@ -1054,6 +1097,11 @@ int main(int argc, char *argv[])
                 //sleep(1);
         }
 
+        if (hide_cpu_launch_latency) {
+                printf("INFO: blocking stream ...\n");
+                block_server_stream(ctx);
+        }
+
 	if (gettimeofday(&start, NULL)) {
 		perror("gettimeofday");
 		ret = 1;
@@ -1109,6 +1157,14 @@ int main(int argc, char *argv[])
 		printf("pre-posting took %.2f usec\n", usec);
                 pre_post_us = usec;
 	}
+
+        if (hide_cpu_launch_latency) {
+                printf("ignoring pre-posting time and unblocking the stream\n");
+                pre_post_us = 0;
+                if (unblock_server_stream(ctx)) {
+                        exit(EXIT_FAILURE);
+                }
+        }
 
         if (!my_rank) {
                 puts("");
