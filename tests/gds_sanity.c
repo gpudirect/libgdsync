@@ -17,6 +17,7 @@
 #include <gdsync/device.cuh>
 #include <gdrapi.h>
 
+#include "config.h"
 #include "test_utils.h"
 #include "gpu.h"
 
@@ -86,7 +87,13 @@ int main(int argc, char *argv[])
                         printf("INFO polling on GPU buffer\n");
                         break;
                 case 'h':
-                        printf(" %s [-d <gpu ordinal>][-n <iters>][-s <sleep us>][hfgm]\n", argv[0]);
+                        printf("Usage:\n"
+                               " %s [-d <gpu ordinal>][-n <iters>][-s <sleep us>][hfgm]\n"
+                               "Options:\n"
+                               " -f     issue a GPU RDMA flush following each poll\n"
+                               " -g     allocate all memory on GPU\n"
+                               " -m     issue memory barrier between signal and data stores\n"
+                               " -h     this help\n", argv[0]);
                         exit(EXIT_SUCCESS);
                         break;
                 default:
@@ -196,13 +203,13 @@ int main(int argc, char *argv[])
 
                                 // d_vals[0] = 0
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals, 0, mem_type));
+                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals, 0, mem_type |  (use_membar ? GDS_WRITE_PRE_BARRIER : 0)));
                                 ++k;
 
                                 // overwrite d_vals[0...CHUNK_SIZE-1]={1,2,...}
                                 // if CPU sees d_vals[0]==0, something went wrong with WRITE_MEMORY below
-#define HAS_WRITE_MEMORY 0
-#if HAS_WRITE_MEMORY
+
+#ifdef HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
 #warning using write memory
                                 descs[k].tag = GDS_TAG_WRITE_MEMORY;
                                 GDSCHECK(gds_prepare_write_memory(&descs[k].writemem, (uint8_t*)vals, (uint8_t*)src_data, sizeof(src_data), mem_type));
