@@ -96,7 +96,6 @@
 #ifdef USE_NVTX
 #include "nvToolsExt.h"
 #define NVTX_PUSH(name,cid) do { \
-        cudaDeviceSynchronize(); \
 	uint32_t colors[] = { 0x0000ff00, 0x000000ff, 0x00ffff00, 0x00ff00ff, 0x0000ffff, 0x00ff0000, 0x00ffffff }; \
 	int num_colors = sizeof(colors)/sizeof(uint32_t); \
 	int color_id = cid; \
@@ -110,7 +109,7 @@
 	eventAttrib.message.ascii = name; \
 	nvtxRangePushEx(&eventAttrib); \
 } while(0)
-#define NVTX_POP() do { /*cudaDeviceSynchronize();*/ nvtxRangePop(); } while(0)
+#define NVTX_POP() do { nvtxRangePop(); } while(0)
 #else
 #define NVTX_PUSH(name,cid) do {} while(0)
 #define NVTX_POP() do {} while(0)
@@ -126,7 +125,11 @@ enum gpu_msg_level {
 };
 
 
-#define gpu_msg(LVL, LVLSTR, FMT, ARGS...)   fprintf(stderr, LVLSTR "[%s] " FMT, __FUNCTION__ ,##ARGS)
+#define gpu_msg(LVL, LVLSTR, FMT, ARGS...)                              \
+        do {                                                            \
+                fprintf(stderr, LVLSTR "[%s] " FMT, __FUNCTION__ ,##ARGS); \
+                fflush(stderr);                                         \
+        } while(0)
 
 #if 0
 #define gpu_dbg(FMT, ARGS...)  do {} while(0)
