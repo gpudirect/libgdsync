@@ -1486,8 +1486,12 @@ static int gds_register_peer_by_ordinal(unsigned gpu_id, gds_peer **p_peer, gds_
 
 static void gds_ordinal_from_device(CUdevice dev, unsigned &gpu_id)
 {
+        int count;
+        CUCHECK(cuDeviceGetCount(&count));
         // FIXME: this is super ugly and may break in the future
-        gpu_id = (unsigned)dev;
+        int ordinal = static_cast<int>(dev);
+        GDS_ASSERT(ordinal >= 0 && ordinal < count);
+        gpu_id = (unsigned)ordinal;
         gds_dbg("gpu_id=%u for dev=%d\n", gpu_id, dev);
 }
 
