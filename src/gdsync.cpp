@@ -45,6 +45,12 @@
 
 //-----------------------------------------------------------------------------
 
+void gds_assert(const char *cond, const char *file, unsigned line, const char *function)
+{
+        gds_err("assertion '%s' failed in %s at %s:%d\n", cond, function, file, line);
+        abort();
+}
+
 int gds_dbg_enabled()
 {
         static int gds_dbg_is_enabled = -1;

@@ -32,6 +32,16 @@
 #endif
 #include <inttypes.h> // to pull PRIx64
 
+// internal assert function
+
+void gds_assert(const char *cond, const char *file, unsigned line, const char *function);
+
+#define GDS_ASSERT2(COND) gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__)
+#define GDS_ASSERT(COND) GDS_ASSERT2(COND)
+
+
+// CUDA error checking
+
 #define __CUCHECK(stmt, cond_str)					\
 	do {								\
 		CUresult result = (stmt);				\
