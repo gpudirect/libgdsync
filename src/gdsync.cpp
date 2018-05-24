@@ -598,10 +598,10 @@ int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &ops, in
         if (gds_enable_weak_consistency() && peer->has_weak)
                 cuflags |= CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING;
 
-        gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
+        gds_dbg("nops=%zu flags=%08x\n", nops, cuflags);
 
         if (nops > peer->max_batch_size) {
-                gds_warn("batch size might be too big, stream=%p nops=%d flags=%08x\n", stream, nops, flags);
+                gds_warn("batch size might be too big, stream=%p nops=%zu flags=%08x\n", stream, nops, flags);
                 //return EINVAL;
         }
 
@@ -611,13 +611,13 @@ int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &ops, in
                 cuGetErrorString(result, &err_str);
                 gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
                 retcode = gds_curesult_to_errno(result);
-                gds_err("retcode=%d nops=%d flags=%08x, dumping memops:\n", retcode, nops, cuflags);
+                gds_err("retcode=%d nops=%zu flags=%08x, dumping memops:\n", retcode, nops, cuflags);
                 gds_dump_params(ops);
                 goto out;
         }
 
         if (gds_enable_dump_memops()) {
-                gds_info("nops=%d flags=%08x\n", nops, cuflags);
+                gds_info("nops=%zu flags=%08x\n", nops, cuflags);
                 gds_dump_params(ops);
         }
 

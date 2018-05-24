@@ -665,7 +665,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         }
                         break;
                 default:
-                        gds_err("invalid tag for %d entry\n", i);
+                        gds_err("invalid tag for %zu entry\n", i);
                         ret = EINVAL;
                         goto out;
                         break;
