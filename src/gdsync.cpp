@@ -852,7 +852,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                         if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
                                 flags |= GDS_WAIT_POST_FLUSH;
 
-                        gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
+                        gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32" type=%"PRIx32"\n", dev_ptr, data, (uint32_t)op->type);
 
                         switch(op->type) {
                         case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
@@ -1013,7 +1013,7 @@ int gds_post_ops_on_cpu(size_t n_ops, struct peer_op_wr *op, int post_flags)
                         bool flush = true;
                         if (post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH)
                                 flush = false;
-                        gds_dbg("WAIT_32 dev_ptr=%p data=%"PRIx32"\n", ptr, value);
+                        gds_dbg("WAIT_32 dev_ptr=%p data=%"PRIx32" type=%"PRIx32"\n", ptr, value, (uint32_t)op->type);
                         bool done = false;
                         do {
                                 uint32_t data = gds_atomic_get(ptr);
@@ -1421,9 +1421,10 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
                             IBV_EXP_PEER_OP_FENCE_CAP          | 
                             IBV_EXP_PEER_OP_POLL_AND_DWORD_CAP );
 
-        if (peer->has_wait_nor)
+        if (peer->has_wait_nor) {
+                gds_dbg("enabling NOR feature\n");
                 peer->attr.caps |= IBV_EXP_PEER_OP_POLL_NOR_DWORD_CAP;
-        else
+        } else
                 peer->attr.caps |= IBV_EXP_PEER_OP_POLL_GEQ_DWORD_CAP;
 
         if (peer->has_inlcpy) {
