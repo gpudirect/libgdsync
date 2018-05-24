@@ -209,7 +209,7 @@ int main(int argc, char *argv[])
                                 // overwrite d_vals[0...CHUNK_SIZE-1]={1,2,...}
                                 // if CPU sees d_vals[0]==0, something went wrong with WRITE_MEMORY below
 
-#ifdef HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
+#if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
 #warning using write memory
                                 descs[k].tag = GDS_TAG_WRITE_MEMORY;
                                 GDSCHECK(gds_prepare_write_memory(&descs[k].writemem, (uint8_t*)vals, (uint8_t*)src_data, sizeof(src_data), mem_type));
