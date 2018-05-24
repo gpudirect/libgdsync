@@ -667,7 +667,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
         //size_t n_ops = ops.size();
         CUstreamBatchMemOpParams param;
 
-        gds_dbg("n_ops=%zu idx=%d\n", n_ops);
+        gds_dbg("n_ops=%zu\n", n_ops);
 
         if (!peer->has_memops) {
                 gds_err("CUDA MemOps are required\n");
@@ -1374,7 +1374,8 @@ static bool support_weak_consistency(CUdevice dev)
         } while(0);
 
         if (flag && !has_hidden_flag) {
-                gds_err("GPU dev=%d relaxed ordering device attribute and detection do not agree\n");
+                gds_err("GPU dev=%d relaxed ordering device attribute and detection do not agree\n", dev);
+                abort();
         }
 done:                
         gds_dbg("dev=%d has_weak=%d\n", dev, has_hidden_flag);
