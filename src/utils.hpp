@@ -36,7 +36,13 @@
 
 void gds_assert(const char *cond, const char *file, unsigned line, const char *function);
 
-#define GDS_ASSERT2(COND) gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__)
+#define GDS_ASSERT2(COND)                                               \
+        do {                                                            \
+                if (!(COND))                                            \
+                        gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__); \
+        }                                                               \
+        while(0)
+
 #define GDS_ASSERT(COND) GDS_ASSERT2(COND)
 
 
