@@ -87,13 +87,6 @@ int gds_flusher_enabled()
 //-----------------------------------------------------------------------------
 // detect Async APIs
 
-#if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_VALUE_64
-#warning "enabling write_64 extension"
-#define GDS_HAS_WRITE64     1
-#else 
-#define GDS_HAS_WRITE64     0
-#endif
-
 #if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
 #warning "enabling WRITE_MEMORY extension"
 #define GDS_HAS_INLINE_COPY 1
@@ -119,25 +112,9 @@ const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
 
 //-----------------------------------------------------------------------------
 
-// Note: inlcpy has precedence
-//bool gds_has_inlcpy = GDS_HAS_INLINE_COPY;
-//bool gds_has_write64 = GDS_HAS_WRITE64;
-//bool gds_has_weak_consistency = GDS_HAS_WEAK_API;
-//bool gds_has_membar = GDS_HAS_MEMBAR;
+// Note: these are default overrides, i.e. allow to disable/enable the features
+// in case the GPU supports them
 
-//-----------------------------------------------------------------------------
-
-static bool gpu_does_support_nor(gds_peer *peer)
-{
-        return false; 
-}
-
-static bool gds_memop_enabled(gds_peer *peer)
-{
-        return true;
-}
-
-// BUG: this feature is GPU device dependent
 static bool gds_enable_write64()
 {
         static int gds_disable_write64 = -1;
@@ -149,9 +126,21 @@ static bool gds_enable_write64()
                         gds_disable_write64 = 0;
                 gds_dbg("GDS_DISABLE_WRITE64=%d\n", gds_disable_write64);
         }
-        // BUG: need to query device property for write64 capability
-        //return GDS_HAS_WRITE64 && !gds_disable_write64;
-        return false;
+        return !gds_disable_write64;
+}
+
+static bool gds_enable_wait_nor()
+{
+        static int gds_disable_wait_nor = -1;
+        if (-1 == gds_disable_wait_nor) {
+                const char *env = getenv("GDS_DISABLE_WAIT_NOR");
+                if (env)
+                        gds_disable_wait_nor = !!atoi(env);
+                else
+                        gds_disable_wait_nor = 0;
+                gds_dbg("GDS_DISABLE_WAIT_NOR=%d\n", gds_disable_wait_nor);
+        }
+        return !gds_disable_wait_nor;
 }
 
 static bool gds_enable_inlcpy()
@@ -165,9 +154,10 @@ static bool gds_enable_inlcpy()
                         gds_disable_inlcpy = 0;
                 gds_dbg("GDS_DISABLE_WRITEMEMORY=%d\n", gds_disable_inlcpy);
         }
-        return GDS_HAS_INLINE_COPY && !gds_disable_inlcpy;
+        return !gds_disable_inlcpy;
 }
 
+// simulate 64-bits writes with inlcpy
 static bool gds_simulate_write64()
 {
         static int gds_simulate_write64 = -1;
@@ -184,8 +174,8 @@ static bool gds_simulate_write64()
                         gds_simulate_write64 = 0;
                 }
         }
-        // simulate 64-bits writes with inlcpy
-        return GDS_HAS_INLINE_COPY && gds_simulate_write64;
+
+        return gds_simulate_write64;
 }
 
 static bool gds_enable_membar()
@@ -199,7 +189,7 @@ static bool gds_enable_membar()
                         gds_disable_membar = 0;
                 gds_dbg("GDS_DISABLE_MEMBAR=%d\n", gds_disable_membar);
         }
-        return GDS_HAS_MEMBAR && !gds_disable_membar;
+        return !gds_disable_membar;
 }
 
 static bool gds_enable_weak_consistency()
@@ -335,7 +325,7 @@ int gds_fill_membar(gds_op_list_t &ops, int flags)
         ops.push_back(param);
 out:
 #else
-        gds_err("error, inline copy is unsupported\n");
+        gds_err("unsupported feature\n");
         retcode = EINVAL;
 #endif
         return retcode;
@@ -373,7 +363,7 @@ static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, const void *dat
                 param.writeMemory.flags);
         ops.push_back(param);
 #else
-        gds_err("error, inline copy is unsupported\n");
+        gds_err("unsupported feature\n");
         retcode = EINVAL;
 #endif
         return retcode;
@@ -1407,7 +1397,7 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
         peer->has_memops = support_memops(dev);
         peer->has_remote_flush = support_remote_flush(dev);
         peer->has_write64 = support_write64(dev) && gds_enable_write64();
-        peer->has_wait_nor = support_wait_nor(dev);
+        peer->has_wait_nor = support_wait_nor(dev) && gds_enable_wait_nor();
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
         peer->has_membar = support_membar(dev);
         peer->has_weak = support_weak_consistency(dev);
