@@ -1353,20 +1353,27 @@ static bool support_weak_consistency(CUdevice dev)
                 CUstreamBatchMemOpParams params[2];
                 CUresult res;
                 res = cuStreamBatchMemOp(0, 0, params, 0);
-                if (res != CUDA_SUCCESS) {
+                if (res == CUDA_ERROR_NOT_SUPPORTED) {
+                        gds_err("Either cuStreamBatchMemOp API is not supported on this platform or it has not been enabled, check libgdsync system requirements.\n");
+                        break;
+                } else if (res != CUDA_SUCCESS) {
                         const char *err_str = NULL;
                         cuGetErrorString(res, &err_str);
-                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
+                        const char *err_name = NULL;
+                        cuGetErrorName(res, &err_name);
+                        gds_err("very serious problems with cuStreamBatchMemOp() %d(%s) '%s'\n", res, err_name, err_str);
                         break;
                 }
                 res = cuStreamBatchMemOp(0, 0, params, CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING);
-                if (res ==  CUDA_ERROR_INVALID_VALUE) {
+                if (res == CUDA_ERROR_INVALID_VALUE) {
                         gds_dbg("weak flag is not supported\n");
                         break;
                 } else if (res != CUDA_SUCCESS) {
                         const char *err_str = NULL;
                         cuGetErrorString(res, &err_str);
-                        gds_err("some serious problems with cuStreamBatchMemOp() %d(%s)\n", res, err_str);
+                        const char *err_name = NULL;
+                        cuGetErrorName(res, &err_name);
+                        gds_err("serious problems with cuStreamBatchMemOp() %d(%s) '%s'\n", res, err_name, err_str);
                         break;
                 }
                 gds_dbg("detected hidden weak consistency flag\n");
