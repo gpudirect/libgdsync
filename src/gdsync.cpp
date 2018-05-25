@@ -137,7 +137,7 @@ static bool gds_enable_wait_nor()
                 if (env)
                         gds_disable_wait_nor = !!atoi(env);
                 else
-                        gds_disable_wait_nor = 0;
+                        gds_disable_wait_nor = 1; // WAR for issue #68
                 gds_dbg("GDS_DISABLE_WAIT_NOR=%d\n", gds_disable_wait_nor);
         }
         return !gds_disable_wait_nor;
