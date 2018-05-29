@@ -11,6 +11,9 @@
 #include <assert.h>
 #include <limits.h>
 
+#include <cuda.h>
+#include <cuda_runtime_api.h>
+
 #include <infiniband/verbs_exp.h>
 #include <gdsync.h>
 #include <gdsync/tools.h>
@@ -125,8 +128,7 @@ int main(int argc, char *argv[])
         gds_mem_desc_t desc =  {0,};
         ret = gds_alloc_mapped_memory(&desc, size, mem_type);
         if (ret) {
-                gpu_err("error (%d) while allocating mem\n", ret);
-                goto out;
+                gpu_fail("error (%d) while allocating mem\n", ret);
         }
         CUdeviceptr d_buf = desc.d_ptr;
         void *h_buf = desc.h_ptr;
@@ -136,11 +138,10 @@ int main(int argc, char *argv[])
         gds_mem_desc_t desc_data =  {0,};
         ret = gds_alloc_mapped_memory(&desc_data, size, mem_type);
         if (ret) {
-                gpu_err("error (%d) while allocating mem\n", ret);
-                goto out;
+                gpu_fail("error (%d) while allocating mem\n", ret);
         }
         CUdeviceptr d_data = desc_data.d_ptr;
-        uint32_t *h_data = desc_data.h_ptr;
+        uint32_t *h_data = (uint32_t*)desc_data.h_ptr;
         printf("allocated d_data=%p h_data=%p\n", (void*)d_data, h_data);
         memset(h_data, 0, size);
 
@@ -305,20 +306,17 @@ err:
         gpu_dbg("calling gds_free_mapped_memory\n");
         ret = gds_free_mapped_memory(&desc);
         if (ret) {
-                gpu_err("error (%d) while freeing mem\n", ret);
-                goto out;
+                gpu_fail("error (%d) while freeing mem\n", ret);
         }
 
         ret = gds_free_mapped_memory(&desc_data);
         if (ret) {
-                gpu_err("error (%d) while freeing mem\n", ret);
-                goto out;
+                gpu_fail("error (%d) while freeing mem\n", ret);
         }
 
-out:
 	gpu_finalize();
 
-        printf("test finished!\n");
+        printf(">>> SUCCESS\n");
         return ret;
 }
 

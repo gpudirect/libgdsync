@@ -144,6 +144,13 @@ enum gpu_msg_level {
 #define gpu_warn_once(FMT, ARGS...) gpu_warnc(1, FMT, ##ARGS)
 #define gpu_err(FMT, ARGS...)  gpu_msg(GPU_MSG_ERROR, "ERR:  ", FMT, ##ARGS)
 
+#define gpu_fail_2(FMT, ARGS... ) do {                                  \
+                gpu_err(">>> test FAILED in %s at %s:%d\n" FMT, __FUNCTION__, __FILE__, __LINE__, ## ARGS); \
+                exit(EXIT_FAILURE);                                     \
+        } while(0)
+#define gpu_fail(FMT, ARGS...) gpu_fail_2(FMT, ##ARGS)
+
+
 // oversubscribe SM by factor 2
 static const int over_sub_factor = 2;
 extern CUstream gpu_stream;
