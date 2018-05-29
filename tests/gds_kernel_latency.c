@@ -1472,9 +1472,9 @@ int main(int argc, char *argv[])
                         routs -= last_batch_len;
                         //prev_batch_len = last_batch_len;
                         if (ctx->n_tx_ev != last_batch_len)
-                                gpu_err("[%d] unexpected tx ev %d, batch len %d\n", iter, ctx->n_tx_ev, last_batch_len);
+                                gpu_err("[%d] iter:%d unexpected tx ev %d, batch len %d\n", my_rank, iter, ctx->n_tx_ev, last_batch_len);
                         if (ctx->n_rx_ev != last_batch_len)
-                                gpu_err("[%d] unexpected rx ev %d, batch len %d\n", iter, ctx->n_rx_ev, last_batch_len);
+                                gpu_err("[%d] iter:%d unexpected rx ev %d, batch len %d\n", my_rank, iter, ctx->n_rx_ev, last_batch_len);
                         if (nposted < iters) {
                                 //fprintf(stdout, "rcnt=%d scnt=%d routs=%d nposted=%d\n", rcnt, scnt, routs, nposted); fflush(stdout);
                                 // potentially submit new work
