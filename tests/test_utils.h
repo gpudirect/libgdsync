@@ -80,8 +80,63 @@ static inline void gds_busy_wait_us(gds_us_t tmout)
 #define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
 #endif
 
-void gds_atomic_set_dword(uint32_t *ptr, uint32_t value)
+static inline void gds_atomic_set_dword(uint32_t *ptr, uint32_t value)
 {
         ACCESS_ONCE(*ptr) = value;
         //gds_wmb();
 }
+
+static inline uint32_t gds_atomic_read_dword(uint32_t *ptr)
+{
+        return ACCESS_ONCE(*ptr);
+}
+
+static inline int gds_poll_dword(uint32_t *ptr, uint32_t payload, gds_us_t tm, int (*pred)(uint32_t a, uint32_t b))
+{
+        gds_us_t start = gds_get_time_us();
+        int ret = 0;
+        while(1) {
+                uint32_t value = gds_atomic_read_dword(ptr);
+                gpu_dbg("value=%x\n", value);
+                if (pred(value, payload)) {
+                        ret = 0;
+                        break;
+                }
+                // time-out check
+                if ((gds_get_time_us()-start) > tm) {
+                        gpu_dbg("timeout %ld us reached!!\n", tm);
+                        ret = EWOULDBLOCK;
+                        break;
+                }
+                //arch_cpu_relax();
+        }
+        return ret;
+}
+
+static inline int gds_geq_dword(uint32_t a, uint32_t b)
+{
+        return ((int32_t)a - (int32_t)b >= 0);
+}
+
+static int gds_poll_dword_geq(uint32_t *ptr, uint32_t payload, gds_us_t tm)
+{
+        return gds_poll_dword(ptr, payload, tm, gds_geq_dword);
+}
+
+static inline int gds_neq_dword(uint32_t a, uint32_t b)
+{
+        return (int32_t)a != (int32_t)b;
+}
+
+static int gds_poll_dword_neq(uint32_t *ptr, uint32_t payload, gds_us_t tm)
+{
+        return gds_poll_dword(ptr, payload, tm, gds_neq_dword);
+}
+
+/*
+ * Local variables:
+ *  c-indent-level: 8
+ *  c-basic-offset: 8
+ *  tab-width: 8
+ * End:
+ */
