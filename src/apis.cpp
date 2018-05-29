@@ -641,7 +641,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 }
                 case GDS_TAG_WAIT_VALUE32:
-                        retcode = gds_fill_poll(params, desc->wait32.ptr, desc->wait32.value, desc->wait32.cond_flags, desc->wait32.flags);
+                        retcode = gds_fill_poll(peer, params, desc->wait32.ptr, desc->wait32.value, desc->wait32.cond_flags, desc->wait32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poll\n", retcode);
                                 ret = retcode;
@@ -649,7 +649,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         }
                         break;
                 case GDS_TAG_WRITE_VALUE32:
-                        retcode = gds_fill_poke(params, desc->write32.ptr, desc->write32.value, desc->write32.flags);
+                        retcode = gds_fill_poke(peer, params, desc->write32.ptr, desc->write32.value, desc->write32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poke\n", retcode);
                                 ret = retcode;
@@ -657,7 +657,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         }
                         break;
                 case GDS_TAG_WRITE_MEMORY:
-                        retcode = gds_fill_inlcpy(params, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
+                        retcode = gds_fill_inlcpy(peer, params, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_inlcpy\n", retcode);
                                 ret = retcode;

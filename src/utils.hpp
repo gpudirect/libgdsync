@@ -204,13 +204,15 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
 void gds_dump_wait_request(gds_wait_request_t *request, size_t count);
 void gds_dump_param(CUstreamBatchMemOpParams *param);
 void gds_dump_params(gds_op_list_t &params);
-int gds_fill_membar(gds_op_list_t &param, int flags);
-int gds_fill_inlcpy(gds_op_list_t &param, void *ptr, const void *data, size_t n_bytes, int flags);
-int gds_fill_poke(gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
-int gds_fill_poke64(gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
-int gds_fill_poll(gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
 
 struct gds_peer;
+
+int gds_fill_membar(gds_peer *peer, gds_op_list_t &param, int flags);
+int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &param, void *ptr, const void *data, size_t n_bytes, int flags);
+int gds_fill_poke(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
+int gds_fill_poke64(gds_peer *peer, gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
+int gds_fill_poll(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
+
 int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params, int flags);
 
 enum gds_post_ops_flags {
