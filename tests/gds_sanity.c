@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-        CUCHECK(cuStreamCreate(&gpu_stream, 0));
+        //CUCHECK(cuStreamCreate(&gpu_stream, 0));
 
         puts("");
         printf("number iterations %d\n", num_iters);

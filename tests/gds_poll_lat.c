@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
         int use_membar = 0;
         int use_wrmem = 0;
         int wait_key = -1;
-        CUstream gpu_stream;
+        //CUstream gpu_stream;
 
         int n_bg_streams = 0;
 
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-        CUCHECK(cuStreamCreate(&gpu_stream, 0));
+        //CUCHECK(cuStreamCreate(&gpu_stream, 0));
 
         gpu_info("number iterations %d\n", num_iters);
         gpu_info("num dwords per poke %zu\n", n_pokes);
