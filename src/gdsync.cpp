@@ -45,6 +45,12 @@
 
 //-----------------------------------------------------------------------------
 
+void gds_assert(const char *cond, const char *file, unsigned line, const char *function)
+{
+        gds_err("assertion '%s' failed in %s at %s:%d\n", cond, function, file, line);
+        abort();
+}
+
 int gds_dbg_enabled()
 {
         static int gds_dbg_is_enabled = -1;
@@ -81,49 +87,34 @@ int gds_flusher_enabled()
 //-----------------------------------------------------------------------------
 // detect Async APIs
 
-#if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_VALUE_64
-#warning "enabling write_64 extensions"
-#define GDS_HAS_WRITE64     1
-#else 
-#define GDS_HAS_WRITE64     0
-#endif
-
-#if HAVE_DECL_CU_STREAM_MEM_OP_INLINE_COPY
-#warning "enabling inline_copy extensions"
+#if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
+#warning "enabling WRITE_MEMORY extension"
 #define GDS_HAS_INLINE_COPY 1
 #else 
 #define GDS_HAS_INLINE_COPY 0
 #endif
 
-#if HAVE_DECL_CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK
-#warning "enabling consistency extensions"
-#define GDS_HAS_WEAK_API    1
+#if HAVE_DECL_CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING
 #else
-#define GDS_HAS_WEAK_API    0
+#define CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING 0x1
 #endif
 
 #if HAVE_DECL_CU_STREAM_MEM_OP_MEMORY_BARRIER
-#warning "enabling memory barrier extensions"
+#warning "enabling memory barrier extension"
 #define GDS_HAS_MEMBAR      1
 #else
 #define GDS_HAS_MEMBAR      0
 #endif
 
-// TODO: use corret value
+// TODO: use correct value
 // TODO: make it dependent upon the particular GPU
 const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
 
 //-----------------------------------------------------------------------------
 
-// Note: inlcpy has precedence
-//bool gds_has_inlcpy = GDS_HAS_INLINE_COPY;
-//bool gds_has_write64 = GDS_HAS_WRITE64;
-//bool gds_has_weak_consistency = GDS_HAS_WEAK_API;
-//bool gds_has_membar = GDS_HAS_MEMBAR;
+// Note: these are default overrides, i.e. allow to disable/enable the features
+// in case the GPU supports them
 
-//-----------------------------------------------------------------------------
-
-// BUG: this feature is GPU device dependent
 static bool gds_enable_write64()
 {
         static int gds_disable_write64 = -1;
@@ -135,25 +126,38 @@ static bool gds_enable_write64()
                         gds_disable_write64 = 0;
                 gds_dbg("GDS_DISABLE_WRITE64=%d\n", gds_disable_write64);
         }
-        // BUG: need to query device property for write64 capability
-        //return GDS_HAS_WRITE64 && !gds_disable_write64;
-        return false;
+        return !gds_disable_write64;
+}
+
+static bool gds_enable_wait_nor()
+{
+        static int gds_disable_wait_nor = -1;
+        if (-1 == gds_disable_wait_nor) {
+                const char *env = getenv("GDS_DISABLE_WAIT_NOR");
+                if (env)
+                        gds_disable_wait_nor = !!atoi(env);
+                else
+                        gds_disable_wait_nor = 1; // WAR for issue #68
+                gds_dbg("GDS_DISABLE_WAIT_NOR=%d\n", gds_disable_wait_nor);
+        }
+        return !gds_disable_wait_nor;
 }
 
 static bool gds_enable_inlcpy()
 {
         static int gds_disable_inlcpy = -1;
         if (-1 == gds_disable_inlcpy) {
-                const char *env = getenv("GDS_DISABLE_INLINECOPY");
+                const char *env = getenv("GDS_DISABLE_WRITEMEMORY");
                 if (env)
                         gds_disable_inlcpy = !!atoi(env);
                 else
                         gds_disable_inlcpy = 0;
-                gds_dbg("GDS_DISABLE_INLINECOPY=%d\n", gds_disable_inlcpy);
+                gds_dbg("GDS_DISABLE_WRITEMEMORY=%d\n", gds_disable_inlcpy);
         }
-        return GDS_HAS_INLINE_COPY && !gds_disable_inlcpy;
+        return !gds_disable_inlcpy;
 }
 
+// simulate 64-bits writes with inlcpy
 static bool gds_simulate_write64()
 {
         static int gds_simulate_write64 = -1;
@@ -166,12 +170,12 @@ static bool gds_simulate_write64()
                 gds_dbg("GDS_SIMULATE_WRITE64=%d\n", gds_simulate_write64);
 
                 if (gds_simulate_write64 && gds_enable_inlcpy()) {
-                        gds_warn("INLINECOPY has priority over SIMULATE_WRITE64, using the former\n");
+                        gds_warn("WRITEMEMORY has priority over SIMULATE_WRITE64, using the former\n");
                         gds_simulate_write64 = 0;
                 }
         }
-        // simulate 64-bits writes with inlcpy
-        return GDS_HAS_INLINE_COPY && gds_simulate_write64;
+
+        return gds_simulate_write64;
 }
 
 static bool gds_enable_membar()
@@ -185,21 +189,23 @@ static bool gds_enable_membar()
                         gds_disable_membar = 0;
                 gds_dbg("GDS_DISABLE_MEMBAR=%d\n", gds_disable_membar);
         }
-        return GDS_HAS_MEMBAR && !gds_disable_membar;
+        return !gds_disable_membar;
 }
 
 static bool gds_enable_weak_consistency()
 {
         static int gds_disable_weak_consistency = -1;
         if (-1 == gds_disable_weak_consistency) {
-            const char *env = getenv("GDS_DISABLE_WEAK_CONSISTENCY");
-            if (env)
-                    gds_disable_weak_consistency = !!atoi(env);
-            else
-                    gds_disable_weak_consistency = 1; // disabled by default
-            gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
+                const char *env = getenv("GDS_DISABLE_WEAK_CONSISTENCY");
+                if (env)
+                        gds_disable_weak_consistency = !!atoi(env);
+                else
+                        gds_disable_weak_consistency = 1; // disabled by default
+                gds_dbg("GDS_DISABLE_WEAK_CONSISTENCY=%d\n", gds_disable_weak_consistency);
         }
-        return GDS_HAS_WEAK_API && !gds_disable_weak_consistency;
+        gds_dbg("gds_disable_weak_consistency=%d\n",
+                gds_disable_weak_consistency);
+        return !gds_disable_weak_consistency;
 }
 
 //-----------------------------------------------------------------------------
@@ -244,20 +250,22 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
                 break;
 
 #if GDS_HAS_INLINE_COPY
-        case CU_STREAM_MEM_OP_INLINE_COPY:
+        case CU_STREAM_MEM_OP_WRITE_MEMORY:
                 gds_info("INLINECOPY addr:%p alias:%p src:%p len=%zu flags:%08x\n",
-                        (void*)param->inlineCopy.address,
-                        (void*)param->inlineCopy.alias,
-                        (void*)param->inlineCopy.srcData,
-                        param->inlineCopy.byteCount,
-                        param->inlineCopy.flags);
+                        (void*)param->writeMemory.address,
+                        (void*)param->writeMemory.alias,
+                        (void*)param->writeMemory.src,
+                        param->writeMemory.byteCount,
+                        param->writeMemory.flags);
                 break;
 #endif
 
 #if GDS_HAS_MEMBAR
         case CU_STREAM_MEM_OP_MEMORY_BARRIER:
-                gds_info("MEMORY_BARRIER flags:%08x\n",
-                        param->memoryBarrier.flags);
+                gds_info("MEMORY_BARRIER scope:%02x set_before=%02x set_after=%02x\n",
+                         param->memoryBarrier.scope,
+                         param->memoryBarrier.set_before,
+                         param->memoryBarrier.set_after);
                 break;
 #endif
         default:
@@ -291,25 +299,33 @@ int gds_fill_membar(gds_op_list_t &ops, int flags)
                         param.operation,
                         param.flushRemoteWrites.flags);
         } else {
+                param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
+                if (flags & GDS_MEMBAR_MLX5) {
+                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_WRITE_32 | CU_STREAM_MEMORY_BARRIER_OP_WRITE_64;
+                } else {
+                        param.memoryBarrier.set_before = CU_STREAM_MEMORY_BARRIER_OP_ALL;
+                }
+                param.memoryBarrier.set_after = CU_STREAM_MEMORY_BARRIER_OP_ALL;
                 if (flags & GDS_MEMBAR_DEFAULT) {
-                        param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
-                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_DEFAULT;
+                        param.memoryBarrier.scope = CU_STREAM_MEMORY_BARRIER_SCOPE_GPU;
                 } else if (flags & GDS_MEMBAR_SYS) {
-                        param.operation = CU_STREAM_MEM_OP_MEMORY_BARRIER;
-                        param.memoryBarrier.flags = CU_STREAM_MEMORY_BARRIER_SYS;
+                        param.memoryBarrier.scope = CU_STREAM_MEMORY_BARRIER_SCOPE_SYS;
                 } else {
                         gds_err("error, unsupported membar\n");
                         retcode = EINVAL;
                         goto out;
                 }
-                gds_dbg("op=%d membar flags=%08x\n",
+                gds_dbg("op=%d membar scope:%02x set_before=%02x set_after=%02x\n",
                         param.operation,
-                        param.memoryBarrier.flags);
+                        param.memoryBarrier.scope,
+                        param.memoryBarrier.set_before,
+                        param.memoryBarrier.set_after);
+
         }
         ops.push_back(param);
 out:
 #else
-        gds_err("error, inline copy is unsupported\n");
+        gds_err("unsupported feature\n");
         retcode = EINVAL;
 #endif
         return retcode;
@@ -317,7 +333,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, size_t n_bytes, int flags)
+static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, const void *data, size_t n_bytes, int flags)
 {
         int retcode = 0;
 #if GDS_HAS_INLINE_COPY
@@ -328,32 +344,32 @@ static int gds_fill_inlcpy(gds_op_list_t &ops, CUdeviceptr addr, void *data, siz
         assert(n_bytes > 0);
         // TODO:
         //  verify address requirements of inline_copy
-        //assert((((unsigned long)addr) & 0x3) == 0); 
 
-        bool need_barrier       = (flags  & GDS_IMMCOPY_POST_TAIL_FLUSH  ) ? true : false;
+        bool need_barrier = (flags & GDS_WRITE_MEMORY_POST_BARRIER_SYS) ? true : false;
 
-        param.operation = CU_STREAM_MEM_OP_INLINE_COPY;
-        param.inlineCopy.byteCount = n_bytes;
-        param.inlineCopy.srcData = data;
-        param.inlineCopy.address = dev_ptr;
-        param.inlineCopy.flags = CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
+        param.operation = CU_STREAM_MEM_OP_WRITE_MEMORY;
+        param.writeMemory.byteCount = n_bytes;
+        param.writeMemory.src = const_cast<void *>(data);
+        param.writeMemory.address = dev_ptr;
         if (need_barrier)
-                param.inlineCopy.flags = 0;
+                param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_FENCE_SYS;
+        else
+                param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER;
         gds_dbg("op=%d addr=%p src=%p size=%zd flags=%08x\n",
                 param.operation,
-                (void*)param.inlineCopy.address,
-                param.inlineCopy.srcData,
-                param.inlineCopy.byteCount,
-                param.inlineCopy.flags);
+                (void*)param.writeMemory.address,
+                param.writeMemory.src,
+                param.writeMemory.byteCount,
+                param.writeMemory.flags);
         ops.push_back(param);
 #else
-        gds_err("error, inline copy is unsupported\n");
+        gds_err("unsupported feature\n");
         retcode = EINVAL;
 #endif
         return retcode;
 }
 
-int gds_fill_inlcpy(gds_op_list_t &ops, void *ptr, void *data, size_t n_bytes, int flags)
+int gds_fill_inlcpy(gds_op_list_t &ops, void *ptr, const void *data, size_t n_bytes, int flags)
 {
         int retcode = 0;
         CUdeviceptr dev_ptr = 0;
@@ -373,8 +389,8 @@ out:
 static void gds_enable_barrier_for_inlcpy(CUstreamBatchMemOpParams *param)
 {
 #if GDS_HAS_INLINE_COPY
-        assert(param.operation == CU_STREAM_MEM_OP_INLINE_COPY);
-        param.inlineCopy.flags &= ~CU_STREAM_INLINE_COPY_NO_MEMORY_BARRIER;
+        assert(param->operation == CU_STREAM_MEM_OP_WRITE_MEMORY);
+        param->writeMemory.flags &= ~CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER;
 #endif
 }
 
@@ -562,19 +578,20 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_batch_ops(CUstream stream, gds_op_list_t &ops, int flags)
+int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &ops, int flags)
 {
         CUresult result = CUDA_SUCCESS;
         int retcode = 0;
         unsigned int cuflags = 0;
-#if GDS_HAS_WEAK_API
-        cuflags |= gds_enable_weak_consistency() ? CU_STREAM_BATCH_MEM_OP_CONSISTENCY_WEAK : 0;
-#endif
         size_t nops = ops.size();
-        gds_dbg("nops=%d flags=%08x\n", nops, cuflags);
 
-        if (nops > 256) {
-                gds_warn("batch size might be too big, stream=%p nops=%d flags=%08x\n", stream, nops, flags);
+        if (gds_enable_weak_consistency() && peer->has_weak)
+                cuflags |= CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING;
+
+        gds_dbg("nops=%zu flags=%08x\n", nops, cuflags);
+
+        if (nops > peer->max_batch_size) {
+                gds_warn("batch size might be too big, stream=%p nops=%zu flags=%08x\n", stream, nops, flags);
                 //return EINVAL;
         }
 
@@ -584,13 +601,13 @@ int gds_stream_batch_ops(CUstream stream, gds_op_list_t &ops, int flags)
                 cuGetErrorString(result, &err_str);
                 gds_err("got CUDA result %d (%s) while submitting batch operations:\n", result, err_str);
                 retcode = gds_curesult_to_errno(result);
-                gds_err("nops=%d flags=%08x\n", nops, cuflags);
+                gds_err("retcode=%d nops=%zu flags=%08x, dumping memops:\n", retcode, nops, cuflags);
                 gds_dump_params(ops);
                 goto out;
         }
 
         if (gds_enable_dump_memops()) {
-                gds_info("nops=%d flags=%08x\n", nops, cuflags);
+                gds_info("nops=%zu flags=%08x\n", nops, cuflags);
                 gds_dump_params(ops);
         }
 
@@ -640,7 +657,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
         //size_t n_ops = ops.size();
         CUstreamBatchMemOpParams param;
 
-        gds_dbg("n_ops=%zu idx=%d\n", n_ops);
+        gds_dbg("n_ops=%zu\n", n_ops);
 
         if (!peer->has_memops) {
                 gds_err("CUDA MemOps are required\n");
@@ -698,11 +715,11 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                                         int flags = 0;
                                         if (fence_mem == IBV_EXP_PEER_FENCE_MEM_PEER) {
                                                 gds_dbg("using light membar\n");
-                                                flags = GDS_MEMBAR_DEFAULT;
+                                                flags = GDS_MEMBAR_DEFAULT | GDS_MEMBAR_MLX5;
                                         }
                                         else if (fence_mem == IBV_EXP_PEER_FENCE_MEM_SYS) {
                                                 gds_dbg("using heavy membar\n");
-                                                flags = GDS_MEMBAR_SYS;
+                                                flags = GDS_MEMBAR_SYS | GDS_MEMBAR_MLX5;
                                         }
                                         else {
                                                 gds_err("unsupported fence combination\n");
@@ -825,7 +842,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                         if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
                                 flags |= GDS_WAIT_POST_FLUSH;
 
-                        gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
+                        gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32" type=%"PRIx32"\n", dev_ptr, data, (uint32_t)op->type);
 
                         switch(op->type) {
                         case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
@@ -899,7 +916,7 @@ int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_
                 }
         }
 
-        retcode = gds_stream_batch_ops(stream, ops, 0);
+        retcode = gds_stream_batch_ops(peer, stream, ops, 0);
         if (retcode) {
                 gds_err("error %d in stream_batch_ops\n", retcode);
                 goto out;
@@ -911,17 +928,18 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
+int gds_post_ops_on_cpu(size_t n_ops, struct peer_op_wr *op, int post_flags)
 {
         int retcode = 0;
         size_t n = 0;
-
-        for (; op && n < n_descs; op = op->next, ++n) {
+        gds_dbg("n_ops=%zu op=%p post_flags=0x%x\n", n_ops, op, post_flags);
+        for (; op && n < n_ops; op = op->next, ++n) {
                 //int flags = 0;
-                gds_dbg("op[%zu] type:%08x\n", n, op->type);
+                gds_dbg("op[%zu]=%p\n", n, op);
+                //gds_dbg("op[%zu]=%p type:%08x\n", n, op, op->type);
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
+                        gds_dbg("FENCE flags=%"PRIu64"\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
                         uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
@@ -957,30 +975,58 @@ static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
                         uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
                         uint32_t data = op->wr.dword_va.data;
                         // A || B || C || E
+                        gds_dbg("STORE_DWORD ptr=%p data=%08"PRIx32"\n", ptr, data);
                         ACCESS_ONCE(*ptr) = data;
-                        gds_dbg("%p <- %08x\n", ptr, data);
                         break;
                 }
                 case IBV_EXP_PEER_OP_STORE_QWORD: {
                         uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.qword_va.target_id)->va + op->wr.qword_va.offset);
                         uint64_t data = op->wr.qword_va.data;
+                        gds_dbg("STORE_QWORD ptr=%p data=%016"PRIx64"\n", ptr, data);
                         ACCESS_ONCE(*ptr) = data;
-                        gds_dbg("%p <- %016"PRIx64"\n", ptr, data);
                         break;
                 }
                 case IBV_EXP_PEER_OP_COPY_BLOCK: {
                         uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.copy_op.target_id)->va + op->wr.copy_op.offset);
                         uint64_t *src = (uint64_t*)op->wr.copy_op.src;
                         size_t n_bytes = op->wr.copy_op.len;
+                        gds_dbg("COPY_BLOCK ptr=%p src=%p len=%zu\n", ptr, src, n_bytes);
                         gds_bf_copy(ptr, src, n_bytes);
-                        gds_dbg("%p <- %p len=%zu\n", ptr, src, n_bytes);
                         break;
                 }
                 case IBV_EXP_PEER_OP_POLL_AND_DWORD:
                 case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
                 case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
-                        gds_err("polling is not supported\n");
-                        retcode = EINVAL;
+                        int poll_cond;
+                        uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
+                        uint32_t value = op->wr.dword_va.data;
+                        bool flush = true;
+                        if (post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH)
+                                flush = false;
+                        gds_dbg("WAIT_32 dev_ptr=%p data=%"PRIx32" type=%"PRIx32"\n", ptr, value, (uint32_t)op->type);
+                        bool done = false;
+                        do {
+                                uint32_t data = gds_atomic_get(ptr);
+                                switch(op->type) {
+                                case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
+                                        done = ~(data | value);
+                                        break;
+                                case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
+                                        done = ((int32_t)data - (int32_t)value >= 0);
+                                        break;
+                                case IBV_EXP_PEER_OP_POLL_AND_DWORD:
+                                        done = (data & value);
+                                        break;
+                                default:
+                                        gds_err("invalid op type %02x\n", op->type);
+                                        retcode = EINVAL;
+                                        goto out;
+                                }
+                                if (done)
+                                        break;
+                                // TODO: more aggressive CPU relaxing needed here to avoid starving I/O fabric
+                                arch_cpu_relax();
+                        } while(true);
                         break;
                 }
                 default:
@@ -989,12 +1035,10 @@ static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
                         break;
                 }
                 if (retcode) {
-                        gds_err("error in fill func at entry n=%zu\n", n);
+                        gds_err("error %d at entry n=%zu\n", retcode, n);
                         goto out;
                 }
         }
-
-        assert(n_descs == n);
 
 out:
         return retcode;
@@ -1020,96 +1064,6 @@ int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uin
         if (dw) {
                 wmb();
                 ACCESS_ONCE(*dw) = val;
-        }
-
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_polls_and_pokes(CUstream stream,
-                                    size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
-                                    size_t n_pokes, uint32_t *poke_ptrs[], uint32_t poke_values[], int poke_flags[])
-{
-        int retcode = 0;
-        gds_op_list_t ops;
-
-        gds_dbg("n_polls=%zu n_pokes=%zu\n", n_polls, n_pokes);
-
-        for (size_t j = 0; j < n_polls; ++j) {
-                uint32_t *ptr = ptrs[j];
-                uint32_t magic = magics[j];
-                gds_wait_cond_flag_t cond_flag = cond_flags[j];
-                int flags = poll_flags[j];
-                gds_dbg("poll %zu: addr=%p value=%08x cond=%d flags=%08x\n", j, ptr, magic, cond_flag, flags);
-                retcode = gds_fill_poll(ops, ptr, magic, cond_flag, flags);
-                if (retcode) {
-                        gds_err("error in fill_poll at entry %zu\n", j);
-                        goto out;
-                }
-        }
-
-        for (size_t j = 0; j < n_pokes; ++j) {
-                uint32_t *addr = poke_ptrs[j];
-                uint32_t value = poke_values[j];
-                int flags = poke_flags[j];
-                gds_dbg("poke %zu: addr=%p value=%08x flags=%08x\n", j, addr, value, flags);
-                retcode = gds_fill_poke(ops, addr, value, flags);
-                if (retcode) {
-                        gds_err("error in fill_poll at entry %zu\n", j);
-                        goto out;
-                }
-        }
-
-        retcode = gds_stream_batch_ops(stream, ops, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_polls_and_immediate_copies(CUstream stream, 
-                                               size_t n_polls, uint32_t *ptrs[], uint32_t magics[], gds_wait_cond_flag_t cond_flags[], int poll_flags[], 
-                                               size_t n_imms, void *imm_ptrs[], void *imm_datas[], size_t imm_bytes[], int imm_flags[])
-{
-        int retcode = 0;
-        gds_op_list_t ops;
-
-        for (size_t j = 0; j < n_polls; ++j) {
-                uint32_t *ptr = ptrs[j];
-                uint32_t magic = magics[j];
-                gds_wait_cond_flag_t cond_flag = cond_flags[j];
-                int flags = poll_flags[j];
-
-                retcode = gds_fill_poll(ops, ptr, magic, cond_flag, flags);
-                if (retcode) {
-                        gds_err("error in fill_poll at entry %zu\n", j);
-                        goto out;
-                }
-        }
-
-        for (size_t j = 0; j < n_imms; ++j) {
-                void *ptr = imm_ptrs[j];
-                void *data = imm_datas[j];
-                size_t n_bytes = imm_bytes[j];
-                int flags = imm_flags[j];
-                retcode = gds_fill_inlcpy(ops, ptr, data, n_bytes, flags);
-                if (retcode) {
-                        gds_err("error in fill_inlcpy at entry %zu\n", j);
-                        goto out;
-                }
-        }
-
-        retcode = gds_stream_batch_ops(stream, ops, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
         }
 
 out:
@@ -1291,15 +1245,14 @@ static int gds_unregister_va(uint64_t registration_id, uint64_t peer_id)
 static bool support_memops(CUdevice dev)
 {
         int flag = 0;
-#if   CUDA_VERSION >= 9010
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS
+        // on  CUDA_VERSION >= 9010
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS, dev));
-        gds_warn("flag=%d\n", flag);
 #elif CUDA_VERSION >= 8000
-        // CUDA MemOps are enabled on CUDA 8.0+
+        // CUDA MemOps are always enabled on CUDA 8.0+
         flag = 1;
-        gds_warn("flag=%d\n", flag);
 #else
-#error "GCC error CUDA MemOp APIs is missing prior to CUDA 8.0"
+#error "CUDA MemOp APIs are missing prior to CUDA 8.0"
 #endif
         gds_dbg("dev=%d has_memops=%d\n", dev, flag);
         return !!flag;
@@ -1308,7 +1261,8 @@ static bool support_memops(CUdevice dev)
 static bool support_remote_flush(CUdevice dev)
 {
         int flag = 0;
-#if CUDA_VERSION >= 9020
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES
+        // on CUDA_VERSION >= 9020
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES, dev));
 #else
 #warning "Assuming CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES=0 prior to CUDA 9.2"
@@ -1320,7 +1274,8 @@ static bool support_remote_flush(CUdevice dev)
 static bool support_write64(CUdevice dev)
 {
         int flag = 0;
-#if CUDA_VERSION >= 9000
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS
+        // on CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS, dev));
 #endif
         gds_dbg("dev=%d has_write64=%d\n", dev, flag);
@@ -1330,8 +1285,11 @@ static bool support_write64(CUdevice dev)
 static bool support_wait_nor(CUdevice dev)
 {
         int flag = 0;
-#if CUDA_VERSION >= 9000
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR
+        // on CUDA_VERSION >= 9000
         CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR, dev));
+#else
+        gds_dbg("hardcoding has_wait_nor=0\n");
 #endif
         gds_dbg("dev=%d has_wait_nor=%d\n", dev, flag);
         return !!flag;
@@ -1340,13 +1298,85 @@ static bool support_wait_nor(CUdevice dev)
 static bool support_inlcpy(CUdevice dev)
 {
         int flag = 0;
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY
+        // on CUDA_VERSION >= 1000
+        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY, dev));
+#else
+        gds_dbg("hardcoding has_inlcpy=0\n");
+#endif
+        gds_dbg("dev=%d has_inlcpy=%d\n", dev, flag);
         return !!flag;
 }
 
 static bool support_membar(CUdevice dev)
 {
         int flag = 0;
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER
+        // on CUDA_VERSION >= 1000
+        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER, dev));
+#else
+        gds_dbg("hardcoding has_membar=0\n");
+#endif
+        gds_dbg("dev=%d has_membar=%d\n", dev, flag);
         return !!flag;
+}
+
+static bool support_weak_consistency(CUdevice dev)
+{
+        int flag = 0;
+        CUdevice cur_dev;
+        bool has_hidden_flag = false;
+
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING
+        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING, dev));
+#endif
+
+        CUCHECK(cuCtxGetDevice(&cur_dev));
+        if (cur_dev != dev) {
+                gds_err("device context is not current, cannot detect weak consistency flag\n");
+                goto done;
+        }
+
+        do {
+                gds_dbg("testing hidden weak flag\n");
+                        
+                CUstreamBatchMemOpParams params[2];
+                CUresult res;
+                res = cuStreamBatchMemOp(0, 0, params, 0);
+                if (res == CUDA_ERROR_NOT_SUPPORTED) {
+                        gds_err("Either cuStreamBatchMemOp API is not supported on this platform or it has not been enabled, check libgdsync system requirements.\n");
+                        break;
+                } else if (res != CUDA_SUCCESS) {
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
+                        const char *err_name = NULL;
+                        cuGetErrorName(res, &err_name);
+                        gds_err("very serious problems with cuStreamBatchMemOp() %d(%s) '%s'\n", res, err_name, err_str);
+                        break;
+                }
+                res = cuStreamBatchMemOp(0, 0, params, CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING);
+                if (res == CUDA_ERROR_INVALID_VALUE) {
+                        gds_dbg("weak flag is not supported\n");
+                        break;
+                } else if (res != CUDA_SUCCESS) {
+                        const char *err_str = NULL;
+                        cuGetErrorString(res, &err_str);
+                        const char *err_name = NULL;
+                        cuGetErrorName(res, &err_name);
+                        gds_err("serious problems with cuStreamBatchMemOp() %d(%s) '%s'\n", res, err_name, err_str);
+                        break;
+                }
+                gds_dbg("detected hidden weak consistency flag\n");
+                has_hidden_flag = true;
+        } while(0);
+
+        if (flag && !has_hidden_flag) {
+                gds_err("GPU dev=%d relaxed ordering device attribute and detection do not agree\n", dev);
+                abort();
+        }
+done:                
+        gds_dbg("dev=%d has_weak=%d\n", dev, has_hidden_flag);
+        return has_hidden_flag;
 }
 
 //-----------------------------------------------------------------------------
@@ -1357,11 +1387,9 @@ static bool gpu_registered[max_gpus];
 
 //-----------------------------------------------------------------------------
 
-static void gds_init_peer(gds_peer *peer, int gpu_id)
+static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
 {
         assert(peer);
-        CUdevice dev;
-        CUCHECK(cuDeviceGet(&dev, gpu_id));
 
         peer->gpu_id = gpu_id;
         peer->gpu_dev = dev;
@@ -1369,9 +1397,12 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->has_memops = support_memops(dev);
         peer->has_remote_flush = support_remote_flush(dev);
         peer->has_write64 = support_write64(dev) && gds_enable_write64();
-        peer->has_wait_nor = support_wait_nor(dev);
+        peer->has_wait_nor = support_wait_nor(dev) && gds_enable_wait_nor();
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
         peer->has_membar = support_membar(dev);
+        peer->has_weak = support_weak_consistency(dev);
+
+        peer->max_batch_size = 256;
 
         peer->alloc_type = gds_peer::NONE;
         peer->alloc_flags = 0;
@@ -1387,15 +1418,18 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
                             IBV_EXP_PEER_OP_FENCE_CAP          | 
                             IBV_EXP_PEER_OP_POLL_AND_DWORD_CAP );
 
-        if (peer->has_wait_nor)
+        if (peer->has_wait_nor) {
+                gds_dbg("enabling NOR feature\n");
                 peer->attr.caps |= IBV_EXP_PEER_OP_POLL_NOR_DWORD_CAP;
-        else
+        } else
                 peer->attr.caps |= IBV_EXP_PEER_OP_POLL_GEQ_DWORD_CAP;
 
         if (peer->has_inlcpy) {
+                gds_dbg("enabling COPY BLOCK feature\n");
                 peer->attr.caps |= IBV_EXP_PEER_OP_COPY_BLOCK_CAP;
         }
         else if (peer->has_write64 || gds_simulate_write64()) {
+                gds_dbg("enabling STORE QWORD feature\n");
                 peer->attr.caps |= IBV_EXP_PEER_OP_STORE_QWORD_CAP;
         }
         gds_dbg("caps=%016lx\n", peer->attr.caps);
@@ -1403,7 +1437,145 @@ static void gds_init_peer(gds_peer *peer, int gpu_id)
         peer->attr.comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
         peer->attr.version = 1;
 
+        gpu_registered[gpu_id] = true;
+
         gds_dbg("peer_attr: peer_id=%"PRIx64"\n", peer->attr.peer_id);
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_register_peer(CUdevice dev, unsigned gpu_id, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
+{
+        int ret = 0;
+
+        gds_dbg("GPU%u: registering peer\n", gpu_id);
+        
+        if (gpu_id >= max_gpus) {
+                gds_err("invalid gpu_id %d\n", gpu_id);
+                return EINVAL;
+        }
+
+        gds_peer *peer = &gpu_peer[gpu_id];
+
+        if (gpu_registered[gpu_id]) {
+                gds_dbg("gds_peer for GPU%u already initialized\n", gpu_id);
+        } else {
+                gds_init_peer(peer, dev, gpu_id);
+        }
+
+        if (p_peer)
+                *p_peer = peer;
+
+        if (p_peer_attr)
+                *p_peer_attr = &peer->attr;
+
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_register_peer_by_ordinal(unsigned gpu_id, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
+{
+        CUdevice dev;
+        CUCHECK(cuDeviceGet(&dev, gpu_id));
+        return gds_register_peer(dev, gpu_id, p_peer, p_peer_attr);
+}
+
+//-----------------------------------------------------------------------------
+
+static void gds_ordinal_from_device(CUdevice dev, unsigned &gpu_id)
+{
+        int count;
+        CUCHECK(cuDeviceGetCount(&count));
+        // FIXME: this is super ugly and may break in the future
+        int ordinal = static_cast<int>(dev);
+        GDS_ASSERT(ordinal >= 0 && ordinal < count);
+        gpu_id = (unsigned)ordinal;
+        gds_dbg("gpu_id=%u for dev=%d\n", gpu_id, dev);
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_register_peer_by_dev(CUdevice dev, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
+{
+        unsigned gpu_id;
+        gds_ordinal_from_device(dev, gpu_id);
+        return gds_register_peer(dev, gpu_id, p_peer, p_peer_attr);
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_device_from_current_context(CUdevice &dev)
+{
+        CUCHECK(cuCtxGetDevice(&dev));
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_device_from_context(CUcontext ctx, CUcontext cur_ctx, CUdevice &dev)
+{
+        // if cur != ctx then push ctx
+        if (ctx != cur_ctx)
+                CUCHECK(cuCtxPushCurrent(ctx));
+        gds_device_from_current_context(dev);
+        // if pushed then pop ctx
+        if (ctx != cur_ctx) {
+                CUcontext top_ctx;
+                CUCHECK(cuCtxPopCurrent(&top_ctx));
+                assert(top_ctx == ctx);
+        }
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_device_from_stream(CUstream stream, CUdevice &dev)
+{
+        CUcontext cur_ctx, stream_ctx;
+        CUCHECK(cuCtxGetCurrent(&cur_ctx));
+#if CUDA_VERSION >= 9020
+        CUCHECK(cuStreamGetCtx(stream, &stream_ctx));
+#else
+        // we assume the stream is associated to the current context
+        stream_ctx = cur_ctx;
+#endif
+        gds_device_from_context(stream_ctx, cur_ctx, dev);
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+gds_peer *peer_from_stream(CUstream stream)
+{
+        CUdevice dev = -1;
+        gds_peer *peer = NULL;
+
+        if (stream != NULL && stream != CU_STREAM_LEGACY && stream != CU_STREAM_PER_THREAD) {
+                // this a user stream
+                gds_device_from_stream(stream, dev);
+        } else {
+                // this is one of the pre-defined streams
+                gds_device_from_current_context(dev);
+        }
+
+        // look for pre-registered GPU
+        for(unsigned gpu_id=0; gpu_id<max_gpus; ++gpu_id) {
+                if (gpu_registered[gpu_id] && (gpu_peer[gpu_id].gpu_dev == dev)) {
+                        peer = &gpu_peer[gpu_id];
+                        break;
+                }
+        }
+        // otherwise, register this GPU
+        if (!peer) {
+                gds_peer_attr *peer_attr = NULL;
+                int ret = gds_register_peer_by_dev(dev, &peer, &peer_attr);
+                if (ret) {
+                        gds_err("error %d while registering GPU dev=%d\n", ret, dev);
+                        return NULL;
+                }
+        }
+        return peer;
 }
 
 //-----------------------------------------------------------------------------
@@ -1427,107 +1599,6 @@ static ibv_exp_res_domain *gds_create_res_domain(struct ibv_context *context)
         }
 
         return res_domain;
-}
-
-//-----------------------------------------------------------------------------
-
-static int gds_device_from_current_context(CUdevice &dev)
-{
-        CUCHECK(cuCtxGetDevice(&dev));
-        return 0;
-}
-
-static int gds_device_from_context(CUcontext ctx, CUcontext cur_ctx, CUdevice &dev)
-{
-        // if cur != ctx then push ctx
-        if (ctx != cur_ctx)
-                CUCHECK(cuCtxPushCurrent(ctx));
-        gds_device_from_current_context(dev);
-        // if pushed then pop ctx
-        if (ctx != cur_ctx) {
-                CUcontext top_ctx;
-                CUCHECK(cuCtxPopCurrent(&top_ctx));
-                assert(top_ctx == ctx);
-        }
-        return 0;
-}
-
-static int gds_device_from_stream(CUstream stream, CUdevice &dev)
-{
-        CUcontext cur_ctx, stream_ctx;
-        CUCHECK(cuCtxGetCurrent(&cur_ctx));
-#if CUDA_VERSION >= 9020
-        CUCHECK(cuStreamGetCtx(stream, &stream_ctx));
-#else
-        // we assume the stream is associated to the current context
-        stream_ctx = cur_ctx;
-#endif
-        gds_device_from_context(stream_ctx, cur_ctx, dev);
-        return 0;
-}
-
-gds_peer *peer_from_stream(CUstream stream)
-{
-        CUcontext ctx = NULL;
-        CUdevice dev;
-        gds_peer *peer = NULL;
-
-
-        if (stream != NULL && stream != CU_STREAM_LEGACY && stream != CU_STREAM_PER_THREAD) {
-                // this a user stream
-                gds_device_from_stream(stream, dev);
-        } else {
-                // this is one of the pre-defined streams
-                gds_device_from_current_context(dev);
-        }
-
-        for(int g=0; g<max_gpus; ++g) {
-                if (gpu_registered[g]) {
-                        if (gpu_peer[g].gpu_dev == dev) {
-                                peer = &gpu_peer[g];
-                        }
-                } else {
-                        //gds_warn("ignoring gpu%d for stream=%p\n", g, stream);
-                }
-        }
-        if (!peer) {
-                gds_err("cannot find GPU associated to stream=%p for which a GDS QP has been created\n", stream);
-        }
-        return peer;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_register_peer_ex(struct ibv_context *context, unsigned gpu_id, gds_peer **p_peer, gds_peer_attr **p_peer_attr)
-{
-        int ret = 0;
-
-        gds_dbg("GPU%u: registering peer\n", gpu_id);
-        
-        if (!context) {
-                return EINVAL;
-        }
-        if (gpu_id >= max_gpus) {
-                gds_err("invalid gpu_id %d\n", gpu_id);
-                return EINVAL;
-        }
-
-        gds_peer *peer = &gpu_peer[gpu_id];
-
-        if (gpu_registered[gpu_id]) {
-                gds_dbg("gds_peer for GPU%u already initialized\n", gpu_id);
-        } else {
-                gds_init_peer(peer, gpu_id);
-                gpu_registered[gpu_id] = true;
-        }
-
-        if (p_peer)
-                *p_peer = peer;
-
-        if (p_peer_attr)
-                *p_peer_attr = &peer->attr;
-
-        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -1558,7 +1629,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 
         //Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags
         //before ibv_exp_create_cq
-        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
             gds_err("error %d while registering GPU peer\n", ret);
             return NULL;
@@ -1602,7 +1673,7 @@ gds_create_cq(struct ibv_context *context, int cqe,
 
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
-        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
                 gds_err("error %d while registering GPU peer\n", ret);
                 return NULL;
@@ -1643,7 +1714,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         gds_peer_attr *peer_attr = NULL;
         int old_errno = errno;
 
-        gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x errno=%d\n", pd, context, gpu_id, flags, errno);
+        gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", pd, context, gpu_id, flags, errno);
         assert(pd);
         assert(context);
         assert(qp_attr);
@@ -1663,7 +1734,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
 
         // peer registration
         gds_dbg("before gds_register_peer_ex\n");
-        ret = gds_register_peer_ex(context, gpu_id, &peer, &peer_attr);
+        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
             gds_err("error %d in gds_register_peer_ex\n", ret);
             goto err;

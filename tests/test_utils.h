@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gpu.h"
+
 #ifdef USE_PROF
 #include "prof.h"
 #else
@@ -20,7 +22,7 @@ static inline void prof_reset(struct prof *p) {}
 #else
 static int perf_start()
 {
-        printf("Performance instrumentation is disabled\n");
+        gpu_warn("Performance instrumentation is disabled\n");
         return 0;
 }
 static int perf_stop()
@@ -35,7 +37,7 @@ static inline gds_us_t gds_get_time_us()
         struct timespec ts;
         int ret = clock_gettime(CLOCK_MONOTONIC, &ts);
         if (ret) {
-                fprintf(stderr, "error in gettime %d/%s\n", errno, strerror(errno));
+                gpu_err("error in gettime %d/%s\n", errno, strerror(errno));
                 exit(EXIT_FAILURE);
         }
         return (gds_us_t)ts.tv_sec * 1000 * 1000 + (gds_us_t)ts.tv_nsec / 1000;

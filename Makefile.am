@@ -8,6 +8,7 @@ AM_CPPFLAGS += -D__STDC_FORMAT_MACROS
 
 #AM_LDFLAGS   = -L$(CUDA_PATH)/lib64
 LIBGDSTOOLS = @LIBGDSTOOLS@
+LIBNVTX = @LIBNVTX@
 
 lib_LTLIBRARIES = src/libgdsync.la
 
@@ -34,21 +35,19 @@ bin_PROGRAMS = tests/gds_kernel_latency tests/gds_poll_lat tests/gds_kernel_loop
 noinst_PROGRAMS = tests/rstest
 
 tests_gds_kernel_latency_SOURCES = tests/gds_kernel_latency.c tests/gpu_kernels.cu tests/pingpong.c tests/gpu.cpp
-tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lmpi $(LIBGDSTOOLS) -lgdrapi -lcuda -lcudart
+tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lmpi $(LIBGDSTOOLS) -lgdrapi $(LIBNVTX) -lcuda -lcudart
 
 tests_rstest_SOURCES = tests/rstest.cpp
 tests_rstest_LDADD = 
 
-#tests_gds_poll_lat_CFLAGS = -DUSE_PROF -DUSE_PERF -I/ivylogin/home/drossetti/work/p4/cuda_a/sw/dev/gpu_drv/cuda_a/drivers/gpgpu/cuda/inc
-#tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernels.cu tests/perfutil.c tests/perf.c
 tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernels.cu
-tests_gds_poll_lat_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lmpi -lcuda -lcudart
+tests_gds_poll_lat_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lmpi $(LIBNVTX) -lcuda -lcudart
 
 tests_gds_sanity_SOURCES = tests/gds_sanity.c tests/gpu.cpp tests/gpu_kernels.cu
-tests_gds_sanity_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lmpi -lcuda -lcudart
+tests_gds_sanity_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lmpi $(LIBNVTX) -lcuda -lcudart
 
 tests_gds_kernel_loopback_latency_SOURCES = tests/gds_kernel_loopback_latency.c tests/pingpong.c tests/gpu.cpp tests/gpu_kernels.cu
-tests_gds_kernel_loopback_latency_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi -lcuda -lcudart
+tests_gds_kernel_loopback_latency_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi $(LIBNVTX) -lcuda -lcudart
 
 
 SUFFIXES= .cu

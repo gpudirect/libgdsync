@@ -33,7 +33,7 @@
 #endif
 
 #define GDS_API_MAJOR_VERSION    2U
-#define GDS_API_MINOR_VERSION    1U
+#define GDS_API_MINOR_VERSION    2U
 #define GDS_API_VERSION          ((GDS_API_MAJOR_VERSION << 16) | GDS_API_MINOR_VERSION)
 #define GDS_API_VERSION_COMPATIBLE(v) \
     ( ((((v) & 0xffff0000U) >> 16) == GDS_API_MAJOR_VERSION) &&   \
@@ -120,6 +120,7 @@ typedef enum gds_memory_type {
 	GDS_MEMORY_MASK = 0x7
 } gds_memory_type_t;
 
+// Note: those flags below must not overlap with gds_memory_type_t
 typedef enum gds_wait_flags {
 	GDS_WAIT_POST_FLUSH = 1<<3,
 } gds_wait_flags_t;
@@ -128,14 +129,15 @@ typedef enum gds_write_flags {
 	GDS_WRITE_PRE_BARRIER = 1<<4,
 } gds_write_flags_t;
 
-typedef enum gds_immcopy_flags {
-	GDS_IMMCOPY_POST_TAIL_FLUSH = 1<<4,
-} gds_immcopy_flags_t;
+typedef enum gds_write_memory_flags {
+	GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, /*< add a trailing memory barrier to the memory write operation */
+} gds_write_memory_flags_t;
 
 typedef enum gds_membar_flags {
 	GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
 	GDS_MEMBAR_DEFAULT      = 1<<5,
 	GDS_MEMBAR_SYS          = 1<<6,
+	GDS_MEMBAR_MLX5         = 1<<7,
 } gds_membar_flags_t;
 
 enum {
@@ -244,7 +246,32 @@ int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t
 
 
 
-typedef enum gds_tag { GDS_TAG_SEND, GDS_TAG_WAIT, GDS_TAG_WAIT_VALUE32, GDS_TAG_WRITE_VALUE32 } gds_tag_t;
+/**
+ * Represents a staged copy operation
+ * the src buffer can be reused after the API call
+ */
+
+typedef struct gds_write_memory { 
+        uint8_t       *dest;
+        const uint8_t *src;
+        size_t         count;
+        int            flags; // takes gds_memory_type_t | gds_write_memory_flags_t
+} gds_write_memory_t;
+
+/**
+ * flags:  gds_memory_type_t | gds_write_memory_flags_t
+ */
+int gds_prepare_write_memory(gds_write_memory_t *desc, uint8_t *dest, const uint8_t *src, size_t count, int flags);
+
+
+
+typedef enum gds_tag { 
+        GDS_TAG_SEND,
+        GDS_TAG_WAIT,
+        GDS_TAG_WAIT_VALUE32,
+        GDS_TAG_WRITE_VALUE32,
+        GDS_TAG_WRITE_MEMORY
+} gds_tag_t;
 
 typedef struct gds_descriptor {
         gds_tag_t tag; /**< selector for union below */
@@ -253,13 +280,38 @@ typedef struct gds_descriptor {
                 gds_wait_request_t  *wait;
                 gds_wait_value32_t   wait32;
                 gds_write_value32_t  write32;
+                gds_write_memory_t   writemem;
         };
 } gds_descriptor_t;
 
 /**
- * flags: must be 0
+ * \brief: post descriptors for peer QPs synchronized to the specified CUDA stream
+ *
+ * \param flags - must be 0
+ *
+ * \return
+ * 0 on success or one standard errno error
+ *
  */
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags);
+
+/**
+ * \brief: CPU-synchronous post descriptors for peer QPs
+ *
+ *
+ * \param flags - must be 0
+ *
+ * \return
+ * 0 on success or one standard errno error
+ * 
+ *
+ * Notes:
+ * - This API might have higher overhead than issuing multiple ibv_post_send. 
+ * - It is provided for convenience only.
+ * - It might fail if trying to access CUDA device memory pointers
+ */
+int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags);
+
 
 /*
  * Local variables:

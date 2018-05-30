@@ -48,7 +48,9 @@
 #include "objs.hpp"
 #include "utils.hpp"
 #include "memmgr.hpp"
-//#include "mem.hpp"
+#include "utils.hpp"
+#include "archutils.h"
+#include "mlnxutils.h"
 
 
 //-----------------------------------------------------------------------------
@@ -471,63 +473,26 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_post_poll_dword(CUstream stream, uint32_t *ptr, uint32_t magic, gds_wait_cond_flag_t cond_flags, int flags)
+int gds_prepare_write_memory(gds_write_memory_t *desc, uint8_t *dest, const uint8_t *src, size_t count, int flags)
 {
-        int retcode = 0;
-        gds_op_list_t param;
-        retcode = gds_fill_poll(param, ptr, magic, cond_flags, flags);
-        if (retcode) {
-                gds_err("error in fill_poll\n");
+        int ret = 0;
+        assert(desc);
+        if (!is_valid(memtype_from_flags(flags))) {
+                gds_err("invalid memory type in flags\n");
+                ret = EINVAL;
                 goto out;
         }
-        retcode = gds_stream_batch_ops(stream, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
+        if (flags & ~(GDS_WRITE_MEMORY_POST_BARRIER_SYS|GDS_MEMORY_MASK)) {
+                gds_err("invalid flags\n");
+                ret = EINVAL;
                 goto out;
         }
+        desc->dest = dest;
+        desc->src = src;
+        desc->count = count;
+        desc->flags = flags;
 out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_poke_dword(CUstream stream, uint32_t *ptr, uint32_t value, int flags)
-{
-        int retcode = 0;
-        gds_op_list_t param;
-        retcode = gds_fill_poke(param, ptr, value, flags);
-        if (retcode) {
-                gds_err("error in fill_poke\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
-        return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
-int gds_stream_post_inline_copy(CUstream stream, void *ptr, void *src, size_t nbytes, int flags)
-{
-        int retcode = 0;
-        gds_op_list_t param;
-
-        retcode = gds_fill_inlcpy(param, ptr, src, nbytes, flags);
-        if (retcode) {
-                gds_err("error in fill_poke\n");
-                goto out;
-        }
-        retcode = gds_stream_batch_ops(stream, param, 0);
-        if (retcode) {
-                gds_err("error in batch_ops\n");
-                goto out;
-        }
-out:
-        return retcode;
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -570,6 +535,7 @@ static int get_wait_info(size_t n_descs, gds_descriptor_t *descs, size_t &n_wait
                 case GDS_TAG_SEND:
                 case GDS_TAG_WAIT_VALUE32:
                 case GDS_TAG_WRITE_VALUE32:
+                case GDS_TAG_WRITE_MEMORY:
                         break;
                 default:
                         gds_err("invalid tag\n");
@@ -579,9 +545,10 @@ static int get_wait_info(size_t n_descs, gds_descriptor_t *descs, size_t &n_wait
         return ret;
 }
 
-static size_t calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs)
+static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem_ops)
 {
-        size_t n_mem_ops = 0;
+        int ret = 0;
+        n_mem_ops = 0;
         size_t i;
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
@@ -594,13 +561,15 @@ static size_t calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs)
                         break;
                 case GDS_TAG_WAIT_VALUE32:
                 case GDS_TAG_WRITE_VALUE32:
+                case GDS_TAG_WRITE_MEMORY:
                         n_mem_ops += 2; // ditto
                         break;
                 default:
                         gds_err("invalid tag\n");
+                        ret = EINVAL;
                 }
         }
-        return n_mem_ops;
+        return ret;
 }
 
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags)
@@ -613,9 +582,21 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         size_t n_waits = 0;
         size_t last_wait = 0;
         bool move_flush = false;
+        gds_peer *peer = NULL;
+        gds_op_list_t params;
 
-        n_mem_ops = calc_n_mem_ops(n_descs, descs);
-        get_wait_info(n_descs, descs, n_waits, last_wait);
+
+        ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
+        if (ret) {
+                gds_err("error %d in calc_n_mem_ops\n", ret);
+                goto out;
+        }
+
+        ret = get_wait_info(n_descs, descs, n_waits, last_wait);
+        if (ret) {
+                gds_err("error %d in get_wait_info\n", ret);
+                goto out;
+        }
 
         gds_dbg("n_descs=%zu n_waits=%zu n_mem_ops=%zu\n", n_descs, n_waits, n_mem_ops);
 
@@ -626,12 +607,10 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         }
         // alternatively, remove flush for wait is next op is a wait too
 
-        gds_peer *peer = peer_from_stream(stream);
+        peer = peer_from_stream(stream);
         if (!peer) {
                 return EINVAL;
         }
-
-        gds_op_list_t params;
 
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
@@ -649,8 +628,10 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 case GDS_TAG_WAIT: {
                         gds_wait_request_t *wreq = desc->wait;
                         int flags = 0;
-                        if (move_flush && i != last_wait)
+                        if (move_flush && i != last_wait) {
+                                gds_dbg("discarding FLUSH!\n");
                                 flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
+                        }
                         retcode = gds_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
@@ -675,19 +656,169 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                                 goto out;
                         }
                         break;
+                case GDS_TAG_WRITE_MEMORY:
+                        retcode = gds_fill_inlcpy(params, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
+                        if (retcode) {
+                                gds_err("error %d in gds_fill_inlcpy\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        break;
                 default:
-                        gds_err("invalid tag for %d entry\n", i);
+                        gds_err("invalid tag for %zu entry\n", i);
                         ret = EINVAL;
                         goto out;
                         break;
                 }
         }
-        retcode = gds_stream_batch_ops(stream, params, 0);
+        retcode = gds_stream_batch_ops(peer, stream, params, 0);
         if (retcode) {
-                gds_err("error in batch_ops\n");
+                gds_err("error %d in gds_stream_batch_ops\n", retcode);
+                ret = retcode;
                 goto out;
         }
 
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
+{
+        size_t i;
+        int ret = 0;
+        int retcode = 0;
+        for(i = 0; i < n_descs; ++i) {
+                gds_descriptor_t *desc = descs + i;
+                switch(desc->tag) {
+                case GDS_TAG_SEND: {
+                        gds_dbg("desc[%zu] SEND\n", i);
+                        gds_send_request_t *sreq = desc->send;
+                        retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
+                        if (retcode) {
+                                gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        break;
+                }
+                case GDS_TAG_WAIT: {
+                        gds_dbg("desc[%zu] WAIT\n", i);
+                        gds_wait_request_t *wreq = desc->wait;
+                        retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
+                        if (retcode) {
+                                gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                ret = retcode;
+                                goto out;
+                        }
+                        break;
+                }
+                case GDS_TAG_WAIT_VALUE32: {
+                        gds_dbg("desc[%zu] WAIT_VALUE32\n", i);
+                        uint32_t *ptr = desc->wait32.ptr;
+                        uint32_t value = desc->wait32.value;
+                        bool flush = false;
+                        if (desc->wait32.flags & GDS_WAIT_POST_FLUSH) {
+                                gds_err("GDS_WAIT_POST_FLUSH flag is not supported yet\n");
+                                flush = true;
+                        }
+                        gds_memory_type_t mem_type = (gds_memory_type_t)(desc->wait32.flags & GDS_MEMORY_MASK);
+                        switch(mem_type) {
+                        case GDS_MEMORY_GPU:
+                                // dereferencing ptr may fail if ptr points to CUDA device memory
+                        case GDS_MEMORY_HOST:
+                        case GDS_MEMORY_IO:
+                                break;
+                        default:
+                                gds_err("invalid memory type 0x%02x in WAIT_VALUE32\n", mem_type);
+                                ret = EINVAL;
+                                goto out;
+                                break;
+                        }
+                        bool done = false;
+                        do {
+                                uint32_t data = gds_atomic_get(ptr);
+                                switch(desc->wait32.cond_flags) {
+                                case GDS_WAIT_COND_GEQ:
+                                        done = ((int32_t)data - (int32_t)value >= 0);
+                                        break;
+                                case GDS_WAIT_COND_EQ:
+                                        done = (data == value);
+                                        break;
+                                case GDS_WAIT_COND_AND:
+                                        done = (data & value);
+                                        break;
+                                case GDS_WAIT_COND_NOR:
+                                        done = ~(data | value);
+                                        break;
+                                default:
+                                        gds_err("invalid condition flags 0x%02x in WAIT_VALUE32\n", desc->wait32.cond_flags);
+                                        goto out;
+                                        break;
+                                }
+                                if (done)
+                                        break;
+                                // TODO: more aggressive CPU relaxing needed here to avoid starving I/O fabric
+                                arch_cpu_relax();
+                        } while(true);
+                        break;
+                }
+                case GDS_TAG_WRITE_VALUE32: {
+                        gds_dbg("desc[%zu] WRITE_VALUE32\n", i);
+                        uint32_t *ptr = desc->write32.ptr;
+                        uint32_t value = desc->write32.value;
+                        gds_memory_type_t mem_type = (gds_memory_type_t)(desc->write32.flags & GDS_MEMORY_MASK);
+                        switch(mem_type) {
+                        case GDS_MEMORY_GPU:
+                                // dereferencing ptr may fail if ptr points to CUDA device memory
+                        case GDS_MEMORY_HOST:
+                        case GDS_MEMORY_IO:
+                                break;
+                        default:
+                                gds_err("invalid memory type 0x%02x in WRITE_VALUE32\n", mem_type);
+                                ret = EINVAL;
+                                goto out;
+                                break;
+                        }
+                        bool barrier = (desc->write32.flags & GDS_WRITE_PRE_BARRIER);
+                        if (barrier)
+                                wmb();
+                        gds_atomic_set(ptr, value);
+                        break;
+                }
+                case GDS_TAG_WRITE_MEMORY: {
+                        void *dest = desc->writemem.dest;
+                        const void *src = desc->writemem.src;
+                        size_t nbytes = desc->writemem.count;
+                        bool barrier = (desc->writemem.flags & GDS_WRITE_MEMORY_POST_BARRIER_SYS);
+                        gds_memory_type_t mem_type = memtype_from_flags(desc->writemem.flags);
+                        gds_dbg("desc[%zu] WRITE_MEMORY dest=%p src=%p len=%zu memtype=%02x\n", i, dest, src, nbytes, mem_type);
+                        switch(mem_type) {
+                        case GDS_MEMORY_GPU:
+                        case GDS_MEMORY_HOST:
+                                memcpy(dest, src, nbytes);
+                                break;
+                        case GDS_MEMORY_IO:
+                                assert(nbytes % sizeof(uint64_t));
+                                assert(((unsigned long)dest & 0x7) == 0);
+                                gds_bf_copy((uint64_t*)dest, (uint64_t*)src, nbytes);
+                                break;
+                        default:
+                                assert(!"invalid mem type");
+                                break;
+                        }
+                        if (barrier)
+                                wmb();
+                        break;
+                }
+                default:
+                        gds_err("invalid tag for %zu entry\n", i);
+                        ret = EINVAL;
+                        goto out;
+                        break;
+                }
+        }
 out:
         return ret;
 }

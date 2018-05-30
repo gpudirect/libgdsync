@@ -74,7 +74,6 @@ int gpu_init(int gpu_id, int sched_mode)
 {
 	int ret = 0;
 
-	printf("initializing CUDA\n");
 	CUCHECK(cuInit(0));
 	
 	int deviceCount = 0;
@@ -82,19 +81,19 @@ int gpu_init(int gpu_id, int sched_mode)
 
 	// This function call returns 0 if there are no CUDA capable devices.
 	if (deviceCount == 0) {
-		printf("There are no available device(s) that support CUDA\n");
+		gpu_err("There are no available device(s) that support CUDA\n");
 		ret = 1;
 		goto out;
-	} else
-		printf("There are %d devices supporting CUDA, picking N.%d\n", deviceCount, gpu_id);
-
+	} else {
+		gpu_dbg("There are %d devices supporting CUDA, picking N.%d\n", deviceCount, gpu_id);
+        }
         if (getenv("USE_GPU")) {
                 gpu_id = atoi(getenv("USE_GPU"));
-                printf("overriding gpu_id with USE_GPU=%d\n", gpu_id);
+                gpu_info("overriding gpu_id with USE_GPU=%d\n", gpu_id);
         }
 
 	if (gpu_id >= deviceCount) {
-		printf("ERROR: requested GPU gpu_id beyond available\n");
+		gpu_err("ERROR: requested GPU gpu_id beyond available\n");
 		ret = 1;
 		goto out;
 	}
@@ -109,42 +108,42 @@ int gpu_init(int gpu_id, int sched_mode)
 		cuDeviceGetAttribute(&pciBusID, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID, gpu_device);
 		cuDeviceGetAttribute(&pciDeviceID, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID, gpu_device);
 		//printf("  Device PCI Bus ID / PCI location ID:           %d / %d\n", pciBusID, pciDeviceID);
-		printf("GPU id:%d dev:%d name:%s pci %d:%d\n", i, gpu_device, name, pciBusID, pciDeviceID);
+		gpu_info("GPU id:%d dev:%d name:%s pci %d:%d\n", i, gpu_device, name, pciBusID, pciDeviceID);
 	}
 
 	CUCHECK(cuDeviceGet(&gpu_device, gpu_id));
 
-	printf("creating CUDA Primary Ctx on device:%d id:%d\n", gpu_device, gpu_id);
+	gpu_info("creating CUDA Primary Ctx on device:%d id:%d\n", gpu_device, gpu_id);
         CUCHECK(cuDevicePrimaryCtxRetain(&gpu_ctx, gpu_device));
 
-	printf("making it the current CUDA Ctx\n");
+	gpu_dbg("making it the current CUDA Ctx\n");
 	CUCHECK(cuCtxSetCurrent(gpu_ctx));
 
         // TODO: add a check for canMapHost
 
         //CUCHECK(cuDeviceGetProperties(&prop, gpu_device));
         cuDeviceGetAttribute(&gpu_num_sm, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, gpu_device);
-        printf("num SMs per GPU:%d\n", gpu_num_sm);
+        gpu_dbg("num SMs per GPU:%d\n", gpu_num_sm);
         cuDeviceGetAttribute(&gpu_clock_rate, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, gpu_device);
-        printf("clock rate:%d\n", gpu_clock_rate);
+        gpu_dbg("clock rate:%d\n", gpu_clock_rate);
 
 	CUCHECK(cuStreamCreate(&gpu_stream, 0));
-        printf("created main test CUDA stream %p\n", gpu_stream);
+        gpu_dbg("created main test CUDA stream %p\n", gpu_stream);
 	CUCHECK(cuStreamCreate(&gpu_stream_server, 0));
-        printf("created stream server CUDA stream %p\n", gpu_stream_server);
+        gpu_dbg("created stream server CUDA stream %p\n", gpu_stream_server);
 	CUCHECK(cuStreamCreate(&gpu_stream_client, 0));
-        printf("created stream cliebt CUDA stream %p\n", gpu_stream_client);
+        gpu_dbg("created stream client CUDA stream %p\n", gpu_stream_client);
 
         {
                 int n;
                 int ev_flags = CU_EVENT_DISABLE_TIMING;
                 if (CU_CTX_SCHED_BLOCKING_SYNC == sched_mode) {
-                        printf("creating events with blocking sync behavior\n");
+                        gpu_dbg("creating events with blocking sync behavior\n");
                         ev_flags |= CU_EVENT_BLOCKING_SYNC;
                 }
                 for (n=0; n<num_tracking_events; ++n) {
                         CUCHECK(cuEventCreate(&gpu_tracking_event[n], ev_flags));
-                        printf("created %d tracking event %p\n", n, gpu_tracking_event[n]);
+                        gpu_dbg("created %d tracking event %p\n", n, gpu_tracking_event[n]);
                 }
         }        
 
@@ -181,12 +180,12 @@ void *gpu_malloc(size_t page_size, size_t min_size)
 	size_t n_pages = (min_size + page_size - 1)/page_size;
 	size_t size = n_pages * page_size;
 
-	printf("cuMemAlloc() of a %lu bytes GPU buffer\n", size);
+	gpu_dbg("cuMemAlloc() of a %lu bytes GPU buffer\n", size);
 	CUdeviceptr d_A;
 	CUCHECK(cuMemAlloc(&d_A, size));
 	CUCHECK(cuMemsetD8(d_A, 0, size));
 
-	printf("allocated GPU buffer address at %016llx\n", d_A);
+	gpu_dbg("allocated GPU buffer address at %016llx\n", d_A);
 	return (void*)d_A;
 }
 
@@ -198,7 +197,7 @@ int gpu_free(void *ptr)
 
 int gpu_memset(void *ptr, const unsigned char c, size_t size)
 {
-	printf("poisoning GPU buffer, filled with '0x%02x' !!!\n", c);
+	gpu_dbg("poisoning GPU buffer, filled with '0x%02x' !!!\n", c);
 	CUCHECK(cuMemsetD8((CUdeviceptr)ptr, c, size));
 	return 0;
 }
@@ -218,10 +217,12 @@ int gpu_launch_kernel(size_t size, int is_peersync)
 int gpu_launch_kernel_on_stream(size_t size, int is_peersync, CUstream s)
 {
         int ret = 0;
-        if (0 == size)
+        if (0 == size) {
+                gpu_warn_once("void kernel has extremely low launch latency\n");
                 gpu_launch_void_kernel_on_stream(s);
-        else
+        } else {
                 gpu_launch_calc_kernel_on_stream(size, s);
+        }
         assert(cudaSuccess == cudaGetLastError());
         return ret;
 }

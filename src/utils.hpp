@@ -32,6 +32,22 @@
 #endif
 #include <inttypes.h> // to pull PRIx64
 
+// internal assert function
+
+void gds_assert(const char *cond, const char *file, unsigned line, const char *function);
+
+#define GDS_ASSERT2(COND)                                               \
+        do {                                                            \
+                if (!(COND))                                            \
+                        gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__); \
+        }                                                               \
+        while(0)
+
+#define GDS_ASSERT(COND) GDS_ASSERT2(COND)
+
+
+// CUDA error checking
+
 #define __CUCHECK(stmt, cond_str)					\
 	do {								\
 		CUresult result = (stmt);				\
@@ -46,7 +62,21 @@
 
 #define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
 
+#ifndef ACCESS_ONCE
 #define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
+#endif
+
+template <typename T>
+static inline void gds_atomic_set(T *ptr, T value)
+{
+        ACCESS_ONCE(*ptr) = value;
+}
+
+template <typename T>
+static inline T gds_atomic_get(T *ptr)
+{
+        return ACCESS_ONCE(*ptr);
+}
 
 #define ROUND_UP(V,SIZE) (((V)+(SIZE)-1)/(SIZE)*(SIZE))
 
@@ -102,7 +132,8 @@ static inline int gds_curesult_to_errno(CUresult result)
 {
         int retcode = 0;
         switch (result) {
-        case CUDA_SUCCESS: retcode = 0; break;
+        case CUDA_SUCCESS:             retcode = 0; break;
+        case CUDA_ERROR_NOT_SUPPORTED: retcode = EPERM; break;
         case CUDA_ERROR_INVALID_VALUE: retcode = EINVAL; break;
         case CUDA_ERROR_OUT_OF_MEMORY: retcode = ENOMEM; break;
         // TODO: add missing cases
@@ -174,11 +205,13 @@ void gds_dump_wait_request(gds_wait_request_t *request, size_t count);
 void gds_dump_param(CUstreamBatchMemOpParams *param);
 void gds_dump_params(gds_op_list_t &params);
 int gds_fill_membar(gds_op_list_t &param, int flags);
-int gds_fill_inlcpy(gds_op_list_t &param, void *ptr, void *data, size_t n_bytes, int flags);
+int gds_fill_inlcpy(gds_op_list_t &param, void *ptr, const void *data, size_t n_bytes, int flags);
 int gds_fill_poke(gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
 int gds_fill_poke64(gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
 int gds_fill_poll(gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
-int gds_stream_batch_ops(CUstream stream, gds_op_list_t &params, int flags);
+
+struct gds_peer;
+int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params, int flags);
 
 enum gds_post_ops_flags {
         GDS_POST_OPS_DISCARD_WAIT_FLUSH = 1<<0
@@ -186,7 +219,7 @@ enum gds_post_ops_flags {
 
 struct gds_peer;
 int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
-
+int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
 
 //-----------------------------------------------------------------------------
