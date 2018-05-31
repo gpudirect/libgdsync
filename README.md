@@ -53,7 +53,7 @@ $ modprobe nvidia
 
 ### Infiniband
 
-Mellanox OFED (MOFED) 4.0 or newer is required, because of the peer-direct verbs
+Mellanox OFED (MOFED) 4.2 or newer is required, because of the peer-direct verbs
 extensions. As an alternative, it is possible to use MOFED 3.4 and replace the stock libmlx5 with the one at https://github.com/gpudirect/libmlx5/tree/fixes.
 
 Peer-direct verbs are only supported on the libmlx5 low-level plug-in
@@ -104,6 +104,11 @@ Applications using GPUDirect Async by means of LibMP
 
 - [HPGMG-FV Async](https://github.com/e-ago/hpgmg-cuda-async)
 - [CoMD-CUDA Async](https://github.com/e-ago/CoMD-CUDA-Async)
+
+## GPUDirect Async suite
+
+We created a new GPUDirect Asyc repository [here](https://github.com/gpudirect/gdasync) in order, under the same project, all the required libraries and applications. In this repo you can find several scripts useful to configure, build and run all GPUDirect Async libraries, tests, benchmarks and examples.
+
 
 ## Acknowledging GPUDirect Async
 
