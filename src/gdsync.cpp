@@ -277,6 +277,7 @@ int gds_fill_membar(gds_peer *peer, gds_op_list_t &ops, int flags)
         int retcode = 0;
 #if HAVE_DECL_CU_STREAM_MEM_OP_MEMORY_BARRIER
         CUstreamBatchMemOpParams param;
+        // TODO: sanity check flags
         if (flags & GDS_MEMBAR_FLUSH_REMOTE) {
                 param.operation = CU_STREAM_MEM_OP_FLUSH_REMOTE_WRITES;
                 param.flushRemoteWrites.flags = 0;
@@ -330,13 +331,21 @@ static int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr,
         // TODO:
         //  verify address requirements of inline_copy
 
-        bool need_barrier = (flags & GDS_WRITE_MEMORY_POST_BARRIER_SYS) ? true : false;
+        // TODO: sanity check flags
+        bool need_pre_barrier = (flags & GDS_WRITE_MEMORY_PRE_BARRIER_SYS) ? true : false;
+        bool need_post_barrier = (flags & GDS_WRITE_MEMORY_POST_BARRIER_SYS) ? true : false;
+
+        if (need_pre_barrier) {
+                retcode = gds_fill_membar(peer, ops, GDS_MEMBAR_SYS);
+                if (retcode)
+                        return retcode;
+        }
 
         param.operation = CU_STREAM_MEM_OP_WRITE_MEMORY;
         param.writeMemory.byteCount = n_bytes;
         param.writeMemory.src = const_cast<void *>(data);
         param.writeMemory.address = dev_ptr;
-        if (need_barrier)
+        if (need_post_barrier)
                 param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_FENCE_SYS;
         else
                 param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER;
@@ -390,6 +399,7 @@ static int gds_fill_poke(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, u
         assert(addr);
         assert((((unsigned long)addr) & 0x3) == 0); 
 
+        // TODO: sanity check flags
         bool need_barrier = (flags  & GDS_WRITE_PRE_BARRIER ) ? true : false;
         CUstreamBatchMemOpParams param;
         param.operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
@@ -437,6 +447,7 @@ static int gds_fill_poke64(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr,
         assert(addr);
         assert((((unsigned long)addr) & 0x7) == 0); 
 
+        // TODO: sanity check flags
         bool need_barrier = (flags  & GDS_WRITE_PRE_BARRIER ) ? true : false;
 
         CUstreamBatchMemOpParams param;
@@ -488,7 +499,8 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
         assert(ptr);
         assert((((unsigned long)ptr) & 0x3) == 0);
 
-        bool need_flush = (flags & GDS_WAIT_POST_FLUSH) ? true : false;
+        // TODO: sanity check flags
+        bool need_flush = (flags & GDS_WAIT_POST_FLUSH_REMOTE) ? true : false;
         if (!peer->has_remote_flush) {
                 need_flush=false;
                 gds_warn_once("RDMA consistency for pre-launched GPU work is not guaranteed at the moment\n");
@@ -830,7 +842,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                         // TODO: properly handle a following fence instead of blidly flushing
                         int flags = 0;
                         if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
-                                flags |= GDS_WAIT_POST_FLUSH;
+                                flags |= GDS_WAIT_POST_FLUSH_REMOTE;
 
                         gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32" type=%"PRIx32"\n", dev_ptr, data, (uint32_t)op->type);
 
