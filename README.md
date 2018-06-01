@@ -100,14 +100,9 @@ Before starting to build LibGDSync, you need to have available on your system [G
 
 [LibMP](https://github.com/gpudirect/libmp) is a lightweight messaging library built on top of LibGDSync APIs, developed as a technology demonstrator to easily deploy the GPUDirect Async technology in applications.
 
-Applications using GPUDirect Async by means of LibMP
-
-- [HPGMG-FV Async](https://github.com/e-ago/hpgmg-cuda-async)
-- [CoMD-CUDA Async](https://github.com/e-ago/CoMD-CUDA-Async)
-
 ## GPUDirect Async suite
 
-We created a new GPUDirect Asyc repository [here](https://github.com/gpudirect/gdasync) in order, under the same project, all the required libraries and applications. In this repo you can find several scripts useful to configure, build and run all GPUDirect Async libraries, tests, benchmarks and examples.
+We created a new repository [here](https://github.com/gpudirect/gdasync) in order to collect in a single project all the components of the GPUDirect Async technology. In this repo you can find several scripts useful to configure, build and run all the GPUDirect Async libraries, tests, benchmarks and examples.
 
 
 ## Acknowledging GPUDirect Async
