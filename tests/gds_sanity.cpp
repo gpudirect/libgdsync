@@ -51,11 +51,11 @@ int poll_dword_geq(uint32_t *ptr, uint32_t payload, gds_us_t tm)
 int main(int argc, char *argv[])
 {
         int ret = 0;
-	int gpu_id = 0;
-        int num_iters = 50;
+        int gpu_id = 0;
+        int num_iters = 1000;
         // this seems to minimize polling time
-	size_t page_size = sysconf(_SC_PAGESIZE);
-	size_t size = 1024*64;
+        size_t page_size = sysconf(_SC_PAGESIZE);
+        size_t size = 1024*64;
         int use_gpu_buf = 0;
         int use_flush = 0;
         int use_membar = 0;
@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
                         gpu_id = strtol(optarg, NULL, 0);
                         break;
                 case 'm':
-                        use_membar = 1;
+                        use_membar = !use_membar;
                         break;
                 case 'n':
                         num_iters = strtol(optarg, NULL, 0);
@@ -186,7 +186,8 @@ int main(int argc, char *argv[])
                         for (ii=0; ii<CHUNK_SIZE; ++ii) src_data[ii] = 1+ii;
 
                         if (0 == round) {
-                                gds_descriptor_t descs[10+CHUNK_SIZE];
+                                enum { n_descs = 10+CHUNK_SIZE };
+                                gds_descriptor_t descs[n_descs];
                                 int k = 0;
 
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
@@ -196,10 +197,12 @@ int main(int argc, char *argv[])
                                 // wait for CPU signal
                                 descs[k].tag = GDS_TAG_WAIT_VALUE32;
                                 if (use_nor) {
+                                        // sweep over the 32 bits of a dword
                                         bit = 1U<<(value & 31);
                                         uint32_t msk = ~bit;
                                         gpu_dbg("signal=%08x msk=%08x\n", bit, msk);
                                         gds_atomic_set_dword(h_signal, bit);
+                                        // can fail if GPU does not support CU_STREAM_WAIT_VALUE_NOR
                                         GDSCHECK(gds_prepare_wait_value32(&descs[k].wait32, signal, msk, GDS_WAIT_COND_NOR, poll_flags));
                                 }
                                 else {
@@ -214,22 +217,23 @@ int main(int argc, char *argv[])
 
                                 // d_vals[0] = 0
                                 descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals, 0, mem_type |  (use_membar ? GDS_WRITE_PRE_BARRIER : 0)));
+                                GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals, 0, mem_type | (use_membar ? GDS_WRITE_PRE_BARRIER : 0)));
                                 ++k;
 
                                 // overwrite d_vals[0...CHUNK_SIZE-1]={1,2,...}
                                 // if CPU sees d_vals[0]==0, something went wrong with WRITE_MEMORY below
-
+                                //
+                                // NOTE: pre-barrier needed to fence previous write to 'vals'
 #if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
-#warning using write memory
                                 descs[k].tag = GDS_TAG_WRITE_MEMORY;
-                                GDSCHECK(gds_prepare_write_memory(&descs[k].writemem, (uint8_t*)vals, (uint8_t*)src_data, sizeof(src_data), mem_type));
+                                GDSCHECK(gds_prepare_write_memory(&descs[k].writemem, (uint8_t*)vals, (uint8_t*)src_data, sizeof(src_data), mem_type | GDS_WRITE_MEMORY_PRE_BARRIER_SYS));
                                 ++k;
 #else
                                 for (ii=0; ii<CHUNK_SIZE; ++ii) {
                                         descs[k].tag = GDS_TAG_WRITE_VALUE32;
-                                        GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals+ii, src_data[ii], mem_type));
+                                        GDSCHECK(gds_prepare_write_value32(&descs[k].write32, vals+ii, src_data[ii], mem_type | (ii==0 ? GDS_WRITE_PRE_BARRIER : 0)));
                                         ++k;
+                                        ASSERT(k < n_descs);
                                 }
 #endif
                                 // while (d_vals[0] != 0);
@@ -295,8 +299,7 @@ int main(int argc, char *argv[])
                                         }
                                 }
                                 else if (retcode) {
-                                        gpu_err("error %d while polling done\n", retcode);
-                                        exit(EXIT_FAILURE);
+                                        gpu_fail("error %d while polling done\n", retcode);
                                 }
                                 else {
                                         gpu_err("%d: stream order violation\n", i);
@@ -316,14 +319,10 @@ int main(int argc, char *argv[])
                 puts("");
 
         if (n_errors) {
-                gpu_err("detected n_errors=%d\n", n_errors);
+                gpu_fail("detected n_errors=%d\n", n_errors);
         }
         else {
-                //if (cuStreamQuery(gpu_stream) != CUDA_SUCCESS) {
-                //        gpu_err("stream must be idle at this point, iter:%d\n", i);
-                //        exit(EXIT_FAILURE);
-                //}
-                gpu_dbg("calling Stream Synchronize\n");
+                ASSERT(cuStreamQuery(gpu_stream) == CUDA_SUCCESS);
                 CUCHECK(cuStreamSynchronize(gpu_stream));
         }
         perf_stop();
