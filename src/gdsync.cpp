@@ -42,6 +42,7 @@
 #include "objs.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
+#include "task_queue.hpp"
 
 //-----------------------------------------------------------------------------
 
@@ -1383,6 +1384,8 @@ static gds_peer gpu_peer[max_gpus];
 static gds_peer_attr gpu_peer_attr[max_gpus];
 static bool gpu_registered[max_gpus];
 
+static task_queue *tq;
+
 //-----------------------------------------------------------------------------
 
 static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
@@ -1434,6 +1437,8 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
         peer->attr.peer_dma_op_map_len = GDS_GPU_MAX_INLINE_SIZE;
         peer->attr.comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
         peer->attr.version = 1;
+
+        peer->tq = new task_queue;
 
         gpu_registered[gpu_id] = true;
 
