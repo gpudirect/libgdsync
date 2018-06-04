@@ -62,20 +62,16 @@ void gds_assert(const char *cond, const char *file, unsigned line, const char *f
 
 #define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
 
-#ifndef ACCESS_ONCE
-#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
-#endif
-
 template <typename T>
 static inline void gds_atomic_set(T *ptr, T value)
 {
-        ACCESS_ONCE(*ptr) = value;
+        *(volatile T*)ptr = value;
 }
 
 template <typename T>
 static inline T gds_atomic_get(T *ptr)
 {
-        return ACCESS_ONCE(*ptr);
+        return *(volatile T*)ptr;
 }
 
 #define ROUND_UP(V,SIZE) (((V)+(SIZE)-1)/(SIZE)*(SIZE))

@@ -31,7 +31,7 @@ int poll_dword_geq(uint32_t *ptr, uint32_t payload, gds_us_t tm)
         gds_us_t start = gds_get_time_us();
         int ret = 0;
         while(1) {
-                uint32_t value = ACCESS_ONCE(*ptr);
+                uint32_t value = gds_atomic_read_dword(ptr);
                 gpu_dbg("val=%x\n", value);
                 if (value >= payload) {
                         ret = 0;
@@ -269,9 +269,9 @@ int main(int argc, char *argv[])
                                 }
                                 ASSERT(gds_atomic_read_dword(h_done) == (value-1));
                                 
-                                gpu_dbg("%d:       dbg @%p:%08x\n", i, h_dbg, ACCESS_ONCE(*h_dbg));
-                                gpu_dbg("%d:       sig @%p:%08x\n", i, h_signal, ACCESS_ONCE(*h_signal));
-                                gpu_dbg("%d:      done @%p:%08x\n", i, h_done, ACCESS_ONCE(*h_done));
+                                gpu_dbg("%d:       dbg @%p:%08x\n", i, h_dbg, gds_atomic_read_dword(h_dbg));
+                                gpu_dbg("%d:       sig @%p:%08x\n", i, h_signal, gds_atomic_read_dword(h_signal));
+                                gpu_dbg("%d:      done @%p:%08x\n", i, h_done, gds_atomic_read_dword(h_done));
                                 if (use_nor) {
                                         // unset the bit
                                         gpu_dbg("%d: write sig @%p=%08x\n", i, h_signal, ~bit);
@@ -281,11 +281,11 @@ int main(int argc, char *argv[])
                                         gpu_dbg("%d: write sig @%p=%08x\n", i, h_signal, value);
                                         gds_atomic_set_dword(h_signal, value);
                                 }
-                                gpu_dbg("%d:       sig @%p:%08x\n", i, h_signal, ACCESS_ONCE(*h_signal));
+                                gpu_dbg("%d:       sig @%p:%08x\n", i, h_signal, gds_atomic_read_dword(h_signal));
                                 // enough for the GPU to wake up and observe the updated values in the prints below
                                 //usleep(100);
-                                gpu_dbg("%d:       dbg @%p:%08x\n", i, h_dbg, ACCESS_ONCE(*h_dbg));
-                                gpu_dbg("%d:      done @%p:%08x\n", i, h_done, ACCESS_ONCE(*h_done));
+                                gpu_dbg("%d:       dbg @%p:%08x\n", i, h_dbg, gds_atomic_read_dword(h_dbg));
+                                gpu_dbg("%d:      done @%p:%08x\n", i, h_done, gds_atomic_read_dword(h_done));
                                 gpu_dbg("%d: poll done @%p==%08x\n", i, h_done, value);
                                 gds_us_t tmout = 1000; //usecs
                                 retcode = poll_dword_geq(h_done, value, tmout);
@@ -303,7 +303,7 @@ int main(int argc, char *argv[])
                                 }
                                 else {
                                         gpu_err("%d: stream order violation\n", i);
-                                        gpu_err("*done=%08x expected!=%08x &vals[0]=%08x\n", ACCESS_ONCE(*h_done), value, ACCESS_ONCE(vals[0]));
+                                        gpu_err("*done=%08x expected!=%08x &vals[0]=%08x\n", gds_atomic_read_dword(h_done), value, gds_atomic_read_dword(vals));
                                         ++n_errors;
                                 }
                         }
