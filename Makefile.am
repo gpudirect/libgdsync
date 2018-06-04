@@ -41,7 +41,7 @@ tests_gds_kernel_latency_LDADD = $(top_builddir)/src/libgdsync.la -lmpi $(LIBGDS
 tests_rstest_SOURCES = tests/rstest.cpp
 tests_rstest_LDADD = 
 
-tests_wqtest_SOURCES = tests/wqtest.cpp
+tests_wqtest_SOURCES = tests/task_queue_test.cpp
 tests_wqtest_LDADD = $(PTHREAD_LIBS)
 
 tests_gds_poll_lat_SOURCES = tests/gds_poll_lat.c tests/gpu.cpp tests/gpu_kernels.cu

@@ -34,7 +34,7 @@
 //#include <cstdlib>
 #include <chrono>
 
-#include "wq.hpp"
+#include "task_queue.hpp"
 
 #if 0
 #define msg(FMT, ARGS...)   do {                           \
@@ -104,7 +104,7 @@ struct slow_printer {
 main()
 {
         {
-                work_queue wq;
+                task_queue wq;
                 int i = 0;
                 
                 slow_printer s;

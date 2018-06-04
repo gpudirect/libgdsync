@@ -34,20 +34,20 @@
 #include <functional>
 #include <cstdio>
 
-#define WQDBG(FMT, ARGS...)   do { } while(0)
-//#define WQDBG(FMT, ARGS...)   do {                                    \
+#define TQDBG(FMT, ARGS...)   do { } while(0)
+//#define TQDBG(FMT, ARGS...)   do {                                    \
 //        printf("%s() " FMT "\n", __FUNCTION__ ,##ARGS);               \
 //    } while(0)
 
-// single threaded work queue
-struct work_queue {
-    work_queue() {
-        WQDBG("CTOR");
+// single threaded task queue
+struct task_queue {
+    task_queue() {
+        TQDBG("CTOR");
         m_state = idle;
     }
 
-    ~work_queue() {
-        WQDBG("DTOR");
+    ~task_queue() {
+        TQDBG("DTOR");
         kill_worker();
     }
 
@@ -60,7 +60,7 @@ struct work_queue {
         lock_t lock(m_mtx);
         task_handle_t handle = m_tasks.insert(m_tasks.end(), t);
         if (m_state == idle) {
-            m_worker = std::thread(std::bind(&work_queue::worker_thread, this));
+            m_worker = std::thread(std::bind(&task_queue::worker_thread, this));
             while (m_state == idle) {
                 m_cond.wait(lock);
             }
@@ -71,34 +71,34 @@ struct work_queue {
 
     // WARNING: dequeuing can race with self-dequeing task
     void dequeue(task_handle_t handle) {
-        WQDBG("dequing task");
+        TQDBG("dequing task");
         std::lock_guard<std::mutex> g(m_mtx);
         m_tasks.erase(handle);
     }
 
 private:
     void kill_worker() {
-        WQDBG("killing worker thread");
+        TQDBG("killing worker thread");
         {
             lock_t g(m_mtx);
             if (m_state == running) {
-                WQDBG("setting queue state to draining");
+                TQDBG("setting queue state to draining");
                 m_state = draining;
                 m_cond.notify_one();
             }
         }
-        WQDBG("joining worker thread");
+        TQDBG("joining worker thread");
         m_worker.join();
     }
 
     void worker_thread() {
         lock_t lock(m_mtx);
-        WQDBG("state<-running");
+        TQDBG("state<-running");
         m_state = running;
         m_cond.notify_all();
         while(true) {
             if (m_state == draining) {
-                WQDBG("state<-done");
+                TQDBG("state<-done");
                 m_state = done;
                 break;
             }
@@ -112,9 +112,9 @@ private:
                 bool keep = t();
                 lock.lock();
                 if (!keep) {
-                    WQDBG("removing task");
+                    TQDBG("removing task");
                     m_tasks.erase(f);
-                    WQDBG("done");
+                    TQDBG("done");
                 }
                 f = fnext;
             }
@@ -131,7 +131,7 @@ private:
     std::condition_variable m_cond;
 };
 
-#undef WQDBG
+#undef TQDBG
 
 /*
  * Local variables:
