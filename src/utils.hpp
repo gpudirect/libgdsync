@@ -109,7 +109,7 @@ int gds_dbg_enabled();
 		fflush(gds_stream);                                     \
 	} while(0)
 
-#define gds_dbg(FMT, ARGS...)  do { if (gds_dbg_enabled()) gds_msg(GDS_MSG_DEBUG, "DBG ", FMT, ## ARGS); } while(0)
+#define gds_dbg(FMT, ARGS...)  do { if (gds_dbg_enabled()) gds_msg(GDS_MSG_DEBUG, "DBG  ", FMT, ## ARGS); } while(0)
 #define gds_dbgc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gds_dbg(FMT, ## ARGS); } while(0)
 
 #define gds_info(FMT, ARGS...) gds_msg(GDS_MSG_INFO,  "INFO ", FMT, ## ARGS)
