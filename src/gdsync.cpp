@@ -129,6 +129,20 @@ static bool gds_enable_wait_nor()
         return !gds_disable_wait_nor;
 }
 
+static bool gds_enable_wait_checker()
+{
+        static int gds_enable_wait_checker = -1;
+        if (-1 == gds_enable_wait_checker) {
+                const char *env = getenv("GDS_ENABLE_WAIT_CHECKER");
+                if (env)
+                        gds_enable_wait_checker = !!atoi(env);
+                else
+                        gds_enable_wait_checker = 0;
+                gds_dbg("GDS_ENABLE_WAIT_CHECKER=%d\n", gds_enable_wait_checker);
+        }
+        return gds_enable_wait_checker;
+}
+
 static bool gds_enable_inlcpy()
 {
         static int gds_disable_inlcpy = -1;
@@ -491,11 +505,73 @@ out:
 
 //-----------------------------------------------------------------------------
 
+struct poll_checker {
+        struct buf {
+                uint64_t addr;
+                uint32_t msk;
+                uint32_t pad1;
+                uint32_t state;
+                uint32_t pad2;
+        } *m_buf;
+        unsigned m_idx;
+        static unsigned m_global_index;
+
+        poll_checker() {
+                m_buf = (struct buf *)calloc(1, sizeof(*m_buf));
+                assert(m_buf);
+                m_idx = m_global_index++;
+        }
+
+        ~poll_checker() {
+                free(m_buf);
+        }
+
+        void pre(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag) {
+                assert(m_buf);
+                m_buf->addr = (uint64_t)ptr;
+                m_buf->msk = magic;
+                // verify ptr can be dereferenced on CPU
+                uint64_t tmp = gds_atomic_get(reinterpret_cast<uint64_t*>(ptr));
+                assert(cond_flag == GDS_WAIT_COND_NOR);
+                gds_dbg("%d injecting pre poke\n", m_idx);
+                gds_fill_poke(peer, ops, &m_buf->state, 1, GDS_MEMORY_HOST);
+        }
+        void post(gds_peer *peer, gds_op_list_t &ops) {
+                gds_dbg("%d injecting post poke\n", m_idx);
+                gds_fill_poke(peer, ops, &m_buf->state, 2, GDS_MEMORY_HOST);
+        }
+
+        bool run() {
+                uint32_t *pw = reinterpret_cast<uint32_t*>(m_buf->addr);
+                uint32_t value = gds_atomic_get(pw);
+                uint32_t state = gds_atomic_get(&m_buf->state);
+                uint32_t nor = ~(value | m_buf->msk);
+                bool keep_running = true;
+                if (nor) {
+                        if (state != 2) {
+                                gds_err("%u signaled NOR addr=%p still not observed by GPU\n", m_idx, pw);
+                        } else {
+                                gds_dbg("GPU is all set, dequeing %u\n", m_idx);
+                                keep_running = false;
+                                delete this;
+                        }
+                        fflush(stderr);
+                }
+                return keep_running;
+        }
+};
+
+unsigned poll_checker::m_global_index = 0;
+
+//-----------------------------------------------------------------------------
+
 static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
 {
         int retcode = 0;
         const char *cond_str = NULL;
         CUdeviceptr dev_ptr = ptr;
+        bool use_checker = false;
+        poll_checker *ck = NULL;
 
         assert(ptr);
         assert((((unsigned long)ptr) & 0x3) == 0);
@@ -533,6 +609,7 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                         goto out;
                 }
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_NOR;
+                use_checker = gds_enable_wait_checker();
 #else
                 gds_err("GDS_WAIT_COND_NOR requires CUDA 9.0 at least\n");
                 retcode = EINVAL;
@@ -555,8 +632,15 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                 cond_str,
                 param.waitValue.flags);
 
+        if (use_checker) {
+                ck = new poll_checker();
+                ck->pre(peer, ops, ptr, magic, cond_flag);
+        }
         ops.push_back(param);
-
+        if (use_checker) {
+                ck->post(peer, ops);
+                peer->tq->queue(std::bind(&poll_checker::run, ck));
+        }
 out:
         return retcode;
 }
@@ -1383,8 +1467,6 @@ done:
 static gds_peer gpu_peer[max_gpus];
 static gds_peer_attr gpu_peer_attr[max_gpus];
 static bool gpu_registered[max_gpus];
-
-static task_queue *tq;
 
 //-----------------------------------------------------------------------------
 
