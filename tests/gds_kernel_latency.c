@@ -1429,13 +1429,13 @@ int main(int argc, char *argv[])
 
                 int ret = gpu_wait_tracking_event(1000*1000);
                 if (ret == ENOMEM) {
-                        printf("gpu_wait_tracking_event nothing to do (%d)\n", ret);
+                        printf("[%d] gpu_wait_tracking_event nothing to do (%d)\n", my_rank, ret);
                 } else if (ret == EAGAIN) {
-                        printf("gpu_wait_tracking_event timout (%d), retrying\n", ret);
+                        printf("[%d] gpu_wait_tracking_event timout (%d), retrying\n", my_rank, ret);
                         prof_reset(&prof);
                         continue;
                 } else if (ret) {
-                        gpu_err("gpu_wait_tracking_event failed (%d)\n", ret);
+                        gpu_err("[%d] gpu_wait_tracking_event failed (%d)\n", my_rank, ret);
                         got_error = ret;
                 }
 

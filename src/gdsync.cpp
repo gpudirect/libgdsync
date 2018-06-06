@@ -129,6 +129,20 @@ static bool gds_enable_wait_nor()
         return !gds_disable_wait_nor;
 }
 
+static bool gds_enable_remote_flush()
+{
+        static int gds_disable_remote_flush = -1;
+        if (-1 == gds_disable_remote_flush) {
+                const char *env = getenv("GDS_DISABLE_REMOTE_FLUSH");
+                if (env)
+                        gds_disable_remote_flush = !!atoi(env);
+                else
+                        gds_disable_remote_flush = 0;
+                gds_dbg("GDS_DISABLE_REMOTE_FLUSH=%d\n", gds_disable_remote_flush);
+        }
+        return !gds_disable_remote_flush;
+}
+
 static bool gds_enable_wait_checker()
 {
         static int gds_enable_wait_checker = -1;
@@ -1478,7 +1492,7 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
         peer->gpu_dev = dev;
         peer->gpu_ctx = 0;
         peer->has_memops = support_memops(dev);
-        peer->has_remote_flush = support_remote_flush(dev);
+        peer->has_remote_flush = support_remote_flush(dev) && gds_enable_remote_flush();
         peer->has_write64 = support_write64(dev) && gds_enable_write64();
         peer->has_wait_nor = support_wait_nor(dev) && gds_enable_wait_nor();
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
