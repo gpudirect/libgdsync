@@ -414,8 +414,8 @@ static int poll_send_cq(struct pingpong_context *ctx)
 
                 switch ((int) wc[i].wr_id) {
                 case PINGPONG_SEND_WRID:
-                        gpu_dbg("got send event\n");
                         ++ctx->scnt;
+                        gpu_dbg("got send event scnt=%d\n", ctx->scnt);
                         break;
                 default:
                         gpu_err("Completion for unknown wr_id %d\n",
@@ -454,8 +454,8 @@ static int poll_recv_cq(struct pingpong_context *ctx)
 
                 switch ((int) wc[i].wr_id) {
                 case PINGPONG_RECV_WRID:
-                        gpu_dbg("[%d] got recv event\n", my_rank);
                         ++ctx->rcnt;
+                        gpu_dbg("[%d] got recv event rcnt=%d\n", my_rank, ctx->rcnt);
                         break;
                 default:
                         gpu_err("[%d] Completion for unknown wr_id %d\n",
