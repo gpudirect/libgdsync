@@ -278,21 +278,13 @@ int main(int argc, char *argv[])
                 //        ret = gpu_poll_pokes();
                 //else
                 //        ret = gpu_poll_poke();
-                gds_us_t tout = 100;
+                gds_us_t tmout = 1000;
                 gds_us_t start = gds_get_time_us();
-                gds_us_t end = start;
-                while(1) {
-                        uint32_t value = ACCESS_ONCE(*poke_hptrs[n_pokes-1]);
-                        gpu_dbg("h_poke[%zu]=%x\n", n_pokes-1, value);
-                        if (value) 
-                                break;
-                        end = gds_get_time_us();
-                        if (end - start > tout) {
-                                gpu_warn("timeout %ldus reached!!\n", tout);
-                                goto err;
-                        }
-                        gds_cpu_relax();
+                int ret = gds_poll_dword_neq(poke_hptrs[n_pokes-1], 0, tmout);
+                if (ret) {
+                        gpu_fail("error while polling on %zu poke\n", n_pokes-1);
                 }
+                gds_us_t end = gds_get_time_us();
 		PROF(&prof, prof_idx++);
                 // CUDA synchronize
 		//gpu_wait_kernel();

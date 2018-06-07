@@ -45,7 +45,7 @@ if [ ! -e Makefile ]; then
     EXTRA+=" --enable-test"
     EXTRA+=" --enable-extended-memops"
     #EXTRA+=" --enable-nvtx"
-    #EXTRA="$EXTRA --with-gdstools=$PREFIX"
+    #EXTRA+=" --with-gdstools=$PREFIX"
 
     ../configure \
         --prefix=$PREFIX \

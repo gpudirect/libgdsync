@@ -30,59 +30,6 @@
 #include <cuda.h>
 #include <infiniband/verbs_exp.h>
 
-#define __ASSERT(cond, cond_str)                                        \
-        do {                                                            \
-                if (!(cond)) {                                          \
-		fprintf(stderr, "Assertion \"%s\" failed at %s:%d\n", cond_str, __FILE__, __LINE__); \
-		exit(EXIT_FAILURE);                                     \
-	}                                                               \
-} while(0)
-
-#define ASSERT(x) __ASSERT((x), #x)
-
-
-#define __GDSCHECK(stmt, cond_str)					\
-	do {								\
-		int result = (stmt);				\
-		if (0 != result) {				\
-			const char *err_str = strerror(result);               \
-			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, err_str); \
-			exit(EXIT_FAILURE);                             \
-		}							\
-        } while (0)
-
-#define GDSCHECK(stmt) __GDSCHECK(stmt, #stmt)
-
-//----
-
-#define __CUCHECK(stmt, cond_str)					\
-	do {								\
-		CUresult result = (stmt);				\
-		if (CUDA_SUCCESS != result) {				\
-			const char *err_str = NULL;			\
-			cuGetErrorString(result, &err_str);		\
-			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, err_str); \
-			exit(EXIT_FAILURE);                             \
-		}							\
-        } while (0)
-
-#define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
-
-//----
-
-#define __CUDACHECK(stmt, cond_str)					\
-	do {								\
-		cudaError_t result = (stmt);				\
-		if (cudaSuccess != result) {				\
-			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, cudaGetErrorString(result)); \
-			exit(EXIT_FAILURE);				\
-		}							\
-        } while (0)
-
-#define CUDACHECK(stmt) __CUDACHECK(stmt, #stmt)
-
-
-//----
 
 #ifdef USE_PROFILE
 #include <cuda_profiler_api.h>
@@ -143,6 +90,64 @@ enum gpu_msg_level {
 #define gpu_warnc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gpu_msg(GPU_MSG_WARN,  "WARN: ", FMT, ## ARGS); } while(0)
 #define gpu_warn_once(FMT, ARGS...) gpu_warnc(1, FMT, ##ARGS)
 #define gpu_err(FMT, ARGS...)  gpu_msg(GPU_MSG_ERROR, "ERR:  ", FMT, ##ARGS)
+
+#define gpu_fail_2(FMT, ARGS... ) do {                                  \
+                gpu_err(">>> test FAILED in %s at %s:%d\n" FMT, __FUNCTION__, __FILE__, __LINE__, ## ARGS); \
+                exit(EXIT_FAILURE);                                     \
+        } while(0)
+#define gpu_fail(FMT, ARGS...) gpu_fail_2(FMT, ##ARGS)
+
+//---
+
+#define __ASSERT(cond, cond_str)                                        \
+        do {                                                            \
+                if (!(cond)) {                                          \
+                        gpu_fail("Assertion \"%s\" failed\n", cond_str); \
+                }                                                       \
+        } while(0)
+
+#define ASSERT(x) __ASSERT((x), #x)
+
+
+#define __GDSCHECK(stmt, cond_str)					\
+	do {								\
+		int result = (stmt);                                    \
+		if (0 != result) {                                      \
+			const char *err_str = strerror(result);         \
+			gpu_fail("Assertion \"%s returned %s\" failed\n", cond_str, err_str); \
+		}							\
+        } while (0)
+
+#define GDSCHECK(stmt) __GDSCHECK(stmt, #stmt)
+
+//----
+
+#define __CUCHECK(stmt, cond_str)					\
+	do {								\
+		CUresult result = (stmt);				\
+		if (CUDA_SUCCESS != result) {				\
+			const char *err_str = NULL;			\
+			cuGetErrorString(result, &err_str);		\
+			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, err_str); \
+			exit(EXIT_FAILURE);                             \
+		}							\
+        } while (0)
+
+#define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
+
+//----
+
+#define __CUDACHECK(stmt, cond_str)					\
+	do {								\
+		cudaError_t result = (stmt);				\
+		if (cudaSuccess != result) {				\
+			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, cudaGetErrorString(result)); \
+			exit(EXIT_FAILURE);				\
+		}							\
+        } while (0)
+
+#define CUDACHECK(stmt) __CUDACHECK(stmt, #stmt)
+
 
 // oversubscribe SM by factor 2
 static const int over_sub_factor = 2;

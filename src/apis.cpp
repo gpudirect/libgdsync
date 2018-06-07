@@ -425,7 +425,7 @@ int gds_prepare_wait_value32(gds_wait_value32_t *desc, uint32_t *ptr, uint32_t v
         gds_dbg("desc=%p ptr=%p value=0x%08x cond_flags=0x%x flags=0x%x\n",
                 desc, ptr, value, cond_flags, flags);
 
-        if (flags & ~(GDS_WAIT_POST_FLUSH|GDS_MEMORY_MASK)) {
+        if (flags & ~(GDS_WAIT_POST_FLUSH_REMOTE|GDS_MEMORY_MASK)) {
                 gds_err("invalid flags\n");
                 ret = EINVAL;
                 goto out;
@@ -459,7 +459,7 @@ int gds_prepare_write_value32(gds_write_value32_t *desc, uint32_t *ptr, uint32_t
                 ret = EINVAL;
                 goto out;
         }
-        if (flags & ~(GDS_WRITE_PRE_BARRIER|GDS_MEMORY_MASK)) {
+        if (flags & ~(GDS_WRITE_PRE_BARRIER_SYS|GDS_MEMORY_MASK)) {
                 gds_err("invalid flags\n");
                 ret = EINVAL;
                 goto out;
@@ -482,7 +482,7 @@ int gds_prepare_write_memory(gds_write_memory_t *desc, uint8_t *dest, const uint
                 ret = EINVAL;
                 goto out;
         }
-        if (flags & ~(GDS_WRITE_MEMORY_POST_BARRIER_SYS|GDS_MEMORY_MASK)) {
+        if (flags & ~(GDS_WRITE_MEMORY_POST_BARRIER_SYS|GDS_WRITE_MEMORY_PRE_BARRIER_SYS|GDS_MEMORY_MASK)) {
                 gds_err("invalid flags\n");
                 ret = EINVAL;
                 goto out;
@@ -641,7 +641,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 }
                 case GDS_TAG_WAIT_VALUE32:
-                        retcode = gds_fill_poll(params, desc->wait32.ptr, desc->wait32.value, desc->wait32.cond_flags, desc->wait32.flags);
+                        retcode = gds_fill_poll(peer, params, desc->wait32.ptr, desc->wait32.value, desc->wait32.cond_flags, desc->wait32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poll\n", retcode);
                                 ret = retcode;
@@ -649,7 +649,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         }
                         break;
                 case GDS_TAG_WRITE_VALUE32:
-                        retcode = gds_fill_poke(params, desc->write32.ptr, desc->write32.value, desc->write32.flags);
+                        retcode = gds_fill_poke(peer, params, desc->write32.ptr, desc->write32.value, desc->write32.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_poke\n", retcode);
                                 ret = retcode;
@@ -657,7 +657,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         }
                         break;
                 case GDS_TAG_WRITE_MEMORY:
-                        retcode = gds_fill_inlcpy(params, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
+                        retcode = gds_fill_inlcpy(peer, params, desc->writemem.dest, desc->writemem.src, desc->writemem.count, desc->writemem.flags);
                         if (retcode) {
                                 gds_err("error %d in gds_fill_inlcpy\n", retcode);
                                 ret = retcode;
@@ -719,8 +719,8 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         uint32_t *ptr = desc->wait32.ptr;
                         uint32_t value = desc->wait32.value;
                         bool flush = false;
-                        if (desc->wait32.flags & GDS_WAIT_POST_FLUSH) {
-                                gds_err("GDS_WAIT_POST_FLUSH flag is not supported yet\n");
+                        if (desc->wait32.flags & GDS_WAIT_POST_FLUSH_REMOTE) {
+                                gds_err("GDS_WAIT_POST_FLUSH_REMOTE flag is not supported yet\n");
                                 flush = true;
                         }
                         gds_memory_type_t mem_type = (gds_memory_type_t)(desc->wait32.flags & GDS_MEMORY_MASK);
@@ -781,7 +781,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                                 goto out;
                                 break;
                         }
-                        bool barrier = (desc->write32.flags & GDS_WRITE_PRE_BARRIER);
+                        bool barrier = (desc->write32.flags & GDS_WRITE_PRE_BARRIER_SYS);
                         if (barrier)
                                 wmb();
                         gds_atomic_set(ptr, value);

@@ -122,22 +122,25 @@ typedef enum gds_memory_type {
 
 // Note: those flags below must not overlap with gds_memory_type_t
 typedef enum gds_wait_flags {
-	GDS_WAIT_POST_FLUSH = 1<<3,
+        GDS_WAIT_POST_FLUSH_REMOTE = 1<<3, /*< add a trailing flush of the ingress GPUDirect RDMA data path on the GPU owning the stream */
+        GDS_WAIT_POST_FLUSH = GDS_WAIT_POST_FLUSH_REMOTE /*< alias for backward compatibility */
 } gds_wait_flags_t;
 
 typedef enum gds_write_flags {
-	GDS_WRITE_PRE_BARRIER = 1<<4,
+        GDS_WRITE_PRE_BARRIER_SYS = 1<<4, /*< add a heading memory barrier to the write value operation */
+        GDS_WRITE_PRE_BARRIER = GDS_WRITE_PRE_BARRIER_SYS /*< alias for backward compatibility */
 } gds_write_flags_t;
 
 typedef enum gds_write_memory_flags {
-	GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, /*< add a trailing memory barrier to the memory write operation */
+        GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, /*< add a trailing memory barrier to the memory write operation */
+        GDS_WRITE_MEMORY_PRE_BARRIER_SYS  = 1<<5 /*< add a heading memory barrier to the memory write operation, for convenience only as not a native capability */
 } gds_write_memory_flags_t;
 
 typedef enum gds_membar_flags {
-	GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
-	GDS_MEMBAR_DEFAULT      = 1<<5,
-	GDS_MEMBAR_SYS          = 1<<6,
-	GDS_MEMBAR_MLX5         = 1<<7,
+        GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
+        GDS_MEMBAR_DEFAULT      = 1<<5,
+        GDS_MEMBAR_SYS          = 1<<6,
+        GDS_MEMBAR_MLX5         = 1<<7 /*< modify the scope of the barrier, for internal use only */
 } gds_membar_flags_t;
 
 enum {
