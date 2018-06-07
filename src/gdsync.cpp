@@ -563,7 +563,7 @@ struct poll_checker {
                 bool keep_running = true;
                 if (nor) {
                         if (state != 2) {
-                                gds_err("%u signaled NOR addr=%p still not observed by GPU\n", m_idx, pw);
+                                gds_err("%u signaled NOR addr=%p value=%08x still not observed by GPU\n", m_idx, pw, value);
                         } else {
                                 gds_dbg("GPU is all set, dequeing %u\n", m_idx);
                                 keep_running = false;

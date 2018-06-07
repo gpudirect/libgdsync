@@ -251,6 +251,7 @@ int gpu_wait_tracking_event(int tmout_us)
         int n = (next_wait)%num_tracking_events;
 
         if (next_wait >= next_release) {
+                gpu_dbg("no pending tracking events next_wait=%d next_release=%d\n", next_wait, next_release);
                 return ENOMEM;
         }
         if (tmout_us < 0)
