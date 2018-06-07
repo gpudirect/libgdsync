@@ -561,15 +561,16 @@ struct poll_checker {
                 uint32_t state = gds_atomic_get(&m_buf->state);
                 uint32_t nor = ~(value | m_buf->msk);
                 bool keep_running = true;
-                if (nor) {
-                        if (state != 2) {
-                                gds_err("%u signaled NOR addr=%p value=%08x still not observed by GPU\n", m_idx, pw, value);
-                        } else {
-                                gds_dbg("GPU is all set, dequeing %u\n", m_idx);
+                if (state == 0) {
+                        gds_dbg("%u NOR addr=%p value=%08x nor=%08x still not observed by GPU\n", m_idx, pw, value, nor);
+                } else if (state == 1) {
+                        gds_dbg("%u NOR addr=%p value=%08x nor=%08x is being observed by GPU\n", m_idx, pw, value, nor);
+                } else if (state == 2) {
+                        gds_dbg("%u NOR addr=%p value=%08x nor=%08x is all set, dequeing\n", m_idx, pw, value, nor);
+                        if (nor) {
                                 keep_running = false;
                                 delete this;
                         }
-                        fflush(stderr);
                 }
                 return keep_running;
         }
