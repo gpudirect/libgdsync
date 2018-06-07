@@ -585,7 +585,6 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
         int retcode = 0;
         const char *cond_str = NULL;
         CUdeviceptr dev_ptr = ptr;
-        bool use_checker = false;
         poll_checker *ck = NULL;
 
         assert(ptr);
@@ -624,7 +623,8 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                         goto out;
                 }
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_NOR;
-                use_checker = gds_enable_wait_checker();
+                if (gds_enable_wait_checker())
+                        ck = new poll_checker();
 #else
                 gds_err("GDS_WAIT_COND_NOR requires CUDA 9.0 at least\n");
                 retcode = EINVAL;
@@ -647,12 +647,10 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                 cond_str,
                 param.waitValue.flags);
 
-        if (use_checker) {
-                ck = new poll_checker();
+        if (ck)
                 ck->pre(peer, ops, ptr, magic, cond_flag);
-        }
         ops.push_back(param);
-        if (use_checker) {
+        if (ck) {
                 ck->post(peer, ops);
                 peer->tq->queue(std::bind(&poll_checker::run, ck));
         }
