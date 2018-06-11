@@ -74,7 +74,7 @@ enum gpu_msg_level {
 
 #define gpu_msg(LVL, LVLSTR, FMT, ARGS...)                              \
         do {                                                            \
-                fprintf(stderr, LVLSTR "[%s] " FMT, __FUNCTION__ ,##ARGS); \
+                fprintf(stderr, "[%d] " LVLSTR " %s " FMT, getpid(), __FUNCTION__ ,##ARGS); \
                 fflush(stderr);                                         \
         } while(0)
 

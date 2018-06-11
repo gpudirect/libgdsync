@@ -42,6 +42,7 @@
 #include "objs.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
+#include "task_queue.hpp"
 
 //-----------------------------------------------------------------------------
 
@@ -126,6 +127,34 @@ static bool gds_enable_wait_nor()
                 gds_dbg("GDS_DISABLE_WAIT_NOR=%d\n", gds_disable_wait_nor);
         }
         return !gds_disable_wait_nor;
+}
+
+static bool gds_enable_remote_flush()
+{
+        static int gds_disable_remote_flush = -1;
+        if (-1 == gds_disable_remote_flush) {
+                const char *env = getenv("GDS_DISABLE_REMOTE_FLUSH");
+                if (env)
+                        gds_disable_remote_flush = !!atoi(env);
+                else
+                        gds_disable_remote_flush = 0;
+                gds_dbg("GDS_DISABLE_REMOTE_FLUSH=%d\n", gds_disable_remote_flush);
+        }
+        return !gds_disable_remote_flush;
+}
+
+static bool gds_enable_wait_checker()
+{
+        static int gds_enable_wait_checker = -1;
+        if (-1 == gds_enable_wait_checker) {
+                const char *env = getenv("GDS_ENABLE_WAIT_CHECKER");
+                if (env)
+                        gds_enable_wait_checker = !!atoi(env);
+                else
+                        gds_enable_wait_checker = 0;
+                gds_dbg("GDS_ENABLE_WAIT_CHECKER=%d\n", gds_enable_wait_checker);
+        }
+        return gds_enable_wait_checker;
 }
 
 static bool gds_enable_inlcpy()
@@ -490,11 +519,73 @@ out:
 
 //-----------------------------------------------------------------------------
 
+struct poll_checker {
+        struct buf {
+                uint64_t addr;
+                uint32_t msk;
+                uint32_t pad1;
+                uint32_t state;
+                uint32_t pad2;
+        } *m_buf;
+        unsigned m_idx;
+        static unsigned m_global_index;
+
+        poll_checker() {
+                m_buf = (struct buf *)calloc(1, sizeof(*m_buf));
+                assert(m_buf);
+                m_idx = m_global_index++;
+        }
+
+        ~poll_checker() {
+                free(m_buf);
+        }
+
+        void pre(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag) {
+                assert(m_buf);
+                m_buf->addr = (uint64_t)ptr;
+                m_buf->msk = magic;
+                // verify ptr can be dereferenced on CPU
+                uint64_t tmp = gds_atomic_get(reinterpret_cast<uint64_t*>(ptr));
+                assert(cond_flag == GDS_WAIT_COND_NOR);
+                gds_dbg("%d injecting pre poke\n", m_idx);
+                gds_fill_poke(peer, ops, &m_buf->state, 1, GDS_MEMORY_HOST);
+        }
+        void post(gds_peer *peer, gds_op_list_t &ops) {
+                gds_dbg("%d injecting post poke\n", m_idx);
+                gds_fill_poke(peer, ops, &m_buf->state, 2, GDS_MEMORY_HOST);
+        }
+
+        bool run() {
+                uint32_t *pw = reinterpret_cast<uint32_t*>(m_buf->addr);
+                uint32_t value = gds_atomic_get(pw);
+                uint32_t state = gds_atomic_get(&m_buf->state);
+                uint32_t nor = ~(value | m_buf->msk);
+                bool keep_running = true;
+                if (state == 0) {
+                        gds_dbg("%u NOR addr=%p value=%08x nor=%08x still not observed by GPU\n", m_idx, pw, value, nor);
+                } else if (state == 1) {
+                        gds_dbg("%u NOR addr=%p value=%08x nor=%08x is being observed by GPU\n", m_idx, pw, value, nor);
+                } else if (state == 2) {
+                        gds_dbg("%u NOR addr=%p value=%08x nor=%08x is all set, dequeing\n", m_idx, pw, value, nor);
+                        if (nor) {
+                                keep_running = false;
+                                delete this;
+                        }
+                }
+                return keep_running;
+        }
+};
+
+unsigned poll_checker::m_global_index = 0;
+
+//-----------------------------------------------------------------------------
+
 static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
 {
         int retcode = 0;
         const char *cond_str = NULL;
         CUdeviceptr dev_ptr = ptr;
+        poll_checker *ck = NULL;
 
         assert(ptr);
         assert((((unsigned long)ptr) & 0x3) == 0);
@@ -532,6 +623,8 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                         goto out;
                 }
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_NOR;
+                if (gds_enable_wait_checker())
+                        ck = new poll_checker();
 #else
                 gds_err("GDS_WAIT_COND_NOR requires CUDA 9.0 at least\n");
                 retcode = EINVAL;
@@ -554,8 +647,13 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                 cond_str,
                 param.waitValue.flags);
 
+        if (ck)
+                ck->pre(peer, ops, ptr, magic, cond_flag);
         ops.push_back(param);
-
+        if (ck) {
+                ck->post(peer, ops);
+                peer->tq->queue(std::bind(&poll_checker::run, ck));
+        }
 out:
         return retcode;
 }
@@ -685,7 +783,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                 gds_dbg("op[%zu] type:%08x\n", n, op->type);
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("OP_FENCE: fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
+                        gds_dbg("OP_FENCE: fence_flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
                         uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
@@ -738,7 +836,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
                         int flags = 0;
-                        gds_dbg("OP_STORE_DWORD dev_ptr=%llx data=%"PRIx32"\n", dev_ptr, data);
+                        gds_dbg("OP_STORE_DWORD dev_ptr=%llx data=%" PRIx32 "\n", dev_ptr, data);
                         if (use_inlcpy_for_dword) { // F || D
                                 // membar may be out of order WRT inlcpy
                                 if (peer->has_membar) {
@@ -773,7 +871,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                                 op->wr.qword_va.offset;
                         uint64_t data = op->wr.qword_va.data;
                         int flags = 0;
-                        gds_dbg("OP_STORE_QWORD dev_ptr=%llx data=%"PRIx64"\n", dev_ptr, data);
+                        gds_dbg("OP_STORE_QWORD dev_ptr=%llx data=%" PRIx64 "\n", dev_ptr, data);
                         // C || D
                         if (gds_simulate_write64()) {
                                 // simulate 64-bit poke by inline copy
@@ -844,7 +942,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
                         if (!(post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH))
                                 flags |= GDS_WAIT_POST_FLUSH_REMOTE;
 
-                        gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%"PRIx32" type=%"PRIx32"\n", dev_ptr, data, (uint32_t)op->type);
+                        gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%" PRIx32 " type=%" PRIx32 "\n", dev_ptr, data, (uint32_t)op->type);
 
                         switch(op->type) {
                         case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
@@ -937,7 +1035,7 @@ int gds_post_ops_on_cpu(size_t n_ops, struct peer_op_wr *op, int post_flags)
                 //gds_dbg("op[%zu]=%p type:%08x\n", n, op, op->type);
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("FENCE flags=%"PRIu64"\n", op->wr.fence.fence_flags);
+                        gds_dbg("FENCE flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
                         uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
@@ -973,15 +1071,15 @@ int gds_post_ops_on_cpu(size_t n_ops, struct peer_op_wr *op, int post_flags)
                         uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
                         uint32_t data = op->wr.dword_va.data;
                         // A || B || C || E
-                        gds_dbg("STORE_DWORD ptr=%p data=%08"PRIx32"\n", ptr, data);
-                        ACCESS_ONCE(*ptr) = data;
+                        gds_dbg("STORE_DWORD ptr=%p data=%08" PRIx32 "\n", ptr, data);
+                        gds_atomic_set(ptr, data);
                         break;
                 }
                 case IBV_EXP_PEER_OP_STORE_QWORD: {
                         uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.qword_va.target_id)->va + op->wr.qword_va.offset);
                         uint64_t data = op->wr.qword_va.data;
-                        gds_dbg("STORE_QWORD ptr=%p data=%016"PRIx64"\n", ptr, data);
-                        ACCESS_ONCE(*ptr) = data;
+                        gds_dbg("STORE_QWORD ptr=%p data=%016" PRIx64 "\n", ptr, data);
+                        gds_atomic_set(ptr, data);
                         break;
                 }
                 case IBV_EXP_PEER_OP_COPY_BLOCK: {
@@ -1001,7 +1099,7 @@ int gds_post_ops_on_cpu(size_t n_ops, struct peer_op_wr *op, int post_flags)
                         bool flush = true;
                         if (post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH)
                                 flush = false;
-                        gds_dbg("WAIT_32 dev_ptr=%p data=%"PRIx32" type=%"PRIx32"\n", ptr, value, (uint32_t)op->type);
+                        gds_dbg("WAIT_32 dev_ptr=%p data=%" PRIx32 " type=%" PRIx32 "\n", ptr, value, (uint32_t)op->type);
                         bool done = false;
                         do {
                                 uint32_t data = gds_atomic_get(ptr);
@@ -1061,7 +1159,7 @@ int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uin
 
         if (dw) {
                 wmb();
-                ACCESS_ONCE(*dw) = val;
+                gds_atomic_set(dw, val);
         }
 
 out:
@@ -1077,13 +1175,13 @@ static void gds_dump_ops(struct peer_op_wr *op, size_t count)
                 gds_dbg("op[%zu] type:%d\n", n, op->type);
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("FENCE flags=%"PRIu64"\n", op->wr.fence.fence_flags);
+                        gds_dbg("FENCE flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                         break;
                 }
                 case IBV_EXP_PEER_OP_STORE_DWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
-                        gds_dbg("STORE_QWORD data:%x target_id:%"PRIx64" offset:%zu dev_ptr=%llx\n",
+                        gds_dbg("STORE_QWORD data:%x target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
                                 op->wr.dword_va.data, op->wr.dword_va.target_id,
                                 op->wr.dword_va.offset, dev_ptr);
                         break;
@@ -1091,7 +1189,7 @@ static void gds_dump_ops(struct peer_op_wr *op, size_t count)
                 case IBV_EXP_PEER_OP_STORE_QWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                 op->wr.qword_va.offset;
-                        gds_dbg("STORE_QWORD data:%"PRIx64" target_id:%"PRIx64" offset:%zu dev_ptr=%llx\n",
+                        gds_dbg("STORE_QWORD data:%" PRIx64 " target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
                                 op->wr.qword_va.data, op->wr.qword_va.target_id,
                                 op->wr.qword_va.offset, dev_ptr);
                         break;
@@ -1099,7 +1197,7 @@ static void gds_dump_ops(struct peer_op_wr *op, size_t count)
                 case IBV_EXP_PEER_OP_COPY_BLOCK: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
                                 op->wr.copy_op.offset;
-                        gds_dbg("COPY_BLOCK src:%p len:%zu target_id:%"PRIx64" offset:%zu dev_ptr=%llx\n",
+                        gds_dbg("COPY_BLOCK src:%p len:%zu target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
                                 op->wr.copy_op.src, op->wr.copy_op.len,
                                 op->wr.copy_op.target_id, op->wr.copy_op.offset,
                                 dev_ptr);
@@ -1109,7 +1207,7 @@ static void gds_dump_ops(struct peer_op_wr *op, size_t count)
                 case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
-                        gds_dbg("%s data:%08x target_id:%"PRIx64" offset:%zu dev_ptr=%llx\n", 
+                        gds_dbg("%s data:%08x target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n", 
                                 (op->type==IBV_EXP_PEER_OP_POLL_AND_DWORD) ? "POLL_AND_DW" : "POLL_NOR_SDW",
                                 op->wr.dword_va.data, 
                                 op->wr.dword_va.target_id, 
@@ -1132,7 +1230,7 @@ void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
 {
         for (size_t j=0; j<count; ++j) {
                 struct ibv_exp_peer_peek *peek = &request[j].peek;
-                gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%"PRIx64" comp_mask:%08x\n", 
+                gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%" PRIx64 " comp_mask:%08x\n", 
                         j, peek->entries, peek->whence, peek->offset, 
                         peek->peek_id, peek->comp_mask);
                 gds_dump_ops(peek->storage, peek->entries);
@@ -1187,7 +1285,7 @@ static struct ibv_exp_peer_buf *gds_buf_alloc(ibv_exp_peer_buf_alloc_attr *attr)
         gds_peer *peer = peer_from_id(attr->peer_id);
         assert(peer);
 
-        gds_dbg("alloc mem peer:{type=%d gpu_id=%d} attr{len=%zu dir=%d alignment=%d peer_id=%"PRIx64"}\n",
+        gds_dbg("alloc mem peer:{type=%d gpu_id=%d} attr{len=%zu dir=%d alignment=%d peer_id=%" PRIx64 "}\n",
                 peer->alloc_type, peer->gpu_id, attr->length, attr->dir, attr->alignment, attr->peer_id);
 
         return peer->buf_alloc(peer->alloc_type, attr->length, attr->dir, attr->alignment, peer->alloc_flags);
@@ -1207,7 +1305,7 @@ static uint64_t gds_register_va(void *start, size_t length, uint64_t peer_id, st
         gds_peer *peer = peer_from_id(peer_id);
         gds_range *range = NULL;
 
-        gds_dbg("start=%p length=%zu peer_id=%"PRIx64" peer_buf=%p\n", start, length, peer_id, pb);
+        gds_dbg("start=%p length=%zu peer_id=%" PRIx64 " peer_buf=%p\n", start, length, peer_id, pb);
 
         if (IBV_EXP_PEER_IOMEMORY == pb) {
                 // register as IOMEM
@@ -1393,7 +1491,7 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
         peer->gpu_dev = dev;
         peer->gpu_ctx = 0;
         peer->has_memops = support_memops(dev);
-        peer->has_remote_flush = support_remote_flush(dev);
+        peer->has_remote_flush = support_remote_flush(dev) && gds_enable_remote_flush();
         peer->has_write64 = support_write64(dev) && gds_enable_write64();
         peer->has_wait_nor = support_wait_nor(dev) && gds_enable_wait_nor();
         peer->has_inlcpy = support_inlcpy(dev) && gds_enable_inlcpy();
@@ -1435,9 +1533,11 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
         peer->attr.comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
         peer->attr.version = 1;
 
+        peer->tq = new task_queue;
+
         gpu_registered[gpu_id] = true;
 
-        gds_dbg("peer_attr: peer_id=%"PRIx64"\n", peer->attr.peer_id);
+        gds_dbg("peer_attr: peer_id=%" PRIx64 "\n", peer->attr.peer_id);
 }
 
 //-----------------------------------------------------------------------------

@@ -92,6 +92,12 @@ must be configured by running:
 ```shell
 $ autoreconf -if
 ```
+If that fails complaining about AX_CHECK_COMPILE_FLAG, you will need to install
+a library of extra autoconf macros, for example:
+```shell
+$ yum install autoconf-archive
+```
+
 
 As an example, the build.sh script is provided. You should modify it
 according to the desired destination paths as well as the location

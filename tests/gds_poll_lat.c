@@ -235,7 +235,7 @@ int main(int argc, char *argv[])
                         }
 
                         poke_hptrs[k] =  h_data  + off;
-                        ACCESS_ONCE(*poke_hptrs[k]) = 0;
+                        gds_atomic_set_dword(poke_hptrs[k], 0);
                         ++j;
                         //printf("%d %d %p\n", i, k, poke_dptrs[k]);
                 }

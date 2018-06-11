@@ -65,6 +65,8 @@ static inline gds_range *range_from_id(uint64_t id)
         return reinterpret_cast<gds_range *>(id);
 }
 
+class task_queue;
+
 struct gds_peer {
         int gpu_id;
         CUdevice gpu_dev;
@@ -78,6 +80,7 @@ struct gds_peer {
         bool has_weak;
         unsigned max_batch_size;
         gds_peer_attr attr;
+        task_queue *tq;
 
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
         // This field works as a ugly run-time parameters passing
@@ -113,3 +116,11 @@ static inline gds_peer *peer_from_id(uint64_t id)
         assert(id);
         return reinterpret_cast<gds_peer *>(id);
 }
+
+/*
+ * Local variables:
+ *  c-indent-level: 8
+ *  c-basic-offset: 8
+ *  tab-width: 8
+ * End:
+ */

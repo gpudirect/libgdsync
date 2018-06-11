@@ -62,20 +62,16 @@ void gds_assert(const char *cond, const char *file, unsigned line, const char *f
 
 #define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
 
-#ifndef ACCESS_ONCE
-#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
-#endif
-
 template <typename T>
 static inline void gds_atomic_set(T *ptr, T value)
 {
-        ACCESS_ONCE(*ptr) = value;
+        *(volatile T*)ptr = value;
 }
 
 template <typename T>
 static inline T gds_atomic_get(T *ptr)
 {
-        return ACCESS_ONCE(*ptr);
+        return *(volatile T*)ptr;
 }
 
 #define ROUND_UP(V,SIZE) (((V)+(SIZE)-1)/(SIZE)*(SIZE))
@@ -113,7 +109,7 @@ int gds_dbg_enabled();
 		fflush(gds_stream);                                     \
 	} while(0)
 
-#define gds_dbg(FMT, ARGS...)  do { if (gds_dbg_enabled()) gds_msg(GDS_MSG_DEBUG, "DBG ", FMT, ## ARGS); } while(0)
+#define gds_dbg(FMT, ARGS...)  do { if (gds_dbg_enabled()) gds_msg(GDS_MSG_DEBUG, "DBG  ", FMT, ## ARGS); } while(0)
 #define gds_dbgc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gds_dbg(FMT, ## ARGS); } while(0)
 
 #define gds_info(FMT, ARGS...) gds_msg(GDS_MSG_INFO,  "INFO ", FMT, ## ARGS)

@@ -76,19 +76,15 @@ static inline void gds_busy_wait_us(gds_us_t tmout)
         } while ((tm-gds_get_time_us()) > 0);
 }
 
-#ifndef ACCESS_ONCE
-#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
-#endif
-
 static inline void gds_atomic_set_dword(uint32_t *ptr, uint32_t value)
 {
-        ACCESS_ONCE(*ptr) = value;
+        *(volatile uint32_t *)ptr = value;
         gds_wmb();
 }
 
 static inline uint32_t gds_atomic_read_dword(uint32_t *ptr)
 {
-        return ACCESS_ONCE(*ptr);
+        return *(volatile uint32_t *)ptr;
 }
 
 static inline int gds_poll_dword(uint32_t *ptr, uint32_t payload, gds_us_t tm, int (*pred)(uint32_t a, uint32_t b))

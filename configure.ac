@@ -16,6 +16,9 @@ AC_PROG_LIBTOOL
 
 LT_INIT
 
+AX_CHECK_COMPILE_FLAG([-std=c++0x], [CXXFLAGS="$CXXFLAGS -std=c++0x"])
+AX_PTHREAD
+
 AC_ARG_ENABLE(
     [test],
     [AC_HELP_STRING([--enable-test],

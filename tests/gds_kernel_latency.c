@@ -414,8 +414,8 @@ static int poll_send_cq(struct pingpong_context *ctx)
 
                 switch ((int) wc[i].wr_id) {
                 case PINGPONG_SEND_WRID:
-                        gpu_dbg("got send event\n");
                         ++ctx->scnt;
+                        gpu_dbg("got send event scnt=%d\n", ctx->scnt);
                         break;
                 default:
                         gpu_err("Completion for unknown wr_id %d\n",
@@ -446,20 +446,20 @@ static int poll_recv_cq(struct pingpong_context *ctx)
 
         for (i = 0; i < ne; ++i) {
                 if (wc[i].status != IBV_WC_SUCCESS) {
-                        gpu_err("Failed status %s (%d) for wr_id %d\n",
-                                ibv_wc_status_str(wc[i].status),
+                        gpu_err("[%d] Failed status %s (%d) for wr_id %d\n",
+                                my_rank, ibv_wc_status_str(wc[i].status),
                                 wc[i].status, (int) wc[i].wr_id);
                         return 1;
                 }
 
                 switch ((int) wc[i].wr_id) {
                 case PINGPONG_RECV_WRID:
-                        gpu_dbg("got recv event\n");
                         ++ctx->rcnt;
+                        gpu_dbg("[%d] got recv event rcnt=%d\n", my_rank, ctx->rcnt);
                         break;
                 default:
-                        gpu_err("Completion for unknown wr_id %d\n",
-                                (int) wc[i].wr_id);
+                        gpu_err("[%d] Completion for unknown wr_id %d\n",
+                                my_rank, (int) wc[i].wr_id);
                         return 1;
                 }
         }
@@ -1429,13 +1429,13 @@ int main(int argc, char *argv[])
 
                 int ret = gpu_wait_tracking_event(1000*1000);
                 if (ret == ENOMEM) {
-                        printf("gpu_wait_tracking_event nothing to do (%d)\n", ret);
+                        //gpu_info("[%d] gpu_wait_tracking_event reported nothing to do (%d)\n", my_rank, ret);
                 } else if (ret == EAGAIN) {
-                        printf("gpu_wait_tracking_event timout (%d), retrying\n", ret);
+                        gpu_info("[%d] gpu_wait_tracking_event reported timout (rc=%d), retrying\n", my_rank, ret);
                         prof_reset(&prof);
                         continue;
                 } else if (ret) {
-                        gpu_err("gpu_wait_tracking_event failed (%d)\n", ret);
+                        gpu_err("[%d] gpu_wait_tracking_event failed (%d)\n", my_rank, ret);
                         got_error = ret;
                 }
 
@@ -1472,16 +1472,16 @@ int main(int argc, char *argv[])
                         routs -= last_batch_len;
                         //prev_batch_len = last_batch_len;
                         if (ctx->n_tx_ev != last_batch_len)
-                                gpu_err("[%d] iter:%d unexpected tx ev %d, batch len %d\n", my_rank, iter, ctx->n_tx_ev, last_batch_len);
+                                gpu_info("[%d] iter:%d unexpected tx ev %d, batch len %d\n", my_rank, iter, ctx->n_tx_ev, last_batch_len);
                         if (ctx->n_rx_ev != last_batch_len)
-                                gpu_err("[%d] iter:%d unexpected rx ev %d, batch len %d\n", my_rank, iter, ctx->n_rx_ev, last_batch_len);
+                                gpu_info("[%d] iter:%d unexpected rx ev %d, batch len %d\n", my_rank, iter, ctx->n_rx_ev, last_batch_len);
                         if (nposted < iters) {
                                 //fprintf(stdout, "rcnt=%d scnt=%d routs=%d nposted=%d\n", rcnt, scnt, routs, nposted); fflush(stdout);
                                 // potentially submit new work
                                 n_post = min(min(ctx->rx_depth/2, iters-nposted), max_batch_len);
                                 int n = pp_post_work(ctx, n_post, nposted, rem_dest->qpn, servername?1:0);
                                 if (n != n_post) {
-                                        gpu_err("ERROR: post_work error (%d) rcnt=%d n_post=%d routs=%d\n", n, ctx->rcnt, n_post, routs);
+                                        gpu_err("[%d] post_work error (%d) rcnt=%d n_post=%d routs=%d\n", my_rank, n, ctx->rcnt, n_post, routs);
                                         return 1;
                                 }
                                 last_batch_len = n;

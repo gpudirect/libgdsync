@@ -63,7 +63,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
         for (; op && n < n_ops; op = op->next, ++n) {
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("OP_FENCE: fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
+                        gds_dbg("OP_FENCE: fence_flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
                         uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
@@ -95,7 +95,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
-                        gds_dbg("OP_STORE_DWORD dev_ptr=%"PRIx64" data=%08x\n", (uint64_t)dev_ptr, data);
+                        gds_dbg("OP_STORE_DWORD dev_ptr=%" PRIx64 " data=%08x\n", (uint64_t)dev_ptr, data);
                         if (n != 0) {
                                 gds_err("store DWORD is not 1st op\n");
                                 retcode = EINVAL;
@@ -109,7 +109,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                 op->wr.qword_va.offset;
                         uint64_t data = op->wr.qword_va.data;
-                        gds_dbg("OP_STORE_QWORD dev_ptr=%"PRIx64" data=%"PRIx64"\n", (uint64_t)dev_ptr, (uint64_t)data);
+                        gds_dbg("OP_STORE_QWORD dev_ptr=%" PRIx64 " data=%" PRIx64 "\n", (uint64_t)dev_ptr, (uint64_t)data);
                         if (n != 2) {
                                 gds_err("store QWORD is not 3rd op\n");
                                 retcode = EINVAL;
@@ -169,7 +169,7 @@ int gds_mlx5_get_send_info(int count, const gds_send_request_t *requests, gds_ml
                         gds_err("error %d while retrieving descriptors for %dth request\n", retcode, j);
                         break;
                 }
-                gds_dbg("mlx5_i: dbrec={%p,%08x} db={%p,%"PRIx64"}\n",
+                gds_dbg("mlx5_i: dbrec={%p,%08x} db={%p,%" PRIx64 "}\n",
                         mlx5_i->dbrec_ptr, mlx5_i->dbrec_value, mlx5_i->db_ptr, mlx5_i->db_value);
 	}
 
@@ -190,7 +190,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
         for (; op && n < n_ops; op = op->next, ++n) {
                 switch(op->type) {
                 case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("OP_FENCE: fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
+                        gds_dbg("OP_FENCE: fence_flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                         uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
                         uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
                         uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
@@ -211,7 +211,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
-                        gds_dbg("OP_STORE_DWORD dev_ptr=%"PRIx64" data=%08x\n", (uint64_t)dev_ptr, data);
+                        gds_dbg("OP_STORE_DWORD dev_ptr=%" PRIx64 " data=%08x\n", (uint64_t)dev_ptr, data);
                         if (n != 1) {
                                 gds_err("store DWORD is not 2nd op\n");
                                 retcode = EINVAL;
@@ -225,7 +225,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                         CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                 op->wr.qword_va.offset;
                         uint64_t data = op->wr.qword_va.data;
-                        gds_dbg("OP_STORE_QWORD dev_ptr=%"PRIx64" data=%"PRIx64"\n", (uint64_t)dev_ptr, (uint64_t)data);
+                        gds_dbg("OP_STORE_QWORD dev_ptr=%" PRIx64 " data=%" PRIx64 "\n", (uint64_t)dev_ptr, (uint64_t)data);
                         gds_err("unsupported QWORD op\n");
                         retcode = EINVAL;
                         break;
@@ -246,7 +246,7 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
 
-                        gds_dbg("OP_POLL_DWORD dev_ptr=%"PRIx64" data=%08x\n", (uint64_t)dev_ptr, data);
+                        gds_dbg("OP_POLL_DWORD dev_ptr=%" PRIx64 " data=%08x\n", (uint64_t)dev_ptr, data);
 
                         mlx5_i->cqe_ptr = (uint32_t *)dev_ptr;
                         mlx5_i->cqe_value = data;

@@ -20,7 +20,7 @@ std::ostream& operator <<(std::ostream &o, const Range &r) {
         return o;
 }
 
-#if __cplusplus <= 199711L // not C++-11, hopefully C++-98
+#if !defined(__GXX_EXPERIMENTAL_CXX0X__) && __cplusplus <= 199711L // not C++-11, hopefully C++-98
 namespace std {
         template<class BidirIt>
         BidirIt prev(BidirIt it, typename std::iterator_traits<BidirIt>::difference_type n = 1)
