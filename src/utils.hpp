@@ -31,6 +31,9 @@
 #warning "__STDC_FORMAT_MACROS should be defined to pull definition of PRIx64, etc"
 #endif
 #include <inttypes.h> // to pull PRIx64
+#include <assert.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 // internal assert function
 
@@ -65,12 +68,14 @@ void gds_assert(const char *cond, const char *file, unsigned line, const char *f
 template <typename T>
 static inline void gds_atomic_set(T *ptr, T value)
 {
+        assert(sizeof(T) <= 8);
         *(volatile T*)ptr = value;
 }
 
 template <typename T>
 static inline T gds_atomic_get(T *ptr)
 {
+        assert(sizeof(T) <= 8);
         return *(volatile T*)ptr;
 }
 
