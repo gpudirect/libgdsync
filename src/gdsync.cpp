@@ -266,7 +266,7 @@ void gds_dump_param(CUstreamBatchMemOpParams *param)
 #if HAVE_DECL_CU_STREAM_MEM_OP_WRITE_MEMORY
         case CU_STREAM_MEM_OP_WRITE_MEMORY:
                 gds_info("INLINECOPY addr:%p alias:%p src:%p len=%zu flags:%08x\n",
-                        (void*)param->writeMemory.address,
+                        (void*)param->writeMemory.dst,
                         (void*)param->writeMemory.alias,
                         (void*)param->writeMemory.src,
                         param->writeMemory.byteCount,
@@ -373,14 +373,14 @@ static int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr,
         param.operation = CU_STREAM_MEM_OP_WRITE_MEMORY;
         param.writeMemory.byteCount = n_bytes;
         param.writeMemory.src = const_cast<void *>(data);
-        param.writeMemory.address = dev_ptr;
+        param.writeMemory.dst = dev_ptr;
         if (need_post_barrier)
                 param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_FENCE_SYS;
         else
                 param.writeMemory.flags = CU_STREAM_WRITE_MEMORY_NO_MEMORY_BARRIER;
         gds_dbg("op=%d addr=%p src=%p size=%zd flags=%08x\n",
                 param.operation,
-                (void*)param.writeMemory.address,
+                (void*)param.writeMemory.dst,
                 param.writeMemory.src,
                 param.writeMemory.byteCount,
                 param.writeMemory.flags);
