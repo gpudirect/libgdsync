@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -43,6 +43,7 @@
 #include "archutils.h"
 #include "mlnxutils.h"
 #include "task_queue.hpp"
+#include "flusher.hpp"
 
 //-----------------------------------------------------------------------------
 
@@ -66,24 +67,6 @@ int gds_dbg_enabled()
         }
         return gds_dbg_is_enabled;
 }
-
-#if 0
-int gds_flusher_enabled()
-{
-    static int gds_flusher_is_enabled = -1;
-    if (-1 == gds_flusher_is_enabled) {
-        const char *env = getenv("GDS_ENABLE_FLUSHER");
-        if (env) {
-            int en = atoi(env);
-            gds_flusher_is_enabled = !!en;
-        } else
-            gds_flusher_is_enabled = 0;
-    
-        gds_warn("GDS_ENABLE_FLUSHER=%d\n", gds_flusher_is_enabled);
-    }
-    return gds_flusher_is_enabled;
-}
-#endif
 
 //-----------------------------------------------------------------------------
 // detect Async APIs
@@ -236,6 +219,22 @@ static bool gds_enable_dump_memops()
             gds_dbg("GDS_ENABLE_DUMP_MEMOPS=%d\n", gds_enable_dump_memops);
         }
         return gds_enable_dump_memops;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_enable_flusher()
+{
+    static int gds_enable_flusher = -1;
+    if (-1 == gds_enable_flusher) {
+        const char *env = getenv("GDS_ENABLE_FLUSHER");
+        if (env)
+            gds_enable_flusher = !!atoi(env);
+        else
+                gds_enable_flusher = 0; // disabled by default
+        gds_warn("GDS_ENABLE_FLUSHER=%d\n", gds_enable_flusher);
+    }
+    return gds_enable_flusher;
 }
 
 //-----------------------------------------------------------------------------
@@ -580,26 +579,15 @@ unsigned poll_checker::m_global_index = 0;
 
 //-----------------------------------------------------------------------------
 
-static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
+int gds_fill_poll_raw(gds_peer *peer, CUstreamBatchMemOpParams &param, CUdeviceptr ptr, uint32_t magic, int cond_flag)
 {
         int retcode = 0;
         const char *cond_str = NULL;
-        CUdeviceptr dev_ptr = ptr;
-        poll_checker *ck = NULL;
-
         assert(ptr);
         assert((((unsigned long)ptr) & 0x3) == 0);
 
-        // TODO: sanity check flags
-        bool need_flush = (flags & GDS_WAIT_POST_FLUSH_REMOTE) ? true : false;
-        if (!peer->has_remote_flush) {
-                need_flush=false;
-                gds_warn_once("RDMA consistency for pre-launched GPU work is not guaranteed at the moment\n");
-        }
-
-        CUstreamBatchMemOpParams param;
         param.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
-        param.waitValue.address = dev_ptr;
+        param.waitValue.address = ptr;
         param.waitValue.value = magic;
         switch(cond_flag) {
         case GDS_WAIT_COND_GEQ:
@@ -623,8 +611,6 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                         goto out;
                 }
                 param.waitValue.flags = CU_STREAM_WAIT_VALUE_NOR;
-                if (gds_enable_wait_checker())
-                        ck = new poll_checker();
 #else
                 gds_err("GDS_WAIT_COND_NOR requires CUDA 9.0 at least\n");
                 retcode = EINVAL;
@@ -637,23 +623,70 @@ static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, ui
                 goto out;
         }
 
-        if (need_flush)
-                param.waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
-
         gds_dbg("op=%d addr=%p value=%08x cond=%s flags=%08x\n",
                 param.operation,
                 (void*)param.waitValue.address,
                 param.waitValue.value,
                 cond_str,
                 param.waitValue.flags);
+out:
+        return retcode;
+}
 
-        if (ck)
-                ck->pre(peer, ops, ptr, magic, cond_flag);
-        ops.push_back(param);
-        if (ck) {
-                ck->post(peer, ops);
-                peer->tq->queue(std::bind(&poll_checker::run, ck));
+//-----------------------------------------------------------------------------
+
+static int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags)
+{
+        int retcode = 0;
+        poll_checker *ck = NULL;
+        bool use_flusher = false;
+        
+        // TODO: sanity check flags
+        bool need_flush = (flags & GDS_WAIT_POST_FLUSH_REMOTE) ? true : false;
+        
+        if (gds_enable_wait_checker() && cond_flag == GDS_WAIT_COND_NOR) {
+                ck = new (std::nothrow) poll_checker;
+                if (!ck) {
+                        retcode = ENOMEM;
+                        goto out;
+                }
         }
+
+        if (need_flush) {
+                if (!peer->has_remote_flush) {
+                        if (gds_enable_flusher()) {
+                                use_flusher = true;
+                        } else {
+                                gds_warn_once("RDMA consistency for pre-launched GPU work is not guaranteed at the moment\n");
+                        }
+                }
+        }
+
+
+        do {
+                if (ck)
+                        ck->pre(peer, ops, ptr, magic, cond_flag);
+                
+                if (use_flusher) {
+                        retcode = flusher::post_ops(peer, ops, ptr, magic, static_cast<gds_wait_cond_flag_t>(cond_flag));
+                        if (retcode)
+                                break;
+                } else {
+                        CUstreamBatchMemOpParams param;
+                        retcode = gds_fill_poll_raw(peer, param, ptr, magic, cond_flag);
+                        if (retcode)
+                                break;
+                        if (need_flush && peer->has_remote_flush)
+                                param.waitValue.flags |= CU_STREAM_WAIT_VALUE_FLUSH;
+                        ops.push_back(param);
+                }
+                
+                if (ck) {
+                        ck->post(peer, ops);
+                        peer->tq->queue(std::bind(&poll_checker::run, ck));
+                }
+        } while(false);
+
 out:
         return retcode;
 }
@@ -1485,6 +1518,7 @@ static bool gpu_registered[max_gpus];
 
 static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
 {
+        int retcode = 0;
         assert(peer);
 
         peer->gpu_id = gpu_id;
@@ -1533,11 +1567,33 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
         peer->attr.comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
         peer->attr.version = 1;
 
-        peer->tq = new task_queue;
+        peer->tq = new (std::nothrow)task_queue;
+        if (!peer->tq) {
+                retcode = ENOMEM;
+                gds_err("error while allocating task_queue\n");
+                goto out;
+        }
 
+        peer->gpu_page = NULL;
+        retcode = gds_peer_malloc(gpu_id, 0, &peer->gpu_page_h, &peer->gpu_page_d, GPU_PAGE_SIZE, &peer->gpu_page);
+        if (retcode) {
+                gds_err("error while allocating a GPU memory page\n");
+                goto out;
+        }
         gpu_registered[gpu_id] = true;
 
         gds_dbg("peer_attr: peer_id=%" PRIx64 "\n", peer->attr.peer_id);
+
+out:
+        if (retcode) {
+                delete peer->tq;
+                peer->tq = NULL;
+
+                if (peer->gpu_page) {
+                        gds_peer_mfree(gpu_id, 0, &peer->gpu_page_h, &peer->gpu_page_d, GPU_PAGE_SIZE, &peer->gpu_page);
+                        peer->gpu_page = NULL;
+                }
+        }
 }
 
 //-----------------------------------------------------------------------------

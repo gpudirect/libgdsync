@@ -213,6 +213,7 @@ int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &param, void *ptr, const void 
 int gds_fill_poke(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
 int gds_fill_poke64(gds_peer *peer, gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
 int gds_fill_poll(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
+int gds_fill_poll_raw(gds_peer *peer, CUstreamBatchMemOpParams &param, CUdeviceptr ptr, uint32_t magic, int cond_flag);
 
 int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params, int flags);
 
