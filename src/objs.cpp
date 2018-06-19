@@ -53,17 +53,21 @@ using namespace std;
 
 gds_buf *gds_peer::alloc(size_t sz, uint32_t alignment)
 {
+        int ret;
         // TODO: support alignment
         // TODO: handle exception here
-        gds_buf *buf = new gds_buf(this, sz);
-        if (!buf)
-                return buf;
-        int ret = gds_peer_malloc(gpu_id, 0, &buf->addr, &buf->peer_addr, buf->length, &buf->handle);
+        gds_buf *buf = new (std::nothrow) gds_buf(this, sz);
+        if (!buf) {
+                gds_err("error while allocating gds_buf\n");
+                goto out;
+        }
+        ret = gds_peer_malloc(gpu_id, 0, &buf->addr, &buf->peer_addr, buf->length, &buf->handle);
         if (ret) {
                 delete buf;
                 buf = NULL;
                 gds_err("error allocating GPU mapped memory\n");
         }
+out:
         return buf;
 }
 
@@ -148,7 +152,11 @@ void gds_peer::free(gds_buf *buf)
 // buf is a GPU mem buffer, which has a CPU mapping thanks to GDRcopy
 gds_range *gds_peer::range_from_buf(gds_buf *buf, void *start, size_t length)
 {
-        gds_range *range = new gds_range;
+        gds_range *range = new (std::nothrow) gds_range;
+        if (!range) {
+                gds_err("error while allocating range\n");
+                goto out;
+        }
         gds_dbg("buf=%p\n", buf);
         assert((ptrdiff_t)start >= (ptrdiff_t)buf->addr && 
                (ptrdiff_t)start + length <= (ptrdiff_t)buf->addr + buf->length);
@@ -157,6 +165,7 @@ gds_range *gds_peer::range_from_buf(gds_buf *buf, void *start, size_t length)
         range->size = length;
         range->buf = buf;
         range->type = GDS_MEMORY_GPU;
+out:
         return range;
 }
 
@@ -173,15 +182,18 @@ gds_range *gds_peer::register_range(void *start, size_t length, int flags)
                 gds_err("got %d while registering range [%p,%p]\n", ret, start, (char*)start+length-1);
                 goto out;
         }
-        range = new gds_range;
-        assert(range);
+        range = new (std::nothrow) gds_range;
+        if (!range) {
+                gds_err("error while allocating range\n");
+                goto out;
+        }
+        gds_dbg("range=%p\n", range);
         range->va = start;
         range->dptr = dev_ptr;
         range->size = length;
         range->buf = NULL;
         range->type = mem_type;
 out:
-        gds_dbg("range=%p\n", range);
         return range;
 }
 
@@ -197,3 +209,12 @@ void gds_peer::unregister(gds_range *range)
         }
         delete range;
 }
+
+/*
+ * Local variables:
+ *  c-indent-level: 8
+ *  c-basic-offset: 8
+ *  tab-width: 8
+ *  indent-tabs-mode: nil
+ * End:
+ */
