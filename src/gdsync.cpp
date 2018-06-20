@@ -89,7 +89,7 @@ int gds_flusher_enabled()
 // detect Async APIs
 
 #if !HAVE_DECL_CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING
-#define CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING 0x1
+#define CU_STREAM_BATCH_MEM_OP_RELAXED_ORDERING (1<<30)
 #endif
 
 // TODO: use correct value
