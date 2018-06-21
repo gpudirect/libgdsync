@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+
 #include <inttypes.h>
 
 //#include <map>
@@ -51,7 +52,6 @@
 #include "utils.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
-
 
 //-----------------------------------------------------------------------------
 
@@ -202,16 +202,21 @@ out:
 }
 
 //Extended send
+//#define ntohll(x) (((uint64_t) ntohl(x)) << 32) + ntohl(x >> 32)
+//#define ntohll(x) (((uint64_t)(ntohl((int)((x << 32) >> 32))) << 32) |  (uint32_t)ntohl(((int)(x >> 32))))
 int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr, 
-                     gds_send_wr **bad_ewr, 
-                     gds_send_request_t *request)
+                    gds_send_wr **bad_ewr, 
+                    gds_send_request_t *request)
 {
         int ret = 0;
+        struct ibv_qp_swr_info swr_info;
+        memset(&swr_info, 0, sizeof(struct ibv_qp_swr_info));
+
         gds_init_send_info(request);
         assert(qp);
         assert(qp->qp);
 
-        fprintf(stdout, "===> Sending wr %lx with addr=%lx and size=%d...\n\n", 
+        gds_err("===> Sending wr %lx with addr=%lx and size=%d...\n\n", 
                         p_ewr->wr_id, (uintptr_t)p_ewr->sg_list[0].addr, (int)p_ewr->sg_list[0].length);
 
         ret = ibv_exp_post_send_info(qp->qp, p_ewr, bad_ewr);
@@ -224,14 +229,6 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
                 }
                 goto out;
         }
-        
-        fprintf(stdout, "\n===> Querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
-        ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id);
-        if(ret)
-        {
-            fprintf(stderr, "ibv_exp_post_send_info returned error %d, %s\n", ret, strerror(ret));
-            return ret;
-        }
 
         ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
         if (ret) {
@@ -239,14 +236,37 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
                 //gds_wait_kernel();
                 goto out;
         }
-        fprintf(stdout, "\n===> After commit, querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
-        ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id);
+
+        
+        gds_err("\n===> After commit, querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
+        ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &swr_info);
         if(ret)
         {
-            fprintf(stderr, "ibv_exp_post_send_info returned error %d, %s\n", ret, strerror(ret));
-            return ret;
+            fprintf(stderr, "ibv_exp_post_send_info returned %d: %s\n", ret, strerror(ret));
+            goto out;
         }
 
+        gds_err("ptr_to_size=%lx, val_size=%x - offset=%x\n", 
+                swr_info.ptr_to_size,
+                swr_info.val_size,
+                swr_info.val_size + swr_info.offset
+        );
+            
+        gds_err("ptr_to_addr=%lx, val_addr=%lx - offset=%lx\n", 
+                swr_info.ptr_to_addr,
+                swr_info.val_addr,
+                swr_info.val_addr - swr_info.offset
+        );
+
+        gds_err("\n===> Querying again wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
+        ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &swr_info);
+        if(ret)
+        {
+            fprintf(stderr, "ibv_exp_post_send_info returned %d: %s\n", ret, strerror(ret));
+            goto out;
+        }
+
+        gds_err("should not print this line!!\n");
 out:
         return ret;
 }
