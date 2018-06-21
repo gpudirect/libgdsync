@@ -209,7 +209,8 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
                     gds_send_wr **bad_ewr, 
                     gds_send_request_t *request)
 {
-        int ret = 0;
+        int ret = 0, retcode = 0;
+        CUdeviceptr dev_ptr, dev_A;
         struct ibv_qp_swr_info swr_info;
         memset(&swr_info, 0, sizeof(struct ibv_qp_swr_info));
 
@@ -277,16 +278,15 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
 #endif
 
 #if 1
-        CUdeviceptr dev_ptr, dev_A;
-        int retcode = gds_map_mem((void*)swr_info.ptr_to_size, sizeof(uint32_t), GDS_MEMORY_IO, &dev_ptr);
+        retcode = gds_map_mem((uint32_t*)swr_info.ptr_to_size, sizeof(uint32_t), GDS_MEMORY_HOST /* IO */, &dev_ptr);
         if (retcode) {
-                gds_err("error %d while looking up %p\n", retcode, ptr);
+                gds_err("error %d while looking up %p\n", retcode, (void*)swr_info.ptr_to_size);
                 goto out;
         }
 
-        CUCHECK(cuMemAlloc(&d_A, 1*sizeof(uint32_t)));
-        CUCHECK(cuMemsetD32Async(d_A, 1024, 1, 0));
-        CUCHECK(cuMemcpyAsync(dev_ptr, d_A, sizeof(uint32_t), 0));
+        CUCHECK(cuMemAlloc(&dev_A, 1*sizeof(uint32_t)));
+        CUCHECK(cuMemsetD32Async(dev_A, htonl(1024 - swr_info.offset), 1, 0));
+        CUCHECK(cuMemcpyAsync(dev_ptr, dev_A, sizeof(uint32_t), 0));
         cuStreamSynchronize(0);
 #endif
         gds_err("After memcpy ptr_to_size=%lx, ptr_to_size_value=%x\n", 
