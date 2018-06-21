@@ -218,7 +218,7 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
         assert(qp);
         assert(qp->qp);
 
-        p_ewr->sg_list[0].length=512;
+        p_ewr->sg_list[0].length=(p_ewr->sg_list[0].length*2);
         gds_err("===> Sending modified wr %lx with addr=%lx and size=%d...\n\n", 
                     p_ewr->wr_id, 
                     (uintptr_t)p_ewr->sg_list[0].addr, 
