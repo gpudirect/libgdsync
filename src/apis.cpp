@@ -201,6 +201,57 @@ out:
         return ret;
 }
 
+//Extended send
+int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr, 
+                     gds_send_wr **bad_ewr, 
+                     gds_send_request_t *request)
+{
+        int ret = 0;
+        gds_init_send_info(request);
+        assert(qp);
+        assert(qp->qp);
+
+        fprintf(stdout, "===> Sending wr %lx with addr=%lx and size=%d...\n\n", 
+                        p_ewr->wr_id, (uintptr_t)p_ewr->sg_list[0].addr, (int)p_ewr->sg_list[0].length);
+
+        ret = ibv_exp_post_send_info(qp->qp, p_ewr, bad_ewr);
+        if (ret) {
+                if (ret == ENOMEM) {
+                        // out of space error can happen too often to report
+                        gds_dbg("ENOMEM error %d in ibv_exp_post_send\n", ret);
+                } else {
+                        gds_err("error %d in ibv_exp_post_send\n", ret);
+                }
+                goto out;
+        }
+        
+        fprintf(stdout, "\n===> Querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
+        ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id);
+        if(ret)
+        {
+            fprintf(stderr, "ibv_exp_post_send_info returned error %d, %s\n", ret, strerror(ret));
+            return ret;
+        }
+
+        ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
+        if (ret) {
+                gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
+                //gds_wait_kernel();
+                goto out;
+        }
+        fprintf(stdout, "\n===> After commit, querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
+        ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id);
+        if(ret)
+        {
+            fprintf(stderr, "ibv_exp_post_send_info returned error %d, %s\n", ret, strerror(ret));
+            return ret;
+        }
+
+out:
+        return ret;
+}
+
+
 //-----------------------------------------------------------------------------
 
 int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
