@@ -33,6 +33,7 @@
 #include <string.h>
 #include <assert.h>
 
+#include <arpa/inet.h>
 #include <inttypes.h>
 
 //#include <map>
@@ -216,8 +217,12 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
         assert(qp);
         assert(qp->qp);
 
-        gds_err("===> Sending wr %lx with addr=%lx and size=%d...\n\n", 
-                        p_ewr->wr_id, (uintptr_t)p_ewr->sg_list[0].addr, (int)p_ewr->sg_list[0].length);
+        p_ewr->sg_list[0].length=512;
+        gds_err("===> Sending modified wr %lx with addr=%lx and size=%d...\n\n", 
+                    p_ewr->wr_id, 
+                    (uintptr_t)p_ewr->sg_list[0].addr, 
+                    (int)p_ewr->sg_list[0].length
+        );
 
         ret = ibv_exp_post_send_info(qp->qp, p_ewr, bad_ewr);
         if (ret) {
@@ -262,11 +267,24 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
         ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &swr_info);
         if(ret)
         {
-            fprintf(stderr, "ibv_exp_post_send_info returned %d: %s\n", ret, strerror(ret));
-            goto out;
+            gds_err("CORRECT! ibv_exp_post_send_info returned %d: %s\n", ret, strerror(ret));
+            ret=0;
         }
 
-        gds_err("should not print this line!!\n");
+        //Changing size
+        ((uint32_t*)swr_info.ptr_to_size)[0]=htonl(1024 - swr_info.offset);
+#if 0
+        CUdeviceptr d_A;
+        CUCHECK(cuMemAlloc(&d_A, 1*sizeof(uint32_t)));
+        CUCHECK(cuMemsetD32Async(d_A, 1024, 1, 0));
+        CUCHECK(cuMemcpyAsync(((uint32_t*)swr_info.ptr_to_size), d_A, sizeof(uint32_t), 0));
+        cuStreamSynchronize(0);
+#endif
+        gds_err("After memcpy ptr_to_size=%lx, ptr_to_size_value=%x\n", 
+                swr_info.ptr_to_size,
+                ((uint32_t*)swr_info.ptr_to_size)[0]
+        );
+
 out:
         return ret;
 }
