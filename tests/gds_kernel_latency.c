@@ -114,6 +114,7 @@ int gds_enable_event_prof = 0;
 int gds_qpt = IBV_QPT_UD; //UD by default
 int max_batch_len = 20;
 int stream_cb_error = 0;
+int exp_send_info = 0;
 
 struct pingpong_context {
 	struct ibv_context	*context;
@@ -596,6 +597,10 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		memset(&ewr, 0, sizeof(ewr));
 		ewr.num_sge = 1;
 		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
+
+		if( exp_send_info == 1 )
+			ewr.exp_send_flags = IBV_EXP_SEND_GET_INFO;
+
 		ewr.exp_opcode = IBV_EXP_WR_SEND;
 		ewr.wr_id = PINGPONG_SEND_WRID;
 		ewr.sg_list = &list;
@@ -892,6 +897,9 @@ static void usage(const char *argv0)
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
 	printf("  -E, --gpu-mem             allocate GPU intead of CPU memory buffers\n");
 	printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
+	printf("  -I, --send-info	    modify send info after CPU posting\n");
+
+
 }
 
 int main(int argc, char *argv[])
@@ -959,28 +967,29 @@ int main(int argc, char *argv[])
 		int c;
 
 		static struct option long_options[] = {
-			{ .name = "port",     .has_arg = 1, .val = 'p' },
-			{ .name = "ib-dev",   .has_arg = 1, .val = 'd' },
-			{ .name = "ib-port",  .has_arg = 1, .val = 'i' },
-			{ .name = "size",     .has_arg = 1, .val = 's' },
-			{ .name = "rx-depth", .has_arg = 1, .val = 'r' },
-			{ .name = "iters",    .has_arg = 1, .val = 'n' },
-			{ .name = "sl",       .has_arg = 1, .val = 'l' },
-			{ .name = "events",   .has_arg = 0, .val = 'e' },
-			{ .name = "gid-idx",  .has_arg = 1, .val = 'g' },
-			{ .name = "gpu-id",          .has_arg = 1, .val = 'G' },
-			{ .name = "peersync",        .has_arg = 0, .val = 'P' },
-			{ .name = "peersync-gpu-cq", .has_arg = 0, .val = 'C' },
+			{ .name = "port",     		.has_arg = 1, .val = 'p' },
+			{ .name = "ib-dev",   		.has_arg = 1, .val = 'd' },
+			{ .name = "ib-port",  		.has_arg = 1, .val = 'i' },
+			{ .name = "size",     		.has_arg = 1, .val = 's' },
+			{ .name = "rx-depth", 		.has_arg = 1, .val = 'r' },
+			{ .name = "iters",    		.has_arg = 1, .val = 'n' },
+			{ .name = "sl",       		.has_arg = 1, .val = 'l' },
+			{ .name = "events",   		.has_arg = 0, .val = 'e' },
+			{ .name = "gid-idx",  		.has_arg = 1, .val = 'g' },
+			{ .name = "gpu-id",          	.has_arg = 1, .val = 'G' },
+			{ .name = "peersync",        	.has_arg = 0, .val = 'P' },
+			{ .name = "peersync-gpu-cq", 	.has_arg = 0, .val = 'C' },
 			{ .name = "peersync-gpu-dbrec", .has_arg = 1, .val = 'D' },
                         { .name = "peersync-desc-apis", .has_arg = 0, .val = 'U' },
-			{ .name = "gpu-calc-size",   .has_arg = 1, .val = 'S' },
-			{ .name = "batch-length",    .has_arg = 1, .val = 'B' },
-			{ .name = "consume-rx-cqe",  .has_arg = 0, .val = 'Q' },
-			{ .name = "time-gds-ops",  .has_arg = 0, .val = 'T' },
-			{ .name = "qp-kind",          .has_arg = 1, .val = 'k' },
-			{ .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
-			{ .name = "gpu-mem",         .has_arg = 0, .val = 'E' },
+			{ .name = "gpu-calc-size",   	.has_arg = 1, .val = 'S' },
+			{ .name = "batch-length",    	.has_arg = 1, .val = 'B' },
+			{ .name = "consume-rx-cqe",  	.has_arg = 0, .val = 'Q' },
+			{ .name = "time-gds-ops",  	.has_arg = 0, .val = 'T' },
+			{ .name = "qp-kind",         	.has_arg = 1, .val = 'k' },
+			{ .name = "gpu-sched-mode",  	.has_arg = 1, .val = 'M' },
+			{ .name = "gpu-mem",         	.has_arg = 0, .val = 'E' },
 			{ .name = "skip-kernel-launch", .has_arg = 0, .val = 'K' },
+			{ .name = "send-info", 		.has_arg = 0, .val = 'I' },
 			{ 0 }
 		};
 
@@ -1109,6 +1118,11 @@ int main(int argc, char *argv[])
                 case 'K':
                         skip_kernel_launch = 1;
                         printf("INFO: skip_kernel_launch=%d\n", skip_kernel_launch);
+                        break;
+
+                case 'I':
+                	exp_send_info = 1;
+                        printf("INFO: modify send info after CPU posting=%d\n", exp_send_info);
                         break;
 
 		default:
