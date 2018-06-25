@@ -176,7 +176,10 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                      gds_send_wr **bad_ewr, 
                      gds_send_request_t *request)
 {
-        int ret = 0;
+        int ret = 0, retcode = 0;
+        CUdeviceptr dev_ptr, dev_A;
+        struct ibv_qp_swr_info swr_info; //metti dentro gds_send_request_t
+        
         bool get_info=false;
         gds_init_send_info(request);
         assert(qp);
@@ -192,6 +195,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                         (uintptr_t)p_ewr->sg_list[0].addr, 
                         (int)p_ewr->sg_list[0].length
             );
+            memset(&swr_info, 0, sizeof(struct ibv_qp_swr_info));
         }
 
         ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
