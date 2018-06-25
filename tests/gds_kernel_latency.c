@@ -114,7 +114,6 @@ int gds_enable_event_prof = 0;
 int gds_qpt = IBV_QPT_UD; //UD by default
 int max_batch_len = 20;
 int stream_cb_error = 0;
-int exp_send_info = 0;
 
 struct pingpong_context {
 	struct ibv_context	*context;
@@ -147,6 +146,7 @@ struct pingpong_context {
         int                      scnt;
         int                      rcnt;
         int                      skip_kernel_launch;
+        int                      exp_send_info;
 };
 
 static int my_rank, comm_size;
@@ -175,7 +175,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                             int sched_mode,
                                             int use_gpumem,
                                             int use_desc_apis,
-                                            int skip_kernel_launch)
+                                            int skip_kernel_launch,
+                                            int exp_send_info)
 {
 	struct pingpong_context *ctx;
 
@@ -195,6 +196,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         ctx->gpumem   = use_gpumem;
         ctx->use_desc_apis = use_desc_apis;
         ctx->skip_kernel_launch = skip_kernel_launch;
+        ctx->exp_send_info = exp_send_info;
 
         size_t alloc_size = 3 * align_to(size + 40, page_size);
 	if (ctx->gpumem) {
@@ -597,15 +599,15 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		memset(&ewr, 0, sizeof(ewr));
 		ewr.num_sge = 1;
 		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-
-		if( exp_send_info == 1 )
-			ewr.exp_send_flags = IBV_EXP_SEND_GET_INFO;
-
 		ewr.exp_opcode = IBV_EXP_WR_SEND;
 		ewr.wr_id = PINGPONG_SEND_WRID;
 		ewr.sg_list = &list;
 		ewr.next = NULL;
 	}
+	
+	if( ctx->exp_send_info == 1 )
+		ewr.exp_send_flags |= IBV_EXP_SEND_GET_INFO;
+
 	gds_send_wr *bad_ewr;
         return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
 }
@@ -937,6 +939,7 @@ int main(int argc, char *argv[])
         int                      use_gpumem = 0;
         int                      use_desc_apis = 0;
         int                      skip_kernel_launch = 0;
+        int                      exp_send_info = 0;
 
         MPI_CHECK(MPI_Init(&argc, &argv));
         MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &comm_size));
@@ -1215,7 +1218,7 @@ int main(int argc, char *argv[])
                 }
         }
         printf("[%d] use gpumem: %d\n", my_rank, use_gpumem);
-	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis, skip_kernel_launch);
+	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis, skip_kernel_launch, exp_send_info);
 	if (!ctx)
 		return 1;
 
