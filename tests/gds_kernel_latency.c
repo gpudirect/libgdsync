@@ -993,7 +993,7 @@ int main(int argc, char *argv[])
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:k:S:B:PCDQTM:EUK", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:k:S:B:PCDQTM:EUKI", long_options, NULL);
 		if (c == -1)
 			break;
 
