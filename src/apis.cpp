@@ -177,9 +177,23 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                      gds_send_request_t *request)
 {
         int ret = 0;
+        bool get_info=false;
         gds_init_send_info(request);
         assert(qp);
         assert(qp->qp);
+
+        if(p_ewr->exp_send_flags & IBV_EXP_SEND_GET_INFO)
+        {
+            get_info=true;
+            gds_err("IBV_EXP_SEND_GET_INFO flag enabled!\n");
+            p_ewr->sg_list[0].length=(p_ewr->sg_list[0].length*2);
+            gds_err("===> Sending modified wr %lx with addr=%lx and size=%d...\n\n", 
+                        p_ewr->wr_id, 
+                        (uintptr_t)p_ewr->sg_list[0].addr, 
+                        (int)p_ewr->sg_list[0].length
+            );
+        }
+
         ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
         if (ret) {
 
@@ -191,6 +205,30 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                 }
                 goto out;
         }
+    
+        if(get_info)
+        {
+            gds_err("\n===> After commit, querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
+            ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &swr_info);
+            if(ret)
+            {
+                fprintf(stderr, "ibv_exp_post_send_info returned %d: %s\n", ret, strerror(ret));
+                goto out;
+            }
+
+            gds_err("ptr_to_size=%lx, val_size=%x - offset=%x\n", 
+                swr_info.ptr_to_size,
+                swr_info.val_size,
+                swr_info.val_size + swr_info.offset
+            );
+
+            gds_err("ptr_to_addr=%lx, val_addr=%lx - offset=%lx\n", 
+                    swr_info.ptr_to_addr,
+                    swr_info.val_addr,
+                    swr_info.val_addr - swr_info.offset
+            );
+
+        }
         
         ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
         if (ret) {
@@ -198,10 +236,34 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                 //gds_wait_kernel();
                 goto out;
         }
+
+        #if 0
+        //Changing size
+        ((uint32_t*)swr_info.ptr_to_size)[0]=htonl(p_ewr->sg_list[0].length - swr_info.offset);
+#endif
+
+#if 1
+        retcode = gds_map_mem((uint32_t*)swr_info.ptr_to_size, sizeof(uint32_t), GDS_MEMORY_HOST /* IO */, &dev_ptr);
+        if (retcode) {
+                gds_err("error %d while looking up %p\n", retcode, (void*)swr_info.ptr_to_size);
+                goto out;
+        }
+
+        CUCHECK(cuMemAlloc(&dev_A, 1*sizeof(uint32_t)));
+        CUCHECK(cuMemsetD32Async(dev_A, htonl(p_ewr->sg_list[0].length - swr_info.offset), 1, 0));
+        CUCHECK(cuMemcpyAsync(dev_ptr, dev_A, sizeof(uint32_t), 0));
+        cuStreamSynchronize(0);
+#endif
+        gds_err("After memcpy ptr_to_size=%lx, ptr_to_size_value=%x\n", 
+                swr_info.ptr_to_size,
+                ((uint32_t*)swr_info.ptr_to_size)[0]
+        );
+
 out:
         return ret;
 }
 
+#if 0
 //Extended send
 //#define ntohll(x) (((uint64_t) ntohl(x)) << 32) + ntohl(x >> 32)
 //#define ntohll(x) (((uint64_t)(ntohl((int)((x << 32) >> 32))) << 32) |  (uint32_t)ntohl(((int)(x >> 32))))
@@ -211,7 +273,7 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
 {
         int ret = 0, retcode = 0;
         CUdeviceptr dev_ptr, dev_A;
-        struct ibv_qp_swr_info swr_info;
+        struct ibv_qp_swr_info swr_info; //metti dentro gds_send_request_t
         memset(&swr_info, 0, sizeof(struct ibv_qp_swr_info));
 
         gds_init_send_info(request);
@@ -236,13 +298,6 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
                 goto out;
         }
 
-        ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
-        if (ret) {
-                gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
-                //gds_wait_kernel();
-                goto out;
-        }
-
         
         gds_err("\n===> After commit, querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
         ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &swr_info);
@@ -252,12 +307,19 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
             goto out;
         }
 
+        ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
+        if (ret) {
+                gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
+                //gds_wait_kernel();
+                goto out;
+        }
+
         gds_err("ptr_to_size=%lx, val_size=%x - offset=%x\n", 
                 swr_info.ptr_to_size,
                 swr_info.val_size,
                 swr_info.val_size + swr_info.offset
         );
-            
+
         gds_err("ptr_to_addr=%lx, val_addr=%lx - offset=%lx\n", 
                 swr_info.ptr_to_addr,
                 swr_info.val_addr,
@@ -274,7 +336,7 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
 
 #if 0
         //Changing size
-        ((uint32_t*)swr_info.ptr_to_size)[0]=htonl(1024 - swr_info.offset);
+        ((uint32_t*)swr_info.ptr_to_size)[0]=htonl(p_ewr->sg_list[0].length - swr_info.offset);
 #endif
 
 #if 1
@@ -285,7 +347,7 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
         }
 
         CUCHECK(cuMemAlloc(&dev_A, 1*sizeof(uint32_t)));
-        CUCHECK(cuMemsetD32Async(dev_A, htonl(1024 - swr_info.offset), 1, 0));
+        CUCHECK(cuMemsetD32Async(dev_A, htonl(p_ewr->sg_list[0].length - swr_info.offset), 1, 0));
         CUCHECK(cuMemcpyAsync(dev_ptr, dev_A, sizeof(uint32_t), 0));
         cuStreamSynchronize(0);
 #endif
@@ -297,7 +359,7 @@ int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr,
 out:
         return ret;
 }
-
+#endif
 
 //-----------------------------------------------------------------------------
 
