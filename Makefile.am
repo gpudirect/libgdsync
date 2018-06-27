@@ -23,7 +23,7 @@ libgdsyncincludedir = $(includedir)/gdsync
 libgdsyncinclude_HEADERS = include/gdsync/core.h include/gdsync/device.cuh  include/gdsync/mlx5.h include/gdsync/tools.h
 
 src_libgdsync_la_CFLAGS = $(AM_CFLAGS)
-src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp include/gdsync.h 
+src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp src/gdsync_kernels.cu include/gdsync.h 
 src_libgdsync_la_LDFLAGS = -version-info 2:0:1
 
 noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/utils.hpp src/archutils.h src/mlnxutils.h
@@ -53,6 +53,7 @@ tests_gds_sanity_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrap
 tests_gds_kernel_loopback_latency_SOURCES = tests/gds_kernel_loopback_latency.c tests/pingpong.c tests/gpu.cpp tests/gpu_kernels.cu
 tests_gds_kernel_loopback_latency_LDADD = $(top_builddir)/src/libgdsync.la $(LIBGDSTOOLS) -lgdrapi $(LIBNVTX) -lcuda -lcudart $(PTHREAD_LIBS)
 
+endif
 
 SUFFIXES= .cu
 
@@ -61,6 +62,4 @@ SUFFIXES= .cu
 
 
 .cu.lo:
-	$(LIBTOOL) --tag=CC --mode=compile $(NVCC) -o $@ -c $< $(CPPFLAGS) $(AM_CPPFLAGS) $(NVCCFLAGS)
-
-endif
+	$(LIBTOOL) --tag=CXX --mode=compile $(top_srcdir)/cudalt $(NVCC) --resource-usage -o $@ -c $< $(CPPFLAGS) $(AM_CPPFLAGS) $(NVCCFLAGS)

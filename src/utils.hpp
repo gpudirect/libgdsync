@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <sys/types.h>
+#include <unistd.h>
 #ifndef __STDC_FORMAT_MACROS
 #warning "__STDC_FORMAT_MACROS should be defined to pull definition of PRIx64, etc"
 #endif
@@ -219,6 +221,7 @@ struct gds_peer;
 int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
 int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
+int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &params);
 
 //-----------------------------------------------------------------------------
 
