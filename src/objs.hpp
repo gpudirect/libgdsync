@@ -55,13 +55,11 @@ struct gds_range {
 
 static inline uint64_t range_to_id(gds_range *range)
 {
-        assert(range);
         return reinterpret_cast<uint64_t>(range);
 }
 
 static inline gds_range *range_from_id(uint64_t id)
 {
-        assert(id);
         return reinterpret_cast<gds_range *>(id);
 }
 
@@ -83,7 +81,7 @@ struct gds_peer {
         task_queue *tq;
 
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
-        // This field works as a ugly run-time parameters passing
+        // This field works as an ugly run-time parameters passing
         // mechanism, as it carries tracking info during the QP creation
         // phase, so no more than one outstanding call per peer is
         // supported.  In practice, before calling ibv_exp_create_cq(), we
@@ -107,13 +105,11 @@ struct gds_peer {
 
 static inline uint64_t peer_to_id(gds_peer *peer)
 {
-        assert(peer);
         return reinterpret_cast<uint64_t>(peer);
 }
 
 static inline gds_peer *peer_from_id(uint64_t id)
 {
-        assert(id);
         return reinterpret_cast<gds_peer *>(id);
 }
 
