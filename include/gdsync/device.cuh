@@ -29,6 +29,10 @@
 
 #include <gdsync.h> // for gds_poll_cond_flag_t
 
+#ifndef GDS_DEVICE_ASSERT
+#define GDS_DEVICE_ASSERT(C) { /* C */ }
+#endif
+
 #ifdef  __cplusplus
 
 namespace gdsync {
@@ -85,7 +89,7 @@ namespace gdsync {
         // NOTE: fences must be added by caller
         template<typename S> __device__ inline void release(S &sem) {
             //printf("[%d:%d] release %p=%08x\n", blockIdx.x, threadIdx.x, sem.access_once(), sem.value);
-            assert(0 != sem.access_once());
+            GDS_DEVICE_ASSERT(0 != sem.access_once());
             *sem.access_once() = sem.value;
         }
 
