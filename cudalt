@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+# dirty hack to prefix -fPIC with NVCC -Xcompiler option
+#
+exe=$1
+shift 1
+params=
+
+for opt in "$@"; do
+    params+="${opt//-fPIC/-Xcompiler -fPIC } "
+done
+
+#echo $exe $params
+exec $exe $params
