@@ -572,6 +572,19 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
         return ret;
 }
 
+static bool gds_can_use_opt_kernel(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem_ops)
+{
+        size_t i;
+        gds_tag_t tags[] = { GDS_TAG_SEND, GDS_TAG_WAIT, GDS_TAG_WAIT };
+        for(i = 0; i < n_descs; ++i) {
+                gds_descriptor_t *desc = descs + i;
+                if ((i >= sizeof(tags)/sizeof(tags[0])) || (desc->tag != tags[i])) {
+                        return false;
+                }
+        }
+        return true;
+}
+
 int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_t *descs, int flags)
 {
         size_t i;
@@ -584,7 +597,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         bool move_flush = false;
         gds_peer *peer = NULL;
         gds_op_list_t params;
-
+        bool use_opt = false;
 
         ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
         if (ret) {
@@ -606,6 +619,8 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 move_flush = true;
         }
         // alternatively, remove flush for wait is next op is a wait too
+
+        use_opt = gds_can_use_opt_kernel(n_descs, descs, n_mem_ops);
 
         peer = peer_from_stream(stream);
         if (!peer) {
@@ -671,7 +686,12 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 }
         }
-        retcode = gds_stream_batch_ops(peer, stream, params, 0);
+
+        if (use_opt)
+                retcode = gds_launch_1QPSend_2CQWait(peer, stream, params);
+        else
+                retcode = gds_stream_batch_ops(peer, stream, params, 0);
+
         if (retcode) {
                 gds_err("error %d in gds_stream_batch_ops\n", retcode);
                 ret = retcode;
