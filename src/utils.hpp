@@ -238,7 +238,10 @@ gds_peer *peer_from_stream(CUstream stream);
 
 CUfunction gds_load_kernel(int arch_major, int arch_minor, const char *kernel_name, bool force_fatbin = 0);
 int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &params);
-
+int gds_launch_update_send_params(
+        CUdeviceptr ptr_to_size_wqe, CUdeviceptr ptr_to_size_new,
+        CUdeviceptr ptr_to_addr_wqe, CUdeviceptr ptr_to_addr_new,
+        CUstream stream);
 //-----------------------------------------------------------------------------
 
 /*

@@ -124,23 +124,25 @@ out:
         return ret;
 }
 
-#include <arpa/inet.h>
-#define ntohll(x) (((uint64_t)(ntohl((int)((x << 32) >> 32))) << 32) |  (uint32_t)ntohl(((int)(x >> 32))))
+//-----------------------------------------------------------------------------
 
-static void gds_dump_swr(struct ibv_qp_swr_info swr_info)
+#define ntohll(x) (((uint64_t)(ntohl((int)((x << 32) >> 32))) << 32) |  (uint32_t)ntohl(((int)(x >> 32))))
+static void gds_dump_swr(const char * func_name, struct ibv_qp_swr_info swr_info)
 {
-    gds_err("wr_id=%lx, num_sge=%d\n", swr_info.wr_id, swr_info.num_sge);
+    gds_dbg("[%s] wr_id=%lx, num_sge=%d\n", func_name, swr_info.wr_id, swr_info.num_sge);
 
     for(int j=0; j < swr_info.num_sge; j++)
     {
-        gds_err("\tSGE=%d, Size ptr=%lx, Size=%d (%x), +offset=%d\n", 
+        gds_dbg("[%s]    SGE=%d, Size ptr=0x%08x, Size=%d (0x%08x), +offset=%d\n", 
+            func_name,
             j,
             (uintptr_t)swr_info.sge_list[j].ptr_to_size, 
             (uint32_t) ntohl( ((uint32_t*)swr_info.sge_list[j].ptr_to_size)[0]) ,
             (uint32_t) ((uint32_t*)swr_info.sge_list[j].ptr_to_size)[0],
             ((uint32_t) ntohl( ((uint32_t*)swr_info.sge_list[j].ptr_to_size)[0]) ) + swr_info.sge_list[j].offset );
 
-        gds_err("\tSGE=%d, Addr ptr=%lx, Addr=%lx -offset=%lx\n", 
+        gds_dbg("[%s]    SGE=%d, Addr ptr=%lx, Addr=%lx -offset=%lx\n", 
+            func_name,
             j,
             (uintptr_t)swr_info.sge_list[j].ptr_to_addr, 
             (uintptr_t)ntohll(((uint64_t*)swr_info.sge_list[j].ptr_to_addr)[0]),
@@ -200,11 +202,9 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                      gds_send_wr **bad_ewr, 
                      gds_send_request_t *request)
 {
-        int ret = 0, retcode = 0;
-        CUdeviceptr dev_ptr, dev_A;
-        struct ibv_qp_swr_info swr_info; //metti dentro gds_send_request_t
-        
+        int ret = 0;
         bool get_info=false;
+
         gds_init_send_info(request);
         assert(qp);
         assert(qp->qp);
@@ -214,13 +214,12 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
 
         if(get_info)
         {
-            p_ewr->sg_list[0].length=(p_ewr->sg_list[0].length*2);
-            gds_err("===> Sending modified wr %lx with addr=%lx and size=%d...\n\n", 
+            gds_dbg("Sending wr %lx with addr=%lx and length=%d...\n", 
                         p_ewr->wr_id, 
                         (uintptr_t)p_ewr->sg_list[0].addr, 
                         (int)p_ewr->sg_list[0].length
             );
-            memset(&swr_info, 0, sizeof(struct ibv_qp_swr_info));
+            memset(&(request->gds_sinfo.swr_info), 0, sizeof(struct ibv_qp_swr_info));
         }
 
         ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
@@ -236,17 +235,16 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
     
         if(get_info)
         {
-            gds_err("===> Before commit, querying wr %lx with ibv_exp_query_send_info...\n\n", p_ewr->wr_id);
-            ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &swr_info);
+            ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &(request->gds_sinfo.swr_info));
             if(ret)
             {
                 fprintf(stderr, "ibv_exp_post_send_info returned %d: %s\n", ret, strerror(ret));
                 goto out;
             }
 
-            gds_dump_swr(swr_info);
+            gds_dump_swr("gds_prepare_send", request->gds_sinfo.swr_info);
         }
-        
+
         ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
         if (ret) {
                 gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
@@ -254,34 +252,145 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                 goto out;
         }
 
-        if(get_info)
-        {
-            #if 0
-                //Changing size
-                ((uint32_t*)swr_info.ptr_to_size)[0]=htonl(p_ewr->sg_list[0].length - swr_info.offset);
-            #endif
-
-            #if 1
-                retcode = gds_map_mem((uint32_t*)swr_info.sge_list[0].ptr_to_size, sizeof(uint32_t), GDS_MEMORY_HOST /* IO */, &dev_ptr);
-                if (retcode) {
-                        gds_err("error %d while looking up %p\n", retcode, (void*)swr_info.sge_list[0].ptr_to_size);
-                        goto out;
-                }
-
-                CUCHECK(cuMemAlloc(&dev_A, 1*sizeof(uint32_t)));
-                CUCHECK(cuMemsetD32Async(dev_A, htonl((p_ewr->sg_list[0].length/2) - swr_info.sge_list[0].offset), 1, 0));
-                CUCHECK(cuMemcpyAsync(dev_ptr, dev_A, sizeof(uint32_t), 0));
-                cuStreamSynchronize(0);
-            #endif
-
-            gds_err("===> After memcpy ptr_to_size=%lx, ptr_to_size_value=%x\n", 
-                    swr_info.sge_list[0].ptr_to_size,
-                    ((uint32_t*)swr_info.sge_list[0].ptr_to_size)[0]
-            );
-        }
-
 out:
         return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_prepare_send_info(gds_send_request_t *request,
+                        void * ptr_to_size_new, int ptr_to_size_flags,
+                        void * ptr_to_addr_new, int ptr_to_addr_flags)
+{
+    int ret = 0;
+    //This should be an input..
+    int sge_index=0;
+    CUdeviceptr ptr_to_size_new_d, ptr_to_size_wqe_d;
+
+    assert(request);
+    if(
+        request->gds_sinfo.swr_info.wr_id == 0 ||
+        request->gds_sinfo.swr_info.num_sge <= 0 ||
+        request->gds_sinfo.swr_info.sge_list == NULL
+    )
+    {
+        gds_err("Input send request has erroneous wr_id(%lx), num_sge(%d) or sge_list pointer (is NULL=%d)\n", 
+            request->gds_sinfo.swr_info.wr_id, request->gds_sinfo.swr_info.num_sge, (request->gds_sinfo.swr_info.sge_list == NULL ? 1 : 0));
+        ret=EINVAL;
+        goto out;
+    }
+
+    //Dummy check if sge_index is not an input...
+    if(sge_index > request->gds_sinfo.swr_info.num_sge)
+    {
+        gds_err("Can't update sge %d: send request has only %d sge\n", sge_index, request->gds_sinfo.swr_info.num_sge);
+        ret=EINVAL;
+        goto out;
+    }
+
+    //Size
+    request->gds_sinfo.ptr_to_size_wqe_h=request->gds_sinfo.swr_info.sge_list[sge_index].ptr_to_size;
+    request->gds_sinfo.ptr_to_size_wqe_d=0;
+    request->gds_sinfo.ptr_to_size_new_h=0;
+    request->gds_sinfo.ptr_to_size_new_d=0;
+
+    //Addr
+    request->gds_sinfo.ptr_to_addr_wqe_h=request->gds_sinfo.swr_info.sge_list[sge_index].ptr_to_addr;
+    request->gds_sinfo.ptr_to_addr_wqe_d=0;
+    request->gds_sinfo.ptr_to_addr_new_h=0;
+    request->gds_sinfo.ptr_to_addr_new_d=0;
+
+    if(ptr_to_size_new != NULL)
+    {
+        //ptr_to_size is always host memory: we need to pin it
+        ret = gds_map_mem(
+                            (uint32_t*)request->gds_sinfo.ptr_to_size_wqe_h, 
+                            sizeof(uint32_t), GDS_MEMORY_HOST, 
+                            &request->gds_sinfo.ptr_to_size_wqe_d
+                        );
+        if (ret) {
+                gds_err("error %d while looking up %p\n",
+                    ret, (uint32_t*)request->gds_sinfo.ptr_to_size_wqe_h);
+                goto out;
+        }
+
+        if(memtype_from_flags(ptr_to_size_flags) == GDS_MEMORY_HOST)
+            request->gds_sinfo.ptr_to_size_new_h = (uintptr_t) ptr_to_size_new;
+
+        //input can be hostmem or gmem
+        ret = gds_map_mem(
+                            ptr_to_size_new, 
+                            sizeof(uint32_t), memtype_from_flags(ptr_to_size_flags), 
+                            &request->gds_sinfo.ptr_to_size_new_d
+                        );
+        if (ret) {
+                gds_err("error %d while looking up %p\n", ret, ptr_to_size_new);
+                goto out;
+        }
+    }
+
+    if(ptr_to_addr_new != NULL)
+    {
+        //ptr_to_size is always host memory: we need to pin it
+        ret = gds_map_mem(
+                            (uint32_t*)request->gds_sinfo.ptr_to_addr_wqe_h, 
+                            sizeof(uint32_t), GDS_MEMORY_HOST, 
+                            &request->gds_sinfo.ptr_to_addr_wqe_d
+                        );
+        if (ret) {
+                gds_err("error %d while looking up %p\n",
+                    ret, (uint32_t*)request->gds_sinfo.ptr_to_addr_wqe_h);
+                goto out;
+        }
+
+        if(memtype_from_flags(ptr_to_addr_flags) == GDS_MEMORY_HOST)
+            request->gds_sinfo.ptr_to_addr_new_h = (uintptr_t) ptr_to_addr_new;
+
+        //input can be hostmem or gmem
+        ret = gds_map_mem(
+                            ptr_to_addr_new, 
+                            sizeof(uint32_t), memtype_from_flags(ptr_to_addr_flags), 
+                            &request->gds_sinfo.ptr_to_addr_new_d
+                        );
+        if (ret) {
+                gds_err("error %d while looking up %p\n", ret, ptr_to_addr_new);
+                goto out;
+        }
+    }
+
+    gds_dump_swr("gds_prepare_send_info", request->gds_sinfo.swr_info);
+
+out:
+    return ret;
+}
+
+//-----------------------------------------------------------------------------
+//SA Model only
+int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream stream)
+{
+    int ret=0;
+
+    assert(request);
+    ret = gds_launch_update_send_params(request->gds_sinfo.ptr_to_size_wqe_d,
+                                    request->gds_sinfo.ptr_to_size_new_d,
+                                    request->gds_sinfo.ptr_to_addr_wqe_d,
+                                    request->gds_sinfo.ptr_to_addr_new_d,
+                                    stream);
+    if(ret)
+    {
+        gds_err("gds_launch_update_send_params error %d\n", ret);
+        goto out;
+    }
+
+    if(send_flags & GDS_SYNC)
+    {
+        cuStreamSynchronize(stream);
+        gds_dump_swr("gds_update_send_info", request->gds_sinfo.swr_info);
+    }
+
+
+out:
+    return ret;
 }
 
 //-----------------------------------------------------------------------------

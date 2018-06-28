@@ -127,6 +127,8 @@ struct pingpong_context {
 	struct ibv_ah		*ah;
 	void			*buf;
 	char			*txbuf;
+	char 			*txbufexp;
+        uint32_t                *txbufexp_size;
         char                    *rxbuf;
         char                    *rx_flag;
 	int			 size;
@@ -197,19 +199,44 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         ctx->use_desc_apis = use_desc_apis;
         ctx->skip_kernel_launch = skip_kernel_launch;
         ctx->exp_send_info = exp_send_info;
+	ctx->txbufexp = NULL;
+        ctx->txbufexp_size = NULL;
 
         size_t alloc_size = 3 * align_to(size + 40, page_size);
 	if (ctx->gpumem) {
 		ctx->buf = gpu_malloc(page_size, alloc_size);
                 printf("allocated GPU memory at %p\n", ctx->buf);
+                if(ctx->exp_send_info == 1)
+                {
+                	ctx->txbufexp = (char*) gpu_malloc(page_size, alloc_size);
+                	printf("allocated GPU memory for txbufexp at %p\n", ctx->txbufexp);
+                        ctx->txbufexp_size = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t));
+                }
 	} else {
 		ctx->buf = memalign(page_size, alloc_size);
                 printf("allocated CPU memory at %p\n", ctx->buf);
+                if(ctx->exp_send_info == 1)
+                {
+                	ctx->txbufexp = (char*) memalign(page_size, alloc_size);
+                	printf("allocated CPU memory for txbufexp at %p\n", ctx->txbufexp);
+                        ctx->txbufexp_size = (uint32_t*)memalign(page_size, sizeof(uint32_t));
+                }
         }
 	if (!ctx->buf) {
 		fprintf(stderr, "Couldn't allocate work buf.\n");
 		goto clean_ctx;
 	}
+	if(ctx->exp_send_info == 1 && !ctx->txbufexp)
+	{
+		fprintf(stderr, "Couldn't allocate txbufexp.\n");
+		goto clean_ctx;
+	}
+
+        if(ctx->exp_send_info == 1 && !ctx->txbufexp_size)
+        {
+                fprintf(stderr, "Couldn't allocate txbufexp_size.\n");
+                goto clean_ctx;
+        }
 
         gpu_info("allocated ctx buffer %p\n", ctx->buf);
         ctx->rxbuf = (char*)ctx->buf;
@@ -337,9 +364,23 @@ clean_device:
 
 clean_buffer:
 	if (ctx->gpumem)
-		gpu_free(ctx->buf); 
+        {
+                gpu_free(ctx->buf);
+                if(ctx->txbufexp != NULL)
+                {
+                        gpu_free(ctx->txbufexp);
+                        gpu_free(ctx->txbufexp_size);
+                }
+        }
 	else 
-		free(ctx->buf);
+	{
+                free(ctx->buf);
+                if(ctx->txbufexp != NULL)
+                {
+                   free(ctx->txbufexp);
+                   free(ctx->txbufexp_size);
+                }
+        }
 
 clean_ctx:
 	if (ctx->gpu_id >= 0)
@@ -379,10 +420,24 @@ int pp_close_ctx(struct pingpong_context *ctx)
 		gpu_err("Couldn't release context\n");
 	}
 
-	if (ctx->gpumem)
-		gpu_free(ctx->buf); 
-	else 
-		free(ctx->buf);
+        if (ctx->gpumem)
+        {
+                gpu_free(ctx->buf);
+                if(ctx->txbufexp != NULL)
+                {
+                        gpu_free(ctx->txbufexp);
+                        gpu_free(ctx->txbufexp_size);
+                }
+        }
+        else 
+        {
+                free(ctx->buf);
+                if(ctx->txbufexp != NULL)
+                {
+                   free(ctx->txbufexp);
+                   free(ctx->txbufexp_size);
+                }
+        }
 
 	if (ctx->gpu_id >= 0)
 		gpu_finalize();
@@ -683,6 +738,20 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 wdesc->descs[k].tag = GDS_TAG_SEND;
                                 wdesc->descs[k].send = &wdesc->send_rq;
                                 ++k;
+
+                                if( ctx->exp_send_info == 1 )
+                                {
+                                	ret = gds_prepare_send_info(
+                                                &wdesc->send_rq,
+                                                &(ctx->txbufexp_size[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
+                                                NULL, 0);
+
+                                        if (ret) {
+                                                retcode = -ret;
+                                                break;
+                                        }
+                                }
+
                                 ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
                                 if (ret) {
                                         retcode = -ret;
@@ -702,6 +771,20 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 wdesc->descs[k].wait = &wdesc->wait_rx_rq;
                                 ++k;
                                 wdesc->n_descs = k;
+
+                                if( ctx->exp_send_info == 1 )
+                                {
+                                        ret = gds_update_send_info(
+                                                &wdesc->send_rq,
+                                                (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC, 
+                                                0);
+
+                                        if (ret) {
+                                                retcode = -ret;
+                                                break;
+                                        }
+                                }
+
                                 if (ctx->peersync) {
                                         ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
                                         free(wdesc);
@@ -860,14 +943,25 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 				event_idx++;
 			} 
                 }
+#if 0
+                if(ctx->validate == 1)
+		{
+			cudaDeviceSynchronize();
+			char * buf_t=(char*) memalign(page_size, alloc_size);
+			if(!buf_t) goto out;
+			if(ctx->exp_send_info == 1 && )
+		}
+#endif
         }
         PROF(&prof, prof_idx++);
         if (!retcode) {
                 retcode = i;
                 gpu_post_release_tracking_event(&gpu_stream_server);
                 //sleep(1);
+                goto out;
         }
 
+out:
 	return retcode;
 }
 
@@ -1140,6 +1234,12 @@ int main(int argc, char *argv[])
                 return 1;
         }
 
+        if (exp_send_info && !use_desc_apis) {
+                gpu_err("exp_send_info case only supported when using descriptor APIs, enabling them\n");
+                use_desc_apis = 1;
+                //return 1;
+        }
+
         assert(comm_size == 2);
         char hostnames[comm_size][MPI_MAX_PROCESSOR_NAME];
         int name_len;
@@ -1365,6 +1465,12 @@ int main(int argc, char *argv[])
 			cudaEventCreate(&stop_time[ii]);
 		}
 	}
+
+        if( ctx->exp_send_info == 1 )
+        {
+                ctx->txbufexp_size[0] = (int)((ctx->size)/2);
+                gpu_dbg("New tx size is %d instead of %d\n", ctx->txbufexp_size[0], ctx->size);
+        }
 
         float pre_post_us = 0;
 
