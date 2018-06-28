@@ -148,17 +148,44 @@ enum {
         GDS_WAIT_INFO_MAX_OPS = 32
 };
 
+typedef enum gds_update_send_info_type {
+        GDS_SYNC     = 1<<1,
+        GDS_ASYNC    = 1<<2
+} gds_update_send_info_type_t;
+
+
+
 /**
  * Represents a posted send operation on a particular QP
  */
 
+typedef struct gds_send_request_info {
+    struct ibv_qp_swr_info swr_info;
+    //Size info
+    uintptr_t ptr_to_size_wqe_h;
+    CUdeviceptr ptr_to_size_wqe_d;
+    uintptr_t ptr_to_size_new_h;
+    CUdeviceptr ptr_to_size_new_d;
+
+    //Addr info
+    uintptr_t ptr_to_addr_wqe_h;
+    CUdeviceptr ptr_to_addr_wqe_d;
+    uintptr_t ptr_to_addr_new_h;
+    CUdeviceptr ptr_to_addr_new_d;
+
+} gds_send_request_info_t;
+
 typedef struct gds_send_request {
         struct ibv_exp_peer_commit commit;
         struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+        struct gds_send_request_info gds_sinfo;
 } gds_send_request_t;
 
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
-int gds_prepare_send_info(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
+int gds_prepare_send_info(gds_send_request_t *request,
+                        void * ptr_to_size_src, int ptr_to_size_flags,
+                        void * ptr_to_addr_from, int ptr_to_addr_flags);
+int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream stream);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
 int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
 
