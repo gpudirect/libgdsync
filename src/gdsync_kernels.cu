@@ -120,11 +120,18 @@ __global__ static void gds_update_send_params(
 
 	//Thread 0 set new size
 	if(threadIdx.x == 0 && ptr_to_size_new != 0)
+	{
 		((uint32_t*)ptr_to_size_wqe)[0] = gds_htonl(((uint32_t*)ptr_to_size_new)[0]);
+		//printf("Inside kernel th0, ptr_to_size_wqe=0x%08x, ptr_to_size_new=0x%08x\n", ((uint32_t*)ptr_to_size_wqe)[0], ((uint32_t*)ptr_to_size_new)[0]);
+	}
 
 	//Thread 1 set new addr
 	if(threadIdx.x == 1 && ptr_to_addr_new != 0)
+	{
 		((uint64_t*)ptr_to_addr_wqe)[0] = gds_htonll(((uint64_t*)ptr_to_addr_new)[0]);
+		//( ((uint32_t*)ptr_to_addr_wqe)) [0] = gds_htonl(((uint32_t*)ptr_to_addr_new)[0]);
+		//printf("Inside kernel th1, ptr_to_addr_wqe=0x%llx, ptr_to_addr_new=%llx\n", ((uint64_t*)ptr_to_addr_wqe)[0], ((uint64_t*)ptr_to_addr_new)[0]);
+	}
 	
 }
 

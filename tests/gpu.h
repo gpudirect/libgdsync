@@ -166,6 +166,7 @@ int gpu_finalize();
 void *gpu_malloc(size_t page_size, size_t min_size);
 int gpu_free(void *ptr);
 int gpu_memset(void *ptr, const unsigned char c, size_t size);
+int gpu_memset32(void *ptr, int value, int number);
 int gpu_register_host_mem(void *ptr, size_t size);
 
 int gpu_launch_kernel(size_t size, int is_peersync);

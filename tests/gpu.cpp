@@ -202,6 +202,13 @@ int gpu_memset(void *ptr, const unsigned char c, size_t size)
 	return 0;
 }
 
+int gpu_memset32(void *ptr, int value, int number)
+{
+        gpu_dbg("poisoning GPU buffer, filled with '0x%x' !!!\n", value);
+        CUCHECK(cuMemsetD32((CUdeviceptr)ptr, value, number));
+        return 0;
+}
+
 int gpu_register_host_mem(void *ptr, size_t size)
 {
         CUCHECK(cuMemHostRegister(ptr, size, CU_MEMHOSTREGISTER_DEVICEMAP | CU_MEMHOSTREGISTER_PORTABLE));

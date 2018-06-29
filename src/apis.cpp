@@ -147,6 +147,8 @@ static void gds_dump_swr(const char * func_name, struct ibv_qp_swr_info swr_info
             (uintptr_t)swr_info.sge_list[j].ptr_to_addr, 
             (uintptr_t)ntohll(((uint64_t*)swr_info.sge_list[j].ptr_to_addr)[0]),
             ((uintptr_t)ntohll(((uint64_t*)swr_info.sge_list[j].ptr_to_addr)[0])) - swr_info.sge_list[j].offset );
+
+        gds_dbg("[%s]    SGE=%d, offset=%lx\n", func_name, j, (uint32_t)swr_info.sge_list[j].offset);
     }
 }
 
@@ -294,12 +296,6 @@ int gds_prepare_send_info(gds_send_request_t *request,
     request->gds_sinfo.ptr_to_size_new_h=0;
     request->gds_sinfo.ptr_to_size_new_d=0;
 
-    //Addr
-    request->gds_sinfo.ptr_to_addr_wqe_h=request->gds_sinfo.swr_info.sge_list[sge_index].ptr_to_addr;
-    request->gds_sinfo.ptr_to_addr_wqe_d=0;
-    request->gds_sinfo.ptr_to_addr_new_h=0;
-    request->gds_sinfo.ptr_to_addr_new_d=0;
-
     if(ptr_to_size_new != NULL)
     {
         //ptr_to_size is always host memory: we need to pin it
@@ -328,6 +324,12 @@ int gds_prepare_send_info(gds_send_request_t *request,
                 goto out;
         }
     }
+
+    //Addr
+    request->gds_sinfo.ptr_to_addr_wqe_h=request->gds_sinfo.swr_info.sge_list[sge_index].ptr_to_addr;
+    request->gds_sinfo.ptr_to_addr_wqe_d=0;
+    request->gds_sinfo.ptr_to_addr_new_h=0;
+    request->gds_sinfo.ptr_to_addr_new_d=0;
 
     if(ptr_to_addr_new != NULL)
     {
@@ -358,8 +360,6 @@ int gds_prepare_send_info(gds_send_request_t *request,
         }
     }
 
-    gds_dump_swr("gds_prepare_send_info", request->gds_sinfo.swr_info);
-
 out:
     return ret;
 }
@@ -371,6 +371,20 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
     int ret=0;
 
     assert(request);
+
+    gds_dump_swr("gds_update_send_info - before", request->gds_sinfo.swr_info);
+#if 0
+    gds_err("ptr_to_size_wqe_h=0x%lx ptr_to_size_wqe_d=0x%lx (val=0x%08x), ptr_to_size_new_h=0x%lx ptr_to_size_new_d=0x%lx (val=0x%08x)\n",
+        request->gds_sinfo.ptr_to_size_wqe_h, request->gds_sinfo.ptr_to_size_wqe_d, ((uint32_t*)(request->gds_sinfo.ptr_to_size_wqe_h))[0],
+        request->gds_sinfo.ptr_to_size_new_h, request->gds_sinfo.ptr_to_size_new_d, ((uint32_t*)(request->gds_sinfo.ptr_to_size_new_h))[0]
+    );
+    
+    gds_err("ptr_to_addr_wqe_h=0x%lx ptr_to_addr_wqe_d=0x%lx (val=0x%llx), ptr_to_addr_new_h=0x%lx ptr_to_addr_new_d=0x%lx (val=0x%llx)\n",
+        request->gds_sinfo.ptr_to_addr_wqe_h, request->gds_sinfo.ptr_to_addr_wqe_d, ((uintptr_t*)(request->gds_sinfo.ptr_to_addr_wqe_h))[0],
+        request->gds_sinfo.ptr_to_addr_new_h, request->gds_sinfo.ptr_to_addr_new_d, ((uintptr_t*)(request->gds_sinfo.ptr_to_addr_new_h))[0]
+    );
+#endif
+
     ret = gds_launch_update_send_params(request->gds_sinfo.ptr_to_size_wqe_d,
                                     request->gds_sinfo.ptr_to_size_new_d,
                                     request->gds_sinfo.ptr_to_addr_wqe_d,
@@ -385,7 +399,7 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
     if(send_flags & GDS_SYNC)
     {
         cuStreamSynchronize(stream);
-        gds_dump_swr("gds_update_send_info", request->gds_sinfo.swr_info);
+        gds_dump_swr("gds_update_send_info - after", request->gds_sinfo.swr_info);
     }
 
 
