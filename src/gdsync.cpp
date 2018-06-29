@@ -1395,8 +1395,14 @@ static bool support_inlcpy(CUdevice dev)
 {
         int flag = 0;
 #if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY
-        // on CUDA_VERSION >= 1000
-        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY, dev));
+        CUresult rc = cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY, dev);
+        if (rc == CUDA_ERROR_INVALID_VALUE) {
+                // expected if driver not matching the cuda.h
+                flag = 0;
+        } else if (rc) {
+                // any other error message is not expected
+                CUCHECK(rc);
+        }
 #else
         gds_dbg("hardcoding has_inlcpy=0\n");
 #endif
@@ -1408,8 +1414,14 @@ static bool support_membar(CUdevice dev)
 {
         int flag = 0;
 #if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER
-        // on CUDA_VERSION >= 1000
-        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER, dev));
+        CUresult rc = cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER, dev);
+        if (rc == CUDA_ERROR_INVALID_VALUE) {
+                // expected if driver not matching the cuda.h
+                flag = 0;
+        } else if (rc) {
+                // any other error message is not expected
+                CUCHECK(rc);
+        }
 #else
         gds_dbg("hardcoding has_membar=0\n");
 #endif
@@ -1424,7 +1436,14 @@ static bool support_weak_consistency(CUdevice dev)
         bool has_hidden_flag = false;
 
 #if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING
-        CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING, dev));
+        CUresult rc = cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_BATCH_MEMOP_RELAXED_ORDERING, dev);
+        if (rc == CUDA_ERROR_INVALID_VALUE) {
+                // expected if driver not matching the cuda.h
+                flag = 0;
+        } else if (rc) {
+                // any other error message is not expected
+                CUCHECK(rc);
+        }
 #endif
 
         CUCHECK(cuCtxGetDevice(&cur_dev));
