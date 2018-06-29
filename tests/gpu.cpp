@@ -275,7 +275,8 @@ int gpu_wait_tracking_event(int tmout_us)
                                 // event has not been signaled yet
                                 //sleep(1);
                         } else {
-                                printf("cuEventQuery error (%d)\n", retcode);
+                                CUCHECK(retcode);
+                                gpu_err("cuEventQuery error (%d)\n", retcode);
                                 ret = EFAULT;
                                 break;
                         }
