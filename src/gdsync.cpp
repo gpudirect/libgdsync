@@ -1535,6 +1535,27 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
 
         peer->tq = new task_queue;
 
+        CUcontext cur_ctx;
+        CUCHECK(cuCtxGetCurrent(&cur_ctx));
+        GDS_ASSERT(cur_ctx == ctx);
+#if 0
+        // need to load kernel cubin, but driver API requires a different approach
+        //CUCHECK(cuModuleLoadData(&peer->opt_kernels_module, gds_module_file));
+        //CUCHECK(cuModuleGetFunction(&peer->kernel_1qp_send_2cq_wait, peer->opt_kernels_module, "gds_1QPSend_2CQWait"));
+
+        // in the mean time, CUDA RT cudaLaunchKernel might be easier to use, as it
+        // does not require additional setup procedures from the user
+#endif
+
+        int major;
+        CUCHECK( cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, peer->gpu_dev) );
+        int minor;
+        CUCHECK( cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, peer->gpu_dev) );
+
+        CUfunction func = gds_load_kernel(major, minor, "krn1snd2wait");
+        GDS_ASSERT(func);
+        peer->kernels.krn1snd2wait = func;
+        
         gpu_registered[gpu_id] = true;
 
         gds_dbg("peer_attr: peer_id=%" PRIx64 "\n", peer->attr.peer_id);

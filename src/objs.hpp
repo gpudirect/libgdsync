@@ -80,6 +80,10 @@ struct gds_peer {
         gds_peer_attr attr;
         task_queue *tq;
 
+        struct {
+                CUfunction krn1snd2wait;
+        } kernels;
+
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
         // This field works as an ugly run-time parameters passing
         // mechanism, as it carries tracking info during the QP creation
