@@ -46,7 +46,7 @@ if [ ! -e Makefile ]; then
     EXTRA+=" --enable-extended-memops"
     #EXTRA+=" --enable-nvtx"
     #EXTRA+=" --with-gdstools=$PREFIX"
-
+    #EXTRA+=" --with-gpu-arch=70 "
     ../configure \
         --prefix=$PREFIX \
         --with-mpi=$MPI_HOME \

@@ -165,6 +165,20 @@ static inline bool is_valid(gds_wait_cond_flag_t cond)
         return ret;
 }
 
+static inline gds_wait_cond_flag_t gds_cuwait_flags_to_wait_cond(unsigned int flags)
+{
+        gds_wait_cond_flag_t cond = GDS_WAIT_COND_GEQ;
+        switch (flags & 0x3) {
+        case CU_STREAM_WAIT_VALUE_GEQ: cond = GDS_WAIT_COND_GEQ; break;
+        case CU_STREAM_WAIT_VALUE_EQ:  cond = GDS_WAIT_COND_EQ;  break;
+        case CU_STREAM_WAIT_VALUE_AND: cond = GDS_WAIT_COND_AND; break;
+        case CU_STREAM_WAIT_VALUE_NOR: cond = GDS_WAIT_COND_NOR; break;
+        default: GDS_ASSERT(!"invalid flags"); break;
+        }
+        // check for CU_STREAM_WAIT_VALUE_FLUSH
+        return cond;
+}
+
 static inline uint32_t gds_qword_lo(uint64_t v) {
         return (uint32_t)(v);
 }
@@ -221,6 +235,8 @@ struct gds_peer;
 int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
 int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
+
+CUfunction gds_load_kernel(int arch_major, int arch_minor, const char *kernel_name, bool force_fatbin = 0);
 int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &params);
 
 //-----------------------------------------------------------------------------

@@ -1565,6 +1565,16 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, CUcontext ctx, int gpu_i
         // in the mean time, CUDA RT cudaLaunchKernel might be easier to use, as it
         // does not require additional setup procedures from the user
 #endif
+
+        int major;
+        CUCHECK( cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, peer->gpu_dev) );
+        int minor;
+        CUCHECK( cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, peer->gpu_dev) );
+
+        CUfunction func = gds_load_kernel(major, minor, "krn1snd2wait");
+        GDS_ASSERT(func);
+        peer->kernels.krn1snd2wait = func;
+        
         gpu_registered[gpu_id] = true;
 
         gds_dbg("peer_attr: peer_id=%" PRIx64 "\n", peer->attr.peer_id);

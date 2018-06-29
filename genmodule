@@ -1,0 +1,89 @@
+#!/bin/bash
+PARAMS=""
+
+
+declare -a ARCHS
+KRN="none"
+OUTPUT="dummy"
+NARCHS=0
+FATBIN=no
+
+while (( "$#" )); do
+  case "$1" in
+    -a|--architecture)
+      ARCHS[$NARCHS]="$2"
+      let ++NARCHS
+      echo "new ARCH=$2 NARCHS=$NARCHS"
+      shift 2
+      ;;
+    -k|--kernel-name)
+      KRN=$2
+      echo "KRN=$KRN"
+      shift 2
+      ;;
+    -o|--output)
+      OUTPUT=$2
+      echo "OUTPUT=$OUTPUT"
+      shift 2
+      ;;
+    -n|--num-archs)
+      NUM_ARCHS=$2
+      echo "NUM_ARCHS=$NUM_ARCHS"
+      shift 2
+      ;;
+    -f|--fatbin)
+      FATBIN=yes
+      echo "FATBIN=$FATBIN"
+      shift 1
+      ;;
+    --) # end argument parsing
+      shift
+      break
+      ;;
+    -*|--*=) # unsupported flags
+      echo "Error: Unsupported flag $1" >&2
+      exit 1
+      ;;
+    *) # preserve positional arguments
+      PARAMS="$PARAMS $1"
+      shift
+      ;;
+  esac
+done
+# set positional arguments in their proper place
+eval set -- "$PARAMS"
+
+echo "PARAMS:$@"
+echo "ARCHS: ${ARCHS[*]}"
+
+rm -f $OUTPUT
+
+while (( $# )); do
+    cat >>$OUTPUT <<EOF
+#include "$1"
+EOF
+    shift 1
+done
+
+cat >>$OUTPUT <<EOF
+#include "kernel_desc.hpp"
+
+$INCLUDES
+KERNEL_DESC_BEGIN(${KRN})
+EOF
+
+for arch in ${ARCHS[@]}; do
+    cat >>$OUTPUT <<EOF
+KERNEL_CUBIN(${KRN}, ${arch})
+EOF
+done
+
+if [[ "$FATBIN" != "no" ]]; then
+    cat >>$OUTPUT <<EOF
+KERNEL_FATBIN(${KRN})
+EOF
+fi
+
+cat >>$OUTPUT <<EOF
+KERNEL_DESC_END(${KRN})
+EOF

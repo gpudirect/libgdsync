@@ -112,9 +112,9 @@ dnl Specify GPU Arch
 AC_ARG_WITH(
     [gpu-arch],
     AC_HELP_STRING([--with-gpu-arch=arch],
-                   [ Set GPU arch: sm_30, sm_35, sm_50, sm_52, sm_60, sm_70 (default: sm_35)]),
+                   [ Set GPU arch: 30, 35, 37, 50, 52, 60, 61, 70 (default: 60)]),
     [ gpu_arch=${withval} ],
-    [ gpu_arch="sm_35" ]
+    [ gpu_arch="30 35 37 50 52 60 61 70" ]
 )
 
 AC_ARG_ENABLE(
@@ -173,7 +173,7 @@ AC_SUBST( MPICXX, [${MPICXX} ])
 CPPFLAGS="$CPPFLAGS -I$CUDA_DRV_PATH/include -I$CUDA_PATH/include"
 LDFLAGS="$LDFLAGS -L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64 -L$CUDA_PATH/lib"
 NVCCFLAGS="$NVCCFLAGS"
-CUDA_CFLAGS="$CUDA_CFLAGS -arch=${gpu_arch}"
+CUDA_CFLAGS="$CUDA_CFLAGS"
 CUDA_LDFLAGS="-L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64 -L$CUDA_PATH/lib"
 CUDA_LIBS="-lcuda -lcudart -lcufft"
 NVCCFLAGS="$NVCCFLAGS $CUDA_CFLAGS $CUDA_LDFLAGS $CUDA_LIBS"
