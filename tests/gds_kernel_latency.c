@@ -259,36 +259,24 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 
         if(ctx->exp_send_info == 1)
         {
-                uint32_t tmp_addr[2];
-                ((uintptr_t*)tmp_addr)[0] = (uintptr_t)(ctx->txbuf+128);
                 /*
-                 * Note: we can replace the WQE initial address with an other address
-                 * already registered in the same MR region.
-                 * ctx->txbufexp_addr[0]=ctx->other_txbuf led to an error because it has not
-                 * been registered in the same WQE MR.
+                 * Note: here we replace the WQE send buffer address with another address
+                 * which belongs to the same MR region because later we do not use ODP
+                 * in ibv_reg_mr().
                  *
                  * 128 is just an offset wrt initial txbuf pointer
                 */
 
                 if (ctx->gpumem) {
+                        uint32_t tmp_addr[2];
+                        ((uintptr_t*)tmp_addr)[0] = (uintptr_t)(ctx->txbuf+128);
                         gpu_memset32(ctx->txbufexp_size, (int)((ctx->size)/2), 1);
-                        /*gpu_memset32(
-                                &((uint32_t*)ctx->txbufexp_addr)[0],
-                                &((uint32_t*)&( (uintptr_t)(ctx->txbuf+128) ))[0],
-                                2);
-                        */
                         CUDACHECK(cudaMemcpy( 
                                 (uint32_t*)ctx->txbufexp_addr,
                                 (uint32_t*)tmp_addr,
                                 2*sizeof(uint32_t),
                                 cudaMemcpyDefault
                                 ));
-                        /*
-                        CUDACHECK(cudaMemset( 
-                                &((uint32_t*)ctx->txbufexp_addr)[0],
-                                &((uint32_t*)&((uintptr_t)ctx->txbuf))[0],
-                                2*sizeof(uint32_t)));
-                        */
                 }
                 else {
                         ctx->txbufexp_addr[0]=(uintptr_t)(ctx->txbuf+128);

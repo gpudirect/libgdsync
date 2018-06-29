@@ -167,6 +167,12 @@ typedef struct gds_send_request_info {
     uintptr_t ptr_to_size_new_h;
     CUdeviceptr ptr_to_size_new_d;
 
+    //lkey info
+    uintptr_t ptr_to_lkey_wqe_h;
+    CUdeviceptr ptr_to_lkey_wqe_d;
+    uintptr_t ptr_to_lkey_new_h;
+    CUdeviceptr ptr_to_lkey_new_d;
+
     //Addr info
     uintptr_t ptr_to_addr_wqe_h;
     CUdeviceptr ptr_to_addr_wqe_d;
@@ -184,6 +190,7 @@ typedef struct gds_send_request {
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_prepare_send_info(gds_send_request_t *request,
                         void * ptr_to_size_src, int ptr_to_size_flags,
+                        void * ptr_to_lkey_src, int ptr_to_lkey_flags,
                         void * ptr_to_addr_from, int ptr_to_addr_flags);
 int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream stream);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
