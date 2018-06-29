@@ -237,7 +237,10 @@ int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op, int post_flags = 
 gds_peer *peer_from_stream(CUstream stream);
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 5e15ffc... implement framework for CUDA kernels launched via CUDA driver API
 =======
 >>>>>>> 5e15ffc... implement framework for CUDA kernels launched via CUDA driver API
 
