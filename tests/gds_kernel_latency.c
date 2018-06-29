@@ -127,8 +127,8 @@ struct pingpong_context {
 	struct ibv_ah		*ah;
 	void			*buf;
 	char			*txbuf;
-	char 			*txbufexp;
         uint32_t                *txbufexp_size;
+        uintptr_t               *txbufexp_addr;
         char                    *rxbuf;
         char                    *rx_flag;
 	int			 size;
@@ -199,7 +199,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         ctx->use_desc_apis = use_desc_apis;
         ctx->skip_kernel_launch = skip_kernel_launch;
         ctx->exp_send_info = exp_send_info;
-	ctx->txbufexp = NULL;
+        ctx->txbufexp_addr=NULL;
         ctx->txbufexp_size = NULL;
 
         size_t alloc_size = 3 * align_to(size + 40, page_size);
@@ -208,30 +208,22 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 printf("allocated GPU memory at %p\n", ctx->buf);
                 if(ctx->exp_send_info == 1)
                 {
-                	ctx->txbufexp = (char*) gpu_malloc(page_size, alloc_size);
-                	printf("allocated GPU memory for txbufexp at %p\n", ctx->txbufexp);
                         ctx->txbufexp_size = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t));
+                        ctx->txbufexp_addr = (uintptr_t*)gpu_malloc(page_size, sizeof(uintptr_t));
                 }
 	} else {
 		ctx->buf = memalign(page_size, alloc_size);
                 printf("allocated CPU memory at %p\n", ctx->buf);
                 if(ctx->exp_send_info == 1)
                 {
-                	ctx->txbufexp = (char*) memalign(page_size, alloc_size);
-                	printf("allocated CPU memory for txbufexp at %p\n", ctx->txbufexp);
                         ctx->txbufexp_size = (uint32_t*)memalign(page_size, sizeof(uint32_t));
+                        ctx->txbufexp_addr = (uintptr_t*)memalign(page_size, sizeof(uintptr_t));
                 }
         }
 	if (!ctx->buf) {
 		fprintf(stderr, "Couldn't allocate work buf.\n");
 		goto clean_ctx;
-	}
-	if(ctx->exp_send_info == 1 && !ctx->txbufexp)
-	{
-		fprintf(stderr, "Couldn't allocate txbufexp.\n");
-		goto clean_ctx;
-	}
-
+	}                
         if(ctx->exp_send_info == 1 && !ctx->txbufexp_size)
         {
                 fprintf(stderr, "Couldn't allocate txbufexp_size.\n");
@@ -241,6 +233,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         gpu_info("allocated ctx buffer %p\n", ctx->buf);
         ctx->rxbuf = (char*)ctx->buf;
         ctx->txbuf = (char*)ctx->buf + align_to(size + 40, page_size);
+
+        fprintf(stderr,"txbuf address 0x%lx\n", ctx->txbuf);
         //ctx->rx_flag = (char*)ctx->buf + 2 * align_to(size + 40, page_size);
 
         ctx->rx_flag =  memalign(page_size, alloc_size);
@@ -263,6 +257,47 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         memset(ctx->rx_flag, 0, alloc_size);
         gpu_register_host_mem(ctx->rx_flag, alloc_size);
 
+        if(ctx->exp_send_info == 1)
+        {
+                uint32_t tmp_addr[2];
+                ((uintptr_t*)tmp_addr)[0] = (uintptr_t)(ctx->txbuf+128);
+                /*
+                 * Note: we can replace the WQE initial address with an other address
+                 * already registered in the same MR region.
+                 * ctx->txbufexp_addr[0]=ctx->other_txbuf led to an error because it has not
+                 * been registered in the same WQE MR.
+                 *
+                 * 128 is just an offset wrt initial txbuf pointer
+                */
+
+                if (ctx->gpumem) {
+                        gpu_memset32(ctx->txbufexp_size, (int)((ctx->size)/2), 1);
+                        /*gpu_memset32(
+                                &((uint32_t*)ctx->txbufexp_addr)[0],
+                                &((uint32_t*)&( (uintptr_t)(ctx->txbuf+128) ))[0],
+                                2);
+                        */
+                        CUDACHECK(cudaMemcpy( 
+                                (uint32_t*)ctx->txbufexp_addr,
+                                (uint32_t*)tmp_addr,
+                                2*sizeof(uint32_t),
+                                cudaMemcpyDefault
+                                ));
+                        /*
+                        CUDACHECK(cudaMemset( 
+                                &((uint32_t*)ctx->txbufexp_addr)[0],
+                                &((uint32_t*)&((uintptr_t)ctx->txbuf))[0],
+                                2*sizeof(uint32_t)));
+                        */
+                }
+                else {
+                        ctx->txbufexp_addr[0]=(uintptr_t)(ctx->txbuf+128);
+                        ctx->txbufexp_size[0] = (int)((ctx->size)/2);
+                        fprintf(stderr, "New tx size: %d instead of %d. New tx addr: %lx instead of %lx\n", 
+                                ctx->txbufexp_size[0], ctx->size, ctx->txbufexp_addr[0], ctx->txbuf);
+                }
+        }
+        
         // pipe-cleaner
         gpu_launch_kernel(ctx->calc_size, ctx->peersync);
         gpu_launch_kernel(ctx->calc_size, ctx->peersync);
@@ -366,19 +401,19 @@ clean_buffer:
 	if (ctx->gpumem)
         {
                 gpu_free(ctx->buf);
-                if(ctx->txbufexp != NULL)
+                if( ctx->exp_send_info == 1 )
                 {
-                        gpu_free(ctx->txbufexp);
                         gpu_free(ctx->txbufexp_size);
+                        gpu_free(ctx->txbufexp_addr);
                 }
         }
 	else 
 	{
                 free(ctx->buf);
-                if(ctx->txbufexp != NULL)
+                if( ctx->exp_send_info == 1 )
                 {
-                   free(ctx->txbufexp);
                    free(ctx->txbufexp_size);
+                   free(ctx->txbufexp_addr);
                 }
         }
 
@@ -423,19 +458,19 @@ int pp_close_ctx(struct pingpong_context *ctx)
         if (ctx->gpumem)
         {
                 gpu_free(ctx->buf);
-                if(ctx->txbufexp != NULL)
+                if( ctx->exp_send_info == 1 )
                 {
-                        gpu_free(ctx->txbufexp);
                         gpu_free(ctx->txbufexp_size);
+                        gpu_free(ctx->txbufexp_addr);
                 }
         }
         else 
         {
                 free(ctx->buf);
-                if(ctx->txbufexp != NULL)
+                if( ctx->exp_send_info == 1 )
                 {
-                   free(ctx->txbufexp);
                    free(ctx->txbufexp_size);
+                   free(ctx->txbufexp_addr);
                 }
         }
 
@@ -744,7 +779,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 	ret = gds_prepare_send_info(
                                                 &wdesc->send_rq,
                                                 &(ctx->txbufexp_size[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
-                                                NULL, 0);
+                                                &(ctx->txbufexp_addr[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST);
 
                                         if (ret) {
                                                 retcode = -ret;
@@ -876,14 +911,17 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 retcode = -EINVAL;
                                 break;
                         }
+
                         if (ctx->skip_kernel_launch) {
                                 gpu_warn_once("NOT LAUNCHING ANY KERNEL AT ALL\n");
                         } else {
                                 gpu_launch_kernel(ctx->calc_size, ctx->peersync);
                         }
+
 			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
 				cudaEventRecord(start_time[event_idx], gpu_stream);
 			} 
+
                         if (ctx->use_desc_apis) {
                                 work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
                                 int k = 0;
@@ -943,15 +981,6 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 				event_idx++;
 			} 
                 }
-#if 0
-                if(ctx->validate == 1)
-		{
-			cudaDeviceSynchronize();
-			char * buf_t=(char*) memalign(page_size, alloc_size);
-			if(!buf_t) goto out;
-			if(ctx->exp_send_info == 1 && )
-		}
-#endif
         }
         PROF(&prof, prof_idx++);
         if (!retcode) {
@@ -1468,8 +1497,7 @@ int main(int argc, char *argv[])
 
         if( ctx->exp_send_info == 1 )
         {
-                ctx->txbufexp_size[0] = (int)((ctx->size)/2);
-                gpu_dbg("New tx size is %d instead of %d\n", ctx->txbufexp_size[0], ctx->size);
+                
         }
 
         float pre_post_us = 0;
