@@ -29,8 +29,11 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
                 // marshal parameters
 
 <<<<<<< HEAD
+<<<<<<< HEAD
                 // marshal parameters
 
+=======
+>>>>>>> 5e15ffc... implement framework for CUDA kernels launched via CUDA driver API
 =======
 >>>>>>> 5e15ffc... implement framework for CUDA kernels launched via CUDA driver API
                 param = &params.at(0);
