@@ -25,30 +25,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "gdsync/device.cuh"
-#include "objs.hpp"
-#include "utils.hpp"
-#include "gdsync_kernels.hpp"
+#pragma once
 
-using namespace gdsync;
-
-extern "C" __global__ void krn1snd2wait(param_1snd2wait p)
-{
-    if (threadIdx.x==0) {
-        device::release(p.sem0);
-        __threadfence_system();
-        device::release(p.sem1);
-    }
-
-    // not stricly needed because there are two separate flows, doorbell
-    // ringing for sends and notification of completions:
-    //__syncthreads();
-
-    if (threadIdx.x<2) {
-        device::wait(p.semw[threadIdx.x], p.condw[threadIdx.x]);
-        device::release(p.sem23[threadIdx.x]);
-    }
-}
+struct param_1snd2wait {
+        gdsync::isem32_t sem0;
+        gdsync::isem64_t sem1;
+        gdsync::isem32_t semw[2];
+        gdsync::isem32_t sem23[2];
+        gdsync::wait_cond_t condw[2];
+};
 
 /*
  * Local variables:
