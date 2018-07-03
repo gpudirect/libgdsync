@@ -240,6 +240,22 @@ static bool gds_enable_dump_memops()
 
 //-----------------------------------------------------------------------------
 
+bool gds_enable_kernel_ops()
+{
+        static int gds_enable_kernel_ops = -1;
+        if (-1 == gds_enable_kernel_ops) {
+            const char *env = getenv("GDS_ENABLE_KERNEL_OPS");
+            if (env)
+                    gds_enable_kernel_ops = !!atoi(env);
+            else
+                    gds_enable_kernel_ops = 0; // disabled by default
+            gds_warn("GDS_ENABLE_KERNEL_OPS=%d\n", gds_enable_kernel_ops);
+        }
+        return gds_enable_kernel_ops;
+}
+
+//-----------------------------------------------------------------------------
+
 void gds_dump_param(CUstreamBatchMemOpParams *param)
 {
         switch(param->operation) {

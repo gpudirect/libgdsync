@@ -687,7 +687,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 }
         }
 
-        if (use_opt)
+        if (gds_enable_kernel_ops() && use_opt)
                 retcode = gds_launch_1QPSend_2CQWait(peer, stream, params);
         else
                 retcode = gds_stream_batch_ops(peer, stream, params, 0);
