@@ -141,6 +141,13 @@ static void gds_dump_swr(const char * func_name, struct ibv_qp_swr_info swr_info
             (uint32_t) ((uint32_t*)swr_info.sge_list[j].ptr_to_size)[0],
             ((uint32_t) ntohl( ((uint32_t*)swr_info.sge_list[j].ptr_to_size)[0]) ) + swr_info.sge_list[j].offset );
 
+        gds_dbg("[%s]    SGE=%d, lkey ptr=0x%08x, lkey=%d (0x%08x)\n", 
+            func_name,
+            j,
+            (uintptr_t)swr_info.sge_list[j].ptr_to_lkey, 
+            (uint32_t) ntohl( ((uint32_t*)swr_info.sge_list[j].ptr_to_lkey)[0]) ,
+            (uint32_t) ((uint32_t*)swr_info.sge_list[j].ptr_to_lkey)[0]);
+
         gds_dbg("[%s]    SGE=%d, Addr ptr=%lx, Addr=%lx -offset=%lx\n", 
             func_name,
             j,
@@ -204,7 +211,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                      gds_send_wr **bad_ewr, 
                      gds_send_request_t *request)
 {
-        int ret = 0;
+        int ret = 0, i = 0;
         bool get_info=false;
 
         gds_init_send_info(request);
@@ -216,11 +223,16 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
 
         if(get_info)
         {
-            gds_dbg("Sending wr %lx with addr=%lx and length=%d...\n", 
-                        p_ewr->wr_id, 
-                        (uintptr_t)p_ewr->sg_list[0].addr, 
-                        (int)p_ewr->sg_list[0].length
-            );
+            for(i=0; i < p_ewr->num_sge; i++)
+            {
+                gds_dbg("SGE#%d, Sending wr %lx with addr=%lx, lkey=%lx length=%d...\n", 
+                            i,
+                            p_ewr->wr_id, 
+                            (uintptr_t)p_ewr->sg_list[i].addr, 
+                            (int)p_ewr->sg_list[i].lkey,
+                            (int)p_ewr->sg_list[i].length
+                );
+            }
             memset(&(request->gds_sinfo.swr_info), 0, sizeof(struct ibv_qp_swr_info));
         }
 
@@ -262,6 +274,7 @@ out:
 
 int gds_prepare_send_info(gds_send_request_t *request,
                         void * ptr_to_size_new, int ptr_to_size_flags,
+                        void * ptr_to_lkey_new, int ptr_to_lkey_flags,
                         void * ptr_to_addr_new, int ptr_to_addr_flags)
 {
     int ret = 0;
@@ -325,6 +338,42 @@ int gds_prepare_send_info(gds_send_request_t *request,
         }
     }
 
+    //lkey
+    request->gds_sinfo.ptr_to_lkey_wqe_h=request->gds_sinfo.swr_info.sge_list[sge_index].ptr_to_lkey;
+    request->gds_sinfo.ptr_to_lkey_wqe_d=0;
+    request->gds_sinfo.ptr_to_lkey_new_h=0;
+    request->gds_sinfo.ptr_to_lkey_new_d=0;
+
+    if(ptr_to_lkey_new != NULL)
+    {
+        //ptr_to_size is always host memory: we need to pin it
+        ret = gds_map_mem(
+                            (uint32_t*)request->gds_sinfo.ptr_to_lkey_wqe_h, 
+                            sizeof(uint32_t), GDS_MEMORY_HOST, 
+                            &request->gds_sinfo.ptr_to_lkey_wqe_d
+                        );
+        if (ret) {
+                gds_err("error %d while looking up %p\n",
+                    ret, (uint32_t*)request->gds_sinfo.ptr_to_lkey_wqe_h);
+                goto out;
+        }
+
+        if(memtype_from_flags(ptr_to_lkey_flags) == GDS_MEMORY_HOST)
+            request->gds_sinfo.ptr_to_lkey_new_h = (uintptr_t) ptr_to_lkey_new;
+
+        //input can be hostmem or gmem
+        ret = gds_map_mem(
+                            ptr_to_lkey_new, 
+                            sizeof(uint32_t), memtype_from_flags(ptr_to_lkey_flags), 
+                            &request->gds_sinfo.ptr_to_lkey_new_d
+                        );
+        if (ret) {
+                gds_err("error %d while looking up %p\n", ret, ptr_to_lkey_new);
+                goto out;
+        }
+    }
+
+
     //Addr
     request->gds_sinfo.ptr_to_addr_wqe_h=request->gds_sinfo.swr_info.sge_list[sge_index].ptr_to_addr;
     request->gds_sinfo.ptr_to_addr_wqe_d=0;
@@ -369,10 +418,17 @@ out:
 int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream stream)
 {
     int ret=0;
+    gds_peer *peer = NULL;
 
     assert(request);
 
+    peer = peer_from_stream(stream);
+    if (!peer) {
+            return EINVAL;
+    }
+
     gds_dump_swr("gds_update_send_info - before", request->gds_sinfo.swr_info);
+
 #if 0
     gds_err("ptr_to_size_wqe_h=0x%lx ptr_to_size_wqe_d=0x%lx (val=0x%08x), ptr_to_size_new_h=0x%lx ptr_to_size_new_d=0x%lx (val=0x%08x)\n",
         request->gds_sinfo.ptr_to_size_wqe_h, request->gds_sinfo.ptr_to_size_wqe_d, ((uint32_t*)(request->gds_sinfo.ptr_to_size_wqe_h))[0],
@@ -385,10 +441,11 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
     );
 #endif
 
-    ret = gds_launch_update_send_params(request->gds_sinfo.ptr_to_size_wqe_d,
-                                    request->gds_sinfo.ptr_to_size_new_d,
-                                    request->gds_sinfo.ptr_to_addr_wqe_d,
-                                    request->gds_sinfo.ptr_to_addr_new_d,
+    ret = gds_launch_update_send_params(
+                                    peer,
+                                    request->gds_sinfo.ptr_to_size_wqe_d, request->gds_sinfo.ptr_to_size_new_d,
+                                    request->gds_sinfo.ptr_to_lkey_wqe_d, request->gds_sinfo.ptr_to_lkey_new_d,
+                                    request->gds_sinfo.ptr_to_addr_wqe_d, request->gds_sinfo.ptr_to_addr_new_d,
                                     stream);
     if(ret)
     {

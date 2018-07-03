@@ -1574,6 +1574,10 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, CUcontext ctx, int gpu_i
         CUfunction func = gds_load_kernel(major, minor, "krn1snd2wait");
         GDS_ASSERT(func);
         peer->kernels.krn1snd2wait = func;
+
+        func = gds_load_kernel(major, minor, "krnsetsndpar");
+        GDS_ASSERT(func);
+        peer->kernels.krnsetsndpar = func;
         
         gpu_registered[gpu_id] = true;
 

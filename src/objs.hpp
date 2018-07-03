@@ -82,6 +82,7 @@ struct gds_peer {
 
         struct {
                 CUfunction krn1snd2wait;
+                CUfunction krnsetsndpar;
         } kernels;
 
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;

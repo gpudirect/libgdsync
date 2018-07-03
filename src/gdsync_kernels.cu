@@ -27,7 +27,7 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
                 }
 
                 // marshal parameters
-
+#if 0
                 param = &params.at(0);
                 GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
                 sem0.ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
@@ -71,7 +71,7 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
                 sem23[1].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
                 sem23[1].value = param->writeValue.value;
                 gds_dbg("sem23[1] %p %x\n", sem23[1].ptr, sem23[1].value);
-
+#endif
                 void *krn_params[] = {
                         reinterpret_cast<void *>(&sem0),
                         reinterpret_cast<void *>(&sem1),
@@ -91,6 +91,36 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
         } while(0);
 
         return ret;
+}
+
+int gds_launch_update_send_params(
+                gds_peer *peer,
+                CUdeviceptr ptr_to_size_wqe, CUdeviceptr ptr_to_size_new,
+                CUdeviceptr ptr_to_lkey_wqe, CUdeviceptr ptr_to_lkey_new,
+                CUdeviceptr ptr_to_addr_wqe, CUdeviceptr ptr_to_addr_new,
+                CUstream stream)
+{
+        //gds_dbg("Launching gds_update_send_params with ptr_to_size_wqe=%x, ptr_to_size_new=%x, ptr_to_lkey_wqe=%x, ptr_to_lkey_new=%x, ptr_to_addr_wqe=%x, ptr_to_addr_new=%x\n", 
+        //        ptr_to_size_wqe, ptr_to_size_new, ptr_to_lkey_wqe, ptr_to_lkey_new, ptr_to_addr_wqe, ptr_to_addr_new);
+
+        void *krn_params[] = {
+                reinterpret_cast<void *>(&ptr_to_size_wqe),
+                reinterpret_cast<void *>(&ptr_to_size_new),
+                reinterpret_cast<void *>(&ptr_to_lkey_wqe),
+                reinterpret_cast<void *>(&ptr_to_lkey_new),
+                reinterpret_cast<void *>(&ptr_to_addr_wqe),
+                reinterpret_cast<void *>(&ptr_to_addr_new)
+        };
+
+        CUCHECK(cuLaunchKernel(peer->kernels.krnsetsndpar,
+                                1, 1, 1,    // 1x1x1 blocks
+                                3, 1, 1,    // 1x1x1 threads
+                                0,          // shared mem
+                                stream,     // stream
+                                krn_params, // params
+                                0 ));       // extra
+
+        return 0;
 }
 
 /*

@@ -30,17 +30,25 @@ libgdsyncinclude_HEADERS = include/gdsync/core.h include/gdsync/device.cuh  incl
 src_libgdsync_la_CFLAGS = $(AM_CFLAGS)
 src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp src/gdsync_kernels.cu src/kernel_desc.cpp include/gdsync.h 
 src_libgdsync_la_LDFLAGS = -version-info 2:0:1
-nodist_src_libgdsync_la_SOURCES = src/module_1snd2wait.cpp
+nodist_src_libgdsync_la_SOURCES = src/module_1snd2wait.cpp src/module_setsndpar.cpp
 
 # these are generated files that must be cleaned
 BUILT_SOURCES = src/module_1snd2wait.cpp src/1snd2wait_fatbin.h src/1snd2wait_fatbin.h
+BUILT_SOURCES += src/module_setsndpar.cpp src/setsndpar_fatbin.h
 CLEANFILES = src/module_1snd2wait.cpp src/1snd2wait_fatbin.h src/1snd2wait_fatbin.h
+CLEANFILES += src/module_setsndpar.cpp src/setsndpar_fatbin.h
 
 src/module_1snd2wait.cpp: src/1snd2wait_fatbin.h
 	$(GENMODULE) -k krn1snd2wait -o $@ -f $^
 
 src/1snd2wait_fatbin.h: src/1snd2wait.fatbin
 	$(BIN2C) --type char --padd \00,\00,\00,\00 --const --name krn1snd2wait_fatbin $< >$@ 
+
+src/module_setsndpar.cpp: src/setsndpar_fatbin.h
+	$(GENMODULE) -k krnsetsndpar -o $@ -f $^
+src/setsndpar_fatbin.h: src/setsndpar.fatbin
+	$(BIN2C) --type char --padd \00,\00,\00,\00 --const --name krnsetsndpar_fatbin $< >$@ 
+
 
 GENCODE_FLAGS=
 # Generate SASS code for each SM architecture listed in $(SMS)
@@ -51,6 +59,9 @@ NUM_SMS = $(words $(sort $(SMS)))
 $(eval GENCODE_FLAGS += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM))
 
 src/1snd2wait.fatbin: src/kernels/1snd2wait.cu
+	nvcc $(GENCODE_FLAGS) $(CPPFLAGS) $(AM_CPPFLAGS)  -fatbin -o $@ $<
+
+src/setsndpar.fatbin: src/kernels/setsndpar.cu
 	nvcc $(GENCODE_FLAGS) $(CPPFLAGS) $(AM_CPPFLAGS)  -fatbin -o $@ $<
 
 noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/utils.hpp src/archutils.h src/mlnxutils.h
