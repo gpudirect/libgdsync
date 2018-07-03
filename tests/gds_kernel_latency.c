@@ -54,6 +54,7 @@
 #include <arpa/inet.h>
 #include <time.h>
 #include <assert.h>
+#include <limits.h>
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -153,6 +154,8 @@ struct pingpong_context {
         int                      rcnt;
         int                      skip_kernel_launch;
         int                      exp_send_info;
+        int                      validate;
+        char                     *validate_buf;
 };
 
 static int my_rank, comm_size;
@@ -182,7 +185,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                             int use_gpumem,
                                             int use_desc_apis,
                                             int skip_kernel_launch,
-                                            int exp_send_info)
+                                            int exp_send_info,
+                                            int validate)
 {
 	struct pingpong_context *ctx;
 
@@ -203,8 +207,9 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         ctx->gpumem   = use_gpumem;
         ctx->use_desc_apis = use_desc_apis;
         ctx->skip_kernel_launch = skip_kernel_launch;
-        ctx->exp_send_info = exp_send_info;
+        ctx->validate = validate;
         //Exposed send info
+        ctx->exp_send_info = exp_send_info;
         ctx->txbufexp = NULL;
         ctx->txbufexp_size = NULL;
         ctx->txbufexp_lkey = NULL;
@@ -232,6 +237,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                         ctx->txbufexp_addr = (uintptr_t*)memalign(page_size, sizeof(uintptr_t));
                 }
         }
+
 	if (!ctx->buf) {
 		fprintf(stderr, "Couldn't allocate work buf.\n");
 		goto clean_ctx;
@@ -263,11 +269,23 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 }
         }
 
+        if(ctx->validate)
+        {
+                ctx->validate_buf = memalign(page_size, alloc_size);
+                if (!ctx->validate_buf) {
+                        fprintf(stderr, "Couldn't allocate validate buf.\n");
+                        goto clean_ctx;
+                }
+        }
+
         gpu_info("allocated ctx buffer %p\n", ctx->buf);
         ctx->rxbuf = (char*)ctx->buf;
         ctx->txbuf = (char*)ctx->buf + align_to(size + 40, page_size);
 
-        fprintf(stderr,"txbuf address 0x%lx\n", ctx->txbuf);
+        gpu_info("txbuf address 0x%lx\n", ctx->txbuf);
+        if(ctx->exp_send_info == 1)
+                gpu_info("txbufexp address 0x%lx\n", ctx->txbufexp);
+
         //ctx->rx_flag = (char*)ctx->buf + 2 * align_to(size + 40, page_size);
 
         ctx->rx_flag =  memalign(page_size, alloc_size);
@@ -344,13 +362,18 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                 2*sizeof(uint32_t),
                                 cudaMemcpyDefault
                                 ));
+
+                        gpu_memset(ctx->txbufexp, 0, alloc_size);
                 }
                 else {
                         ctx->txbufexp_size[0] = ctx->sizeexp;
                         ctx->txbufexp_lkey[0] = ctx->mrexp->lkey;
                         ctx->txbufexp_addr[0]=(uintptr_t)(ctx->txbufexp);
-                        fprintf(stderr, "New tx size: %d instead of %d. New tx addr: %lx instead of %lx\n", 
+                        gpu_info("exp_send_info - hostmem: new tx size: %d instead of %d. New tx addr: %lx instead of %lx\n", 
                                 ctx->txbufexp_size[0], ctx->size, ctx->txbufexp_addr[0], ctx->txbuf);
+
+                        memset(ctx->txbufexp, 0, alloc_size);
+
                 }
         }
         
@@ -424,11 +447,14 @@ clean_device:
 	ibv_close_device(ctx->context);
 
 clean_buffer:
-	if (ctx->gpumem)
+        if(ctx->validate)
+                free(ctx->validate_buf);
+        if (ctx->gpumem)
         {
                 gpu_free(ctx->buf);
                 if( ctx->exp_send_info == 1 )
                 {
+                        gpu_free(ctx->txbufexp);
                         gpu_free(ctx->txbufexp_size);
                         gpu_free(ctx->txbufexp_lkey);
                         gpu_free(ctx->txbufexp_addr);
@@ -439,9 +465,10 @@ clean_buffer:
                 free(ctx->buf);
                 if( ctx->exp_send_info == 1 )
                 {
-                   free(ctx->txbufexp_size);
-                   free(ctx->txbufexp_lkey);
-                   free(ctx->txbufexp_addr);
+                        free(ctx->txbufexp);
+                        free(ctx->txbufexp_size);
+                        free(ctx->txbufexp_lkey);
+                        free(ctx->txbufexp_addr);
                 }
         }
 
@@ -488,6 +515,10 @@ int pp_close_ctx(struct pingpong_context *ctx)
 	if (ibv_close_device(ctx->context)) {
 		gpu_err("Couldn't release context\n");
 	}
+
+        if(ctx->validate)
+                free(ctx->validate_buf);
+
 
         if (ctx->gpumem)
         {
@@ -795,6 +826,25 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
         }
         PROF(&prof, prof_idx++);
 	for (i = 0; i < posted_recv; ++i) {
+                if(ctx->validate)
+                {
+                        cudaDeviceSynchronize();
+
+                        if (ctx->gpumem)
+                        {
+                                gpu_memset(ctx->txbuf, i%CHAR_MAX, ctx->size);
+                                //We need to cover the entire buffer
+                                if(ctx->exp_send_info)
+                                        gpu_memset(ctx->txbufexp, (i+1)%CHAR_MAX, ctx->size);
+                        }
+                        else
+                        {
+                                memset(ctx->txbuf, i%CHAR_MAX, ctx->size);
+                                if(ctx->exp_send_info)
+                                        memset(ctx->txbufexp, (i+1)%CHAR_MAX, ctx->size);
+                        }
+                }
+
                 if (is_client) {
 			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
 				cudaEventRecord(start_time[event_idx], gpu_stream);
@@ -850,7 +900,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 {
                                         ret = gds_update_send_info(
                                                 &wdesc->send_rq,
-                                                (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC, 
+                                                (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC,
                                                 0);
 
                                         if (ret) {
@@ -973,6 +1023,21 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 wdesc->descs[k].tag = GDS_TAG_SEND;
                                 wdesc->descs[k].send = &wdesc->send_rq;
                                 ++k;
+
+                                if( ctx->exp_send_info == 1 )
+                                {
+                                        ret = gds_prepare_send_info(
+                                                &wdesc->send_rq,
+                                                &(ctx->txbufexp_size[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
+                                                &(ctx->txbufexp_lkey[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
+                                                &(ctx->txbufexp_addr[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST);
+
+                                        if (ret) {
+                                                retcode = -ret;
+                                                break;
+                                        }
+                                }
+
                                 ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
                                 if (ret) {
                                         retcode = -ret;
@@ -983,6 +1048,20 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 wdesc->descs[k].wait = &wdesc->wait_tx_rq;
                                 ++k;
                                 wdesc->n_descs = k;
+
+                                if( ctx->exp_send_info == 1 )
+                                {
+                                        ret = gds_update_send_info(
+                                                &wdesc->send_rq,
+                                                (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC,
+                                                0);
+
+                                        if (ret) {
+                                                retcode = -ret;
+                                                break;
+                                        }
+                                }
+
                                 if (ctx->peersync) {
                                         ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
                                         free(wdesc);
@@ -1020,6 +1099,32 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
 				event_idx++;
 			} 
                 }
+
+                if(ctx->validate)
+                {
+                        cudaDeviceSynchronize();
+
+                        cudaMemcpy(ctx->validate_buf, ctx->rxbuf, ctx->size, cudaMemcpyDefault);
+                        char *value = (char*)ctx->validate_buf;
+                        char expected=i%CHAR_MAX;
+
+                        for (int j=0; j<(ctx->size); j++) {
+                                //Only half of the rxbuf (ctx->sizeexp) is filled with (i+1)
+                                //the second half is always 0
+                                if(ctx->exp_send_info)
+                                {
+                                        if(j < ctx->sizeexp)
+                                                expected=(i+1)%CHAR_MAX;
+                                        else
+                                                expected=0;
+                                }
+                                if (value[j] != expected) {
+                                        fprintf(stderr, "validation check failed index: %d expected: %d actual: %d iteration %d \n", j, expected, value[j], i);
+                                        retcode=-1;
+                                        goto out;
+                                }
+                        }
+                }
         }
         PROF(&prof, prof_idx++);
         if (!retcode) {
@@ -1048,6 +1153,7 @@ static void usage(const char *argv0)
 	printf("  -n, --iters=<iters>    number of exchanges (default 1000)\n");
 	printf("  -e, --events           sleep on CQ events (default poll)\n");
 	printf("  -g, --gid-idx=<gid index> local port gid index\n");
+        printf("  -v, --validate           validate\n");
 	printf("  -S, --gpu-calc-size=<size>  size of GPU compute buffer (default 128KB)\n");
 	printf("  -G, --gpu-id           use specified GPU (default 0)\n");
 	printf("  -B, --batch-length=<n> max batch length (default 20)\n");
@@ -1102,6 +1208,7 @@ int main(int argc, char *argv[])
         int                      use_desc_apis = 0;
         int                      skip_kernel_launch = 0;
         int                      exp_send_info = 0;
+        int                      validate = 0;
 
         MPI_CHECK(MPI_Init(&argc, &argv));
         MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &comm_size));
@@ -1141,6 +1248,7 @@ int main(int argc, char *argv[])
 			{ .name = "sl",       		.has_arg = 1, .val = 'l' },
 			{ .name = "events",   		.has_arg = 0, .val = 'e' },
 			{ .name = "gid-idx",  		.has_arg = 1, .val = 'g' },
+                        { .name = "validate",           .has_arg = 0, .val = 'v' },
 			{ .name = "gpu-id",          	.has_arg = 1, .val = 'G' },
 			{ .name = "peersync",        	.has_arg = 0, .val = 'P' },
 			{ .name = "peersync-gpu-cq", 	.has_arg = 0, .val = 'C' },
@@ -1155,10 +1263,11 @@ int main(int argc, char *argv[])
 			{ .name = "gpu-mem",         	.has_arg = 0, .val = 'E' },
 			{ .name = "skip-kernel-launch", .has_arg = 0, .val = 'K' },
 			{ .name = "send-info", 		.has_arg = 0, .val = 'I' },
+
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:eg:G:k:S:B:PCDQTM:EUKI", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:evg:G:k:S:B:PCDQTM:EUKI", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -1212,6 +1321,11 @@ int main(int argc, char *argv[])
 		case 'g':
 			gidx = strtol(optarg, NULL, 0);
 			break;
+
+                case 'v':
+                        validate = 1;
+                        printf("INFO: validate=1\n");
+                        break;
 
 		case 'G':
 			gpu_id = strtol(optarg, NULL, 0);
@@ -1308,6 +1422,11 @@ int main(int argc, char *argv[])
                 //return 1;
         }
 
+        if (validate && gds_qp_type == IBV_QPT_UD) {
+                gpu_err("validation requires QPT RC\n");
+                return 1;
+        }
+
         assert(comm_size == 2);
         char hostnames[comm_size][MPI_MAX_PROCESSOR_NAME];
         int name_len;
@@ -1386,7 +1505,7 @@ int main(int argc, char *argv[])
                 }
         }
         printf("[%d] use gpumem: %d\n", my_rank, use_gpumem);
-	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis, skip_kernel_launch, exp_send_info);
+	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis, skip_kernel_launch, exp_send_info, validate);
 	if (!ctx)
 		return 1;
 
