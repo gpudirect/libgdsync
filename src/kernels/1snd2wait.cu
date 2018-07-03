@@ -34,9 +34,10 @@ using namespace gdsync;
 
 extern "C" __global__ void krn1snd2wait(param_1snd2wait p)
 {
-    if (threadIdx.x==0) {
+    if (threadIdx.x==32) {
         device::release(p.sem0);
-        __threadfence_system();
+        //__threadfence_system();
+        __threadfence();
         device::release(p.sem1);
     }
 
@@ -44,7 +45,7 @@ extern "C" __global__ void krn1snd2wait(param_1snd2wait p)
     // ringing for sends and notification of completions:
     //__syncthreads();
 
-    if (threadIdx.x<2) {
+    else if (threadIdx.x<2) {
         device::wait(p.semw[threadIdx.x], p.condw[threadIdx.x]);
         device::release(p.sem23[threadIdx.x]);
     }

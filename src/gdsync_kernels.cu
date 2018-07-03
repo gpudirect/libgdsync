@@ -109,7 +109,7 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
 
         CUCHECK(cuLaunchKernel(peer->kernels.krn1snd2wait,
                                1, 1, 1,    // 1x1x1 blocks
-                               32, 1, 1,   // 1x1x1 threads
+                               2*32, 1, 1, // 1x1x1 threads
                                0,          // shared mem
                                stream,     // stream
                                krn_params, // params
