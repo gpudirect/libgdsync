@@ -1422,7 +1422,7 @@ int main(int argc, char *argv[])
                 //return 1;
         }
 
-        if (validate && gds_qp_type == IBV_QPT_UD) {
+        if (validate == 1 && gds_qpt == IBV_QPT_UD) {
                 gpu_err("validation requires QPT RC\n");
                 return 1;
         }
