@@ -837,6 +837,7 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
 
 static bool gds_can_use_opt_kernel(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem_ops)
 {
+        return false;
         size_t i;
         gds_tag_t tags[] = { GDS_TAG_SEND, GDS_TAG_WAIT, GDS_TAG_WAIT };
         for(i = 0; i < n_descs; ++i) {
