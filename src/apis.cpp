@@ -303,6 +303,8 @@ int gds_prepare_send_info(gds_send_request_t *request,
         goto out;
     }
 
+    gds_dbg("new_size=%p, new_lkey=%p, new_addr=%p\n", ptr_to_size_new, ptr_to_lkey_new, ptr_to_addr_new);
+
     //Size
     request->gds_sinfo.ptr_to_size_wqe_h=request->gds_sinfo.swr_info.sge_list[sge_index].ptr_to_size;
     request->gds_sinfo.ptr_to_size_wqe_d=0;
@@ -318,7 +320,7 @@ int gds_prepare_send_info(gds_send_request_t *request,
                             &request->gds_sinfo.ptr_to_size_wqe_d
                         );
         if (ret) {
-                gds_err("error %d while looking up %p\n",
+                gds_err("error %d while looking up ptr_to_size_wqe_h=%p\n",
                     ret, (uint32_t*)request->gds_sinfo.ptr_to_size_wqe_h);
                 goto out;
         }
@@ -333,7 +335,7 @@ int gds_prepare_send_info(gds_send_request_t *request,
                             &request->gds_sinfo.ptr_to_size_new_d
                         );
         if (ret) {
-                gds_err("error %d while looking up %p\n", ret, ptr_to_size_new);
+                gds_err("error %d while looking up ptr_to_size_new=%p\n", ret, ptr_to_size_new);
                 goto out;
         }
     }
@@ -353,7 +355,7 @@ int gds_prepare_send_info(gds_send_request_t *request,
                             &request->gds_sinfo.ptr_to_lkey_wqe_d
                         );
         if (ret) {
-                gds_err("error %d while looking up %p\n",
+                gds_err("error %d while looking up ptr_to_lkey_wqe_h=%p\n",
                     ret, (uint32_t*)request->gds_sinfo.ptr_to_lkey_wqe_h);
                 goto out;
         }
@@ -368,7 +370,7 @@ int gds_prepare_send_info(gds_send_request_t *request,
                             &request->gds_sinfo.ptr_to_lkey_new_d
                         );
         if (ret) {
-                gds_err("error %d while looking up %p\n", ret, ptr_to_lkey_new);
+                gds_err("error %d while looking up ptr_to_lkey_new=%p\n", ret, ptr_to_lkey_new);
                 goto out;
         }
     }
@@ -389,7 +391,7 @@ int gds_prepare_send_info(gds_send_request_t *request,
                             &request->gds_sinfo.ptr_to_addr_wqe_d
                         );
         if (ret) {
-                gds_err("error %d while looking up %p\n",
+                gds_err("error %d while looking up ptr_to_addr_wqe_h=%p\n",
                     ret, (uint32_t*)request->gds_sinfo.ptr_to_addr_wqe_h);
                 goto out;
         }
@@ -404,7 +406,7 @@ int gds_prepare_send_info(gds_send_request_t *request,
                             &request->gds_sinfo.ptr_to_addr_new_d
                         );
         if (ret) {
-                gds_err("error %d while looking up %p\n", ret, ptr_to_addr_new);
+                gds_err("error %d while looking up ptr_to_addr_new=%p\n", ret, ptr_to_addr_new);
                 goto out;
         }
     }
