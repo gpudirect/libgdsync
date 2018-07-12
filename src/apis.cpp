@@ -687,17 +687,26 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 }
         }
 
-        if (gds_enable_kernel_ops() && use_opt)
-                retcode = gds_launch_1QPSend_2CQWait(peer, stream, params);
-        else
-                retcode = gds_stream_batch_ops(peer, stream, params, 0);
-
-        if (retcode) {
-                gds_err("error %d in gds_stream_batch_ops\n", retcode);
-                ret = retcode;
-                goto out;
+        if (gds_enable_kernel_ops() && use_opt) {
+                //retcode = gds_launch_1QPSend_2CQWait(peer, stream, params);
+                retcode = gds_dispatch_kernel_ops(peer, stream, params);
+                if (retcode == ENOSPC) {
+                        retcode = 0;
+                } else if (retcode) {
+                        gds_err("error %d in gds_stream_batch_ops\n", retcode);
+                        ret = retcode;
+                        goto out;
+                }
         }
-
+        // fallback dispatching to CUDA MemOps
+        if (!retcode) {
+                retcode = gds_stream_batch_ops(peer, stream, params, 0);
+                if (retcode) {
+                        gds_err("error %d in gds_stream_batch_ops\n", retcode);
+                        ret = retcode;
+                        goto out;
+                }
+        }
 out:
         return ret;
 }

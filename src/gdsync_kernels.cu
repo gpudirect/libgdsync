@@ -36,10 +36,83 @@
 
 using namespace gdsync;
 
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER && HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY
 __host__
-int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &params)
+static int gds_launch_1QPSend_2CQWait_wm(gds_peer *peer, CUstream stream, gds_op_list_t &params)
 {
         int ret = 0;
+        int n = 0;
+        param_1snd2wait p;
+        void *krn_params[] = { &p };
+        CUstreamBatchMemOpParams *param = NULL;
+        gds_dbg("stream=%p #params=%zu cufunction=%p\n", stream, params.size(), peer->kernels.krn1snd2wait);
+        GDS_ASSERT(params.size() == 7);
+
+        // parameter marshaling
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem0.ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem0.value = param->writeValue.value;
+        gds_dbg("p.sem0 %p %x\n", p.sem0.ptr, p.sem0.value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_MEMORY_BARRIER);
+        ++n
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_MEMORY);
+        // TODO: implement memset kernel
+        // hack! need to assert mlx5 and size==64
+        // converting write memory into write_64 of 1st qword
+        p.sem1.ptr = reinterpret_cast<uint64_t*>(param->writeMemory.dst);
+        p.sem1.value = *reinterpret_cast<uint64_t*>(param->writeMemory.src);
+        gds_dbg("p.sem1 %p %lx\n", p.sem1.ptr, p.sem1.value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
+        p.semw[0].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
+        p.semw[0].value = param->waitValue.value;
+        p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
+        gds_dbg("p.semw[0]:%p value:0x%lx cond:0x%x\n", p.semw[0].ptr, p.semw[0].value, p.condw[0]);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem23[0].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem23[0].value = param->writeValue.value;
+        gds_dbg("p.sem23[0] %p %x\n", p.sem23[0].ptr, p.sem23[0].value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
+        p.semw[1].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
+        p.semw[1].value = param->waitValue.value;
+        p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
+        gds_dbg("p.semw[1]:%p value:0x%lx cond:0x%x\n", p.semw[1].ptr, p.semw[1].value, p.condw[1]);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem23[1].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem23[1].value = param->writeValue.value;
+        gds_dbg("p.sem23[1] %p %x\n", p.sem23[1].ptr, p.sem23[1].value);
+
+        CUCHECK(cuLaunchKernel(peer->kernels.krn1snd2wait,
+                               1, 1, 1,    // 1x1x1 blocks
+                               2*32, 1, 1, // Nx1x1 threads
+                               0,          // shared mem
+                               stream,     // stream
+                               krn_params, // params
+                               0 ));       // extra
+
+        //CUCHECK(cuStreamSynchronize(stream));
+out:
+        return ret;
+}
+#endif
+
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER
+__host__
+static int gds_launch_1QPSend_2CQWait_w64(gds_peer *peer, CUstream stream, gds_op_list_t &params)
+{
+        int ret = 0;
+        int n = 0;
         param_1snd2wait p;
         void *krn_params[] = { &p };
         CUstreamBatchMemOpParams *param = NULL;
@@ -52,56 +125,42 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
         }
 
         // parameter marshaling
-        param = &params.at(0);
+        param = &params.at(n);
         GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
         p.sem0.ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
         p.sem0.value = param->writeValue.value;
         gds_dbg("p.sem0 %p %x\n", p.sem0.ptr, p.sem0.value);
-
-        param = &params.at(1);
+        ++n;
+        param = &params.at(n);
         GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_MEMORY_BARRIER);
-
-        param = &params.at(2);
-        switch(param->operation) {
-        case CU_STREAM_MEM_OP_WRITE_MEMORY:
-                // TODO: implement memset kernel
-                // hack! need to assert mlx5 and size==64
-                // converting write memory into write_64 of 1st qword
-                p.sem1.ptr = reinterpret_cast<uint64_t*>(param->writeMemory.dst);
-                p.sem1.value = *reinterpret_cast<uint64_t*>(param->writeMemory.src);
-                break;
-        case CU_STREAM_MEM_OP_WRITE_VALUE_64:
-                p.sem1.ptr = reinterpret_cast<uint64_t*>(param->writeValue.address);
-                p.sem1.value = param->writeValue.value64;
-                break;
-        default:
-                gds_err("unexpected operation %d\n", param->operation);
-                ret = EINVAL;
-                goto out;
-        }
+        ++n
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_64);
+        p.sem1.ptr = reinterpret_cast<uint64_t*>(param->writeValue.address);
+        p.sem1.value = param->writeValue.value64;
         gds_dbg("p.sem1 %p %lx\n", p.sem1.ptr, p.sem1.value);
-
-        param = &params.at(3);
+        ++n;
+        param = &params.at(n);
         GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
         p.semw[0].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
         p.semw[0].value = param->waitValue.value;
         p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
         gds_dbg("p.semw[0]:%p value:0x%lx cond:0x%x\n", p.semw[0].ptr, p.semw[0].value, p.condw[0]);
-
-        param = &params.at(4);
+        ++n;
+        param = &params.at(n);
         GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
         p.sem23[0].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
         p.sem23[0].value = param->writeValue.value;
         gds_dbg("p.sem23[0] %p %x\n", p.sem23[0].ptr, p.sem23[0].value);
-
-        param = &params.at(5);
+        ++n;
+        param = &params.at(n);
         GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
         p.semw[1].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
         p.semw[1].value = param->waitValue.value;
         p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
         gds_dbg("p.semw[1]:%p value:0x%lx cond:0x%x\n", p.semw[1].ptr, p.semw[1].value, p.condw[1]);
-
-        param = &params.at(6);
+        ++n;
+        param = &params.at(n);
         GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
         p.sem23[1].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
         p.sem23[1].value = param->writeValue.value;
@@ -109,7 +168,7 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
 
         CUCHECK(cuLaunchKernel(peer->kernels.krn1snd2wait,
                                1, 1, 1,    // 1x1x1 blocks
-                               2*32, 1, 1, // 1x1x1 threads
+                               2*32, 1, 1, // Nx1x1 threads
                                0,          // shared mem
                                stream,     // stream
                                krn_params, // params
@@ -117,6 +176,241 @@ int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &p
 
         //CUCHECK(cuStreamSynchronize(stream));
 out:
+        return ret;
+}
+#endif
+
+__host__
+static int gds_launch_1QPSend_2CQWait_w32(gds_peer *peer, CUstream stream, gds_op_list_t &params)
+{
+        int ret = 0;
+        int n = 0;
+        param_1snd2wait p;
+        void *krn_params[] = { &p };
+        CUstreamBatchMemOpParams *param = NULL;
+        gds_dbg("stream=%p #params=%zu cufunction=%p\n", stream, params.size(), peer->kernels.krn1snd2wait);
+
+        if (params.size() != 7) {
+                gds_dbg("unexpected %d params\n", params.size());
+                ret = EINVAL;
+                goto out;
+        }
+
+        // parameter marshaling
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem0.ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem0.value = param->writeValue.value;
+        gds_dbg("p.sem0 %p %x\n", p.sem0.ptr, p.sem0.value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem1.ptr = reinterpret_cast<uint64_t*>(param->writeValue.address);
+        gds_dbg("p.sem1 %p\n", p.sem1.ptr);
+        GDS_ASSERT((((unsigned long)p.sem1.ptr) & 0x7) == 0);
+        p.sem1.value = param->writeValue.value;
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        GDS_ASSERT((unsigned long)p.sem1.ptr + 4 == (unsigned long)param->writeValue.address);
+        p.sem1.value |= static_cast<uint64_t>(param->writeValue.value)<<32;
+        gds_dbg("p.sem1 %p %lx\n", p.sem1.ptr, p.sem1.value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
+        p.semw[0].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
+        p.semw[0].value = param->waitValue.value;
+        p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
+        gds_dbg("p.semw[0]:%p value:0x%lx cond:0x%x\n", p.semw[0].ptr, p.semw[0].value, p.condw[0]);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem23[0].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem23[0].value = param->writeValue.value;
+        gds_dbg("p.sem23[0] %p %x\n", p.sem23[0].ptr, p.sem23[0].value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
+        p.semw[1].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
+        p.semw[1].value = param->waitValue.value;
+        p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
+        gds_dbg("p.semw[1]:%p value:0x%lx cond:0x%x\n", p.semw[1].ptr, p.semw[1].value, p.condw[1]);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem23[1].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem23[1].value = param->writeValue.value;
+        gds_dbg("p.sem23[1] %p %x\n", p.sem23[1].ptr, p.sem23[1].value);
+
+        CUCHECK(cuLaunchKernel(peer->kernels.krn1snd2wait,
+                               1, 1, 1,    // 1x1x1 blocks
+                               2*WARP_THREADS, 1, 1, // Nx1x1 threads
+                               0,          // shared mem
+                               stream,     // stream
+                               krn_params, // params
+                               0 ));       // extra
+
+        //CUCHECK(cuStreamSynchronize(stream));
+out:
+        return ret;
+}
+
+__host__
+int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &params)
+{
+        int ret = 0;
+        int n = 0;
+        param_1snd2wait p;
+        void *krn_params[] = { &p };
+        CUstreamBatchMemOpParams *param = NULL;
+        gds_dbg("stream=%p #params=%zu cufunction=%p\n", stream, params.size(), peer->kernels.krn1snd2wait);
+
+        if (params.size() != 7) {
+                gds_dbg("unexpected %d params\n", params.size());
+                ret = EINVAL;
+                goto out;
+        }
+
+        // parameter marshaling
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem0.ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem0.value = param->writeValue.value;
+        gds_dbg("p.sem0 %p %x\n", p.sem0.ptr, p.sem0.value);
+        ++n;
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_MEMORY_BARRIER);
+        ++n
+#endif
+        param = &params.at(n);
+        switch(param->operation) {
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY
+        case CU_STREAM_MEM_OP_WRITE_MEMORY:
+                // TODO: implement memset kernel
+                // hack! need to assert mlx5 and size==64
+                // converting write memory into write_64 of 1st qword
+                p.sem1.ptr = reinterpret_cast<uint64_t*>(param->writeMemory.dst);
+                p.sem1.value = *reinterpret_cast<uint64_t*>(param->writeMemory.src);
+                break;
+#endif
+        case CU_STREAM_MEM_OP_WRITE_VALUE_64:
+                p.sem1.ptr = reinterpret_cast<uint64_t*>(param->writeValue.address);
+                p.sem1.value = param->writeValue.value64;
+                break;
+        default:
+                gds_err("unexpected operation type:%d\n", param->operation);
+                ret = EINVAL;
+                goto out;
+        }
+        gds_dbg("p.sem1 %p %lx\n", p.sem1.ptr, p.sem1.value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
+        p.semw[0].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
+        p.semw[0].value = param->waitValue.value;
+        p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
+        gds_dbg("p.semw[0]:%p value:0x%lx cond:0x%x\n", p.semw[0].ptr, p.semw[0].value, p.condw[0]);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem23[0].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem23[0].value = param->writeValue.value;
+        gds_dbg("p.sem23[0] %p %x\n", p.sem23[0].ptr, p.sem23[0].value);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WAIT_VALUE_32);
+        p.semw[1].ptr = reinterpret_cast<uint32_t*>(param->waitValue.address);
+        p.semw[1].value = param->waitValue.value;
+        p.condw[0] = gds_cuwait_flags_to_wait_cond(param->waitValue.flags);
+        gds_dbg("p.semw[1]:%p value:0x%lx cond:0x%x\n", p.semw[1].ptr, p.semw[1].value, p.condw[1]);
+        ++n;
+        param = &params.at(n);
+        GDS_ASSERT(param->operation == CU_STREAM_MEM_OP_WRITE_VALUE_32);
+        p.sem23[1].ptr = reinterpret_cast<uint32_t*>(param->writeValue.address);
+        p.sem23[1].value = param->writeValue.value;
+        gds_dbg("p.sem23[1] %p %x\n", p.sem23[1].ptr, p.sem23[1].value);
+
+        CUCHECK(cuLaunchKernel(peer->kernels.krn1snd2wait,
+                               1, 1, 1,    // 1x1x1 blocks
+                               2*32, 1, 1, // Nx1x1 threads
+                               0,          // shared mem
+                               stream,     // stream
+                               krn_params, // params
+                               0 ));       // extra
+
+        //CUCHECK(cuStreamSynchronize(stream));
+out:
+        return ret;
+}
+
+struct gds_kernel_op_feature_req {
+        int n_params;
+        int param_types[10];
+        int (*launch_kernel)(gds_peer *peer, CUstream stream, gds_op_list_t &params);
+};
+
+gds_kernel_op_feature_req kernel_op_table[] = 
+{
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER && HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WRITE_MEMORY
+        { 7, { 
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_MEMORY_BARRIER,
+                        CU_STREAM_MEM_OP_WRITE_MEMORY,
+                        CU_STREAM_MEM_OP_WAIT_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_WAIT_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                },
+          gds_launch_1QPSend_2CQWait_wm
+        }
+#endif
+#if HAVE_DECL_CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEMORY_BARRIER
+        { 7, { 
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_MEMORY_BARRIER,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_64,
+                        CU_STREAM_MEM_OP_WAIT_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_WAIT_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32
+                },
+          gds_launch_1QPSend_2CQWait_w64
+        }
+#endif
+        { 7, { 
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_WAIT_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32,
+                        CU_STREAM_MEM_OP_WAIT_VALUE_32,
+                        CU_STREAM_MEM_OP_WRITE_VALUE_32
+                },
+          gds_launch_1QPSend_2CQWait_w32
+        }
+};
+
+int gds_dispatch_kernel_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params)
+{
+        int ret = ENOSPC;
+
+        for (int i = 0; i < sizeof(kernel_op_table)/sizeof(kernel_op_table[0]); ++i) {
+                gds_kernel_op_feature_req *op = &kernel_op_table[i];
+                if (params.size() == op->n_params) {
+                        for (int p = 0; p < op->n_params; ++p) {
+                                if (params[p].operation != op->param_types[p]) {
+                                        gds_dbg("skipping kernel op %d because of param %d\n", i, p);
+                                        goto next_op;
+                                }
+                        }
+                        gds_dbg("dispatching to kernel op %d\n", i);
+                        return op->launch_kernel(peer, stream, params);
+                }
+                next_op:
+                continue;
+        }
+
         return ret;
 }
 

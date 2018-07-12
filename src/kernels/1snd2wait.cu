@@ -34,7 +34,10 @@ using namespace gdsync;
 
 extern "C" __global__ void krn1snd2wait(param_1snd2wait p)
 {
-    if (threadIdx.x==32) {
+    // reordered send and receive paths
+
+    // send path is executed by 2nd warp
+    if (threadIdx.x==WARP_THREADS) {
         device::release(p.sem0);
         //__threadfence_system();
         __threadfence();
@@ -45,6 +48,7 @@ extern "C" __global__ void krn1snd2wait(param_1snd2wait p)
     // ringing for sends and notification of completions:
     //__syncthreads();
 
+    // recv path is executed by 1st warp
     else if (threadIdx.x<2) {
         device::wait(p.semw[threadIdx.x], p.condw[threadIdx.x]);
         device::release(p.sem23[threadIdx.x]);

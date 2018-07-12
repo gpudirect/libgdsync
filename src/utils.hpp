@@ -236,10 +236,10 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_lis
 int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
 
+bool gds_enable_kernel_ops();
 CUfunction gds_load_kernel(int arch_major, int arch_minor, const char *kernel_name, bool force_fatbin = 0);
 int gds_launch_1QPSend_2CQWait(gds_peer *peer, CUstream stream, gds_op_list_t &params);
-bool gds_enable_kernel_ops();
-
+int gds_dispatch_kernel_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params);
 
 //-----------------------------------------------------------------------------
 

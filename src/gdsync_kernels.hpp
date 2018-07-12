@@ -35,6 +35,10 @@ struct param_1snd2wait {
         gdsync::wait_cond_t condw[2];
 };
 
+enum {
+    WARP_THREADS = 32
+};
+
 /*
  * Local variables:
  *  c-indent-level: 8
