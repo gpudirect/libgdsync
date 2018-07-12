@@ -197,8 +197,10 @@ AC_CHECK_DECLS([CU_STREAM_WAIT_VALUE_NOR], [], [], [[#include <cuda.h>]])
 AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_64_BIT_STREAM_MEM_OPS], [], [], [[#include <cuda.h>]])
 AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_WAIT_VALUE_NOR], [], [], [[#include <cuda.h>]])
 
-dnl Checks for CUDA >= 9.2
+dnl Checks for CUDA >= 9.1
 AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_USE_STREAM_MEM_OPS], [], [], [[#include <cuda.h>]])
+
+dnl Checks for CUDA >= 9.2
 AC_CHECK_DECLS([CU_DEVICE_ATTRIBUTE_CAN_FLUSH_REMOTE_WRITES], [], [], [[#include <cuda.h>]])
 
 if test x$enable_ext_memops = xyes; then
