@@ -87,30 +87,45 @@ int register_kernel(struct kernel_desc *desc);
 
 
 #define KERNEL_DESC_BEGIN(KRN)                       \
-static kernel_desc MERGE(KRN,desc);                  \
+static struct kernel_desc MERGE(KRN,_desc);          \
+void * MERGE(KRN,force_link)(void) { }               \
 struct MERGE(KRN,ctor) {                             \
     MERGE(KRN,ctor)() {                              \
-        MERGE(KRN,desc).name=STRINGIFY(KRN);         \
-        MERGE(KRN,desc).n_cubins=0;                  \
-        memset(MERGE(KRN,desc).cubins, 0, sizeof(MERGE(KRN,desc).cubins));    \
-        MERGE(KRN,desc).fatbin=NULL;
+        MERGE(KRN,_desc).name=STRINGIFY(KRN);        \
+        MERGE(KRN,_desc).n_cubins=0;                 \
+        memset(MERGE(KRN,_desc).cubins, 0, sizeof(MERGE(KRN,_desc).cubins));    \
+        MERGE(KRN,_desc).fatbin=NULL;
 
 //    desc.cubins[desc.n_cubins] = (struct kernel_cubin) \ //DEFINE_KERNEL_ARCH_DESC_ENTRY(KRN, ARCH);
 #define KERNEL_CUBIN(KRN, ARCH)                                         \
-    MERGE(KRN,desc).cubins[MERGE(KRN,desc).n_cubins] = (struct kernel_cubin) \
-    {                                                                   \
-        STRINGIFY(ARCH),                                                \
-        MAJOR_FROM_ARCH(ARCH),                                          \
-        MINOR_FROM_ARCH(ARCH),                                          \
-        DEFINE_KERNEL_BY_ARCH(KRN,MERGE(sm,ARCH))                       \
-    };                                                                  \
-    ++MERGE(KRN,desc).n_cubins;                                         \
-    assert(MERGE(KRN,desc).n_cubins <= max_kernel_cubins);
+        MERGE(KRN,_desc).cubins[MERGE(KRN,_desc).n_cubins] = (struct kernel_cubin) \
+        {                                                               \
+            STRINGIFY(ARCH),                                            \
+            MAJOR_FROM_ARCH(ARCH),                                      \
+            MINOR_FROM_ARCH(ARCH),                                      \
+            DEFINE_KERNEL_BY_ARCH(KRN,MERGE(sm,ARCH))                   \
+        };                                                              \
+        ++MERGE(KRN,_desc).n_cubins;                                    \
+        assert(MERGE(KRN,_desc).n_cubins <= max_kernel_cubins);
 
 #define KERNEL_FATBIN(KRN)                                              \
-    MERGE(KRN,desc).fatbin = DEFINE_KERNEL_BY_ARCH(KRN, fatbin);
+        MERGE(KRN,_desc).fatbin = DEFINE_KERNEL_BY_ARCH(KRN, fatbin);
 
 #define KERNEL_DESC_END(KRN)                               \
-    register_kernel(&MERGE(KRN,desc));                     \
+        register_kernel(&MERGE(KRN,_desc));                \
     }                                                      \
 } MERGE(KRN,ctor_inst);
+
+#define KERNEL_FORCE_LINK(KRN) \
+    extern void *MERGE(KRN,force_link)(void); \
+    volatile void* c = MERGE(KRN,force_link)(); \
+
+
+/*
+ * Local variables:
+ *  c-indent-level: 8
+ *  c-basic-offset: 8
+ *  tab-width: 8
+ *  indent-tabs-mode: nil
+ * End:
+ */
