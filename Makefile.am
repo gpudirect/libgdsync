@@ -28,16 +28,16 @@ libgdsyncincludedir = $(includedir)/gdsync
 libgdsyncinclude_HEADERS = include/gdsync/core.h include/gdsync/device.cuh  include/gdsync/mlx5.h include/gdsync/tools.h
 
 src_libgdsync_la_CFLAGS = $(AM_CFLAGS)
-src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp src/gdsync_kernels.cu src/kernel_desc.cpp include/gdsync.h 
+src_libgdsync_la_SOURCES = src/gdsync.cpp src/memmgr.cpp src/mem.cpp src/objs.cpp src/apis.cpp src/mlx5.cpp src/gdsync_kernels.cu src/kernel_desc.cpp include/gdsync.h
 src_libgdsync_la_LDFLAGS = -version-info 2:0:1
-nodist_src_libgdsync_la_SOURCES = src/module_1snd2wait.cpp
+nodist_src_libgdsync_la_SOURCES = src/module_1snd2wait.cpp src/1snd2wait_fatbin.h src/1snd2wait.fatbin
 
 # these are generated files that must be cleaned
-BUILT_SOURCES = src/module_1snd2wait.cpp src/1snd2wait_fatbin.h src/1snd2wait_fatbin.h
-CLEANFILES = src/module_1snd2wait.cpp src/1snd2wait_fatbin.h src/1snd2wait_fatbin.h
+BUILT_SOURCES = src/module_1snd2wait.cpp src/1snd2wait_fatbin.h src/1snd2wait.fatbin
+#CLEANFILES = src/module_1snd2wait.cpp src/1snd2wait_fatbin.h src/1snd2wait.fatbin
 
-src/module_1snd2wait.cpp: src/1snd2wait_fatbin.h
-	$(GENMODULE) -k krn1snd2wait -o $@ -f $^
+src/module_1snd2wait.cpp: src/1snd2wait_fatbin.h src/kernel_desc.hpp
+	$(GENMODULE) -k krn1snd2wait -o $@ -f $<
 
 src/1snd2wait_fatbin.h: src/1snd2wait.fatbin
 	$(BIN2C) --type char --padd \00,\00,\00,\00 --const --name krn1snd2wait_fatbin $< >$@ 
