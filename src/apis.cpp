@@ -252,7 +252,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
             ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &(request->gds_sinfo.swr_info));
             if(ret)
             {
-                fprintf(stderr, "ibv_exp_post_send_info returned %d: %s\n", ret, strerror(ret));
+                fprintf(stderr, "ibv_exp_query_send_info returned %d: %s\n", ret, strerror(ret));
                 goto out;
             }
 
@@ -411,6 +411,11 @@ int gds_prepare_send_info(gds_send_request_t *request,
         }
     }
 
+    gds_err("ptr_to_size_new_h=%lx, ptr_to_size_new_d=%lx, ptr_to_lkey_new_h=%lx, ptr_to_lkey_new_d=%lx, ptr_to_addr_new_h=%lx, ptr_to_addr_new_d=%lx\n",
+        request->gds_sinfo.ptr_to_size_new_h, request->gds_sinfo.ptr_to_size_new_d,
+        request->gds_sinfo.ptr_to_lkey_new_h, request->gds_sinfo.ptr_to_lkey_new_d,
+        request->gds_sinfo.ptr_to_addr_new_h, request->gds_sinfo.ptr_to_addr_new_d);
+
 out:
     return ret;
 }
@@ -421,6 +426,8 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
 {
     int ret=0;
     gds_peer *peer = NULL;
+    uint32_t mem_type;
+    CUresult cures;
 
     assert(request);
 
@@ -430,6 +437,69 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
     }
 
     gds_dump_swr("gds_update_send_info - before", request->gds_sinfo.swr_info);
+
+    if(request->gds_sinfo.ptr_to_size_wqe_d)
+    {
+        cures = cuPointerGetAttribute((void *)&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr)request->gds_sinfo.ptr_to_size_wqe_d);
+        if (cures == CUDA_SUCCESS) {
+            if (mem_type == CU_MEMORYTYPE_DEVICE) gds_err("ptr_to_size_wqe_d is GPU mem\n");
+            else if (mem_type == CU_MEMORYTYPE_HOST) gds_err("ptr_to_size_wqe_d is host mem\n");
+            else
+            {
+                gds_err("error ptr size mem_type=%d\n", __FUNCTION__, mem_type);
+                ret=-1;
+                goto out;
+            }
+        }
+        else {
+            cuGetErrorString(ret, &err_str);        
+            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, ret, err_str);
+            ret=-1;
+            goto out;
+        }        
+    }
+
+    if(request->gds_sinfo.ptr_to_lkey_wqe_d)
+    {
+        cures = cuPointerGetAttribute((void *)&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr)request->gds_sinfo.ptr_to_lkey_wqe_d);
+        if (cures == CUDA_SUCCESS) {
+            if (mem_type == CU_MEMORYTYPE_DEVICE) gds_err("ptr_to_lkey_wqe_d is GPU mem\n");
+            else if (mem_type == CU_MEMORYTYPE_HOST) gds_err("ptr_to_lkey_wqe_d is host mem\n");
+            else
+            {
+                gds_err("error ptr size mem_type=%d\n", __FUNCTION__, mem_type);
+                ret=-1;
+                goto out;
+            }
+        }
+        else {
+            cuGetErrorString(ret, &err_str);        
+            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, ret, err_str);
+            ret=-1;
+            goto out;
+        }        
+    }
+
+    if(request->gds_sinfo.ptr_to_addr_wqe_d)
+    {
+        cures = cuPointerGetAttribute((void *)&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr)request->gds_sinfo.ptr_to_addr_wqe_d);
+        if (cures == CUDA_SUCCESS) {
+            if (mem_type == CU_MEMORYTYPE_DEVICE) gds_err("ptr_to_addr_wqe_d is GPU mem\n");
+            else if (mem_type == CU_MEMORYTYPE_HOST) gds_err("ptr_to_addr_wqe_d is host mem\n");
+            else
+            {
+                gds_err("error ptr size mem_type=%d\n", __FUNCTION__, mem_type);
+                ret=-1;
+                goto out;
+            }
+        }
+        else {
+            cuGetErrorString(ret, &err_str);        
+            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, ret, err_str);
+            ret=-1;
+            goto out;
+        }        
+    }
 
 #if 0
     gds_err("ptr_to_size_wqe_h=0x%lx ptr_to_size_wqe_d=0x%lx (val=0x%08x), ptr_to_size_new_h=0x%lx ptr_to_size_new_d=0x%lx (val=0x%08x)\n",
