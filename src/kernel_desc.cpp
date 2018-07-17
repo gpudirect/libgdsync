@@ -135,3 +135,7 @@ CUfunction gds_load_kernel(int arch_major, int arch_minor, const char *kernel_na
 
     return function;
 }
+
+void foobar() {
+    KERNEL_FORCE_LINK(krn1snd2wait);
+}
