@@ -104,10 +104,10 @@ gds_buf *gds_peer::buf_alloc_wq(size_t length, uint32_t dir, uint32_t alignment,
         case IBV_EXP_PEER_DIRECTION_FROM_PEER|IBV_EXP_PEER_DIRECTION_TO_HCA:
                 // dbrec
                 if (GDS_ALLOC_DBREC_ON_GPU == (flags & GDS_ALLOC_DBREC_MASK)) {
-                        gds_dbg("allocating DBREC on GPU mem\n");
+                        gds_dbg("allocating SQ/DBREC on GPU mem\n");
                         buf = alloc(length, alignment);
                 } else {
-                        gds_dbg("allocating DBREC on Host mem\n");
+                        gds_dbg("allocating SQ/DBREC on Host mem\n");
                 }
                 break;
         default:
