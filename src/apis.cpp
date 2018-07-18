@@ -428,6 +428,7 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
     gds_peer *peer = NULL;
     uint32_t mem_type;
     CUresult cures;
+    const char * err_str;
 
     assert(request);
 
@@ -452,8 +453,8 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
             }
         }
         else {
-            cuGetErrorString(ret, &err_str);        
-            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, ret, err_str);
+            cuGetErrorString(cures, &err_str);        
+            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, cures, err_str);
             ret=-1;
             goto out;
         }        
@@ -473,8 +474,8 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
             }
         }
         else {
-            cuGetErrorString(ret, &err_str);        
-            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, ret, err_str);
+            cuGetErrorString(cures, &err_str);        
+            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, cures, err_str);
             ret=-1;
             goto out;
         }        
@@ -494,8 +495,8 @@ int gds_update_send_info(gds_send_request_t *request, int send_flags, CUstream s
             }
         }
         else {
-            cuGetErrorString(ret, &err_str);        
-            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, ret, err_str);
+            cuGetErrorString(cures, &err_str);        
+            gds_err("%s error ret=%d(%s)\n", __FUNCTION__, cures, err_str);
             ret=-1;
             goto out;
         }        
