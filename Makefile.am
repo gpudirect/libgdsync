@@ -44,7 +44,7 @@ src/1snd2wait_fatbin.h: src/1snd2wait.fatbin
 	$(BIN2C) --type char --padd \00,\00,\00,\00 --const --name krn1snd2wait_fatbin $< >$@ 
 
 src/module_setsndpar.cpp: src/setsndpar_fatbin.h src/kernel_desc.hpp
-	$(GENMODULE) -k krnsetsndpar -o $@ -f $^
+	$(GENMODULE) -k krnsetsndpar -o $@ -f $<
 src/setsndpar_fatbin.h: src/setsndpar.fatbin
 	$(BIN2C) --type char --padd \00,\00,\00,\00 --const --name krnsetsndpar_fatbin $< >$@ 
 

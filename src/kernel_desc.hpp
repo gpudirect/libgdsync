@@ -120,6 +120,9 @@ struct MERGE(KRN,ctor) {                             \
     extern void *MERGE(KRN,force_link)(void); \
     volatile void* c = MERGE(KRN,force_link)(); \
 
+#define KERNEL_FORCE_LINK_2(KRN) \
+    extern void *MERGE(KRN,force_link)(void); \
+    volatile void* c2 = MERGE(KRN,force_link)(); \
 
 /*
  * Local variables:
