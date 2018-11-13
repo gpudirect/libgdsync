@@ -1189,7 +1189,7 @@ struct mlx5_sge{
 };
 
 struct mlx5_send_wqe{
-    uint32_t ctrl1;
+    uint32_t opmod_wqeidx_opcode;
     uint32_t qpn_ds;
     uint64_t ctrl34;
     uint64_t send12;
@@ -1212,11 +1212,25 @@ int gds_report_post(struct gds_qp *qp  /*, struct gds_send_wr* wr*/){
 
 int gds_query_last_info(struct gds_qp *qp, struct gds_swr_info* gds_info){
     struct mlx5_send_wqe* wqe = (struct mlx5_send_wqe*)  ((char*) qp->swq + qp->swq_stride * ((qp->swq_cnt) % qp->swq_size));
-    gds_info->num_sge = (ntohl(wqe->qpn_ds) & (0x0000007f)) - 2;
+
+    size_t base_blocks = 1;
+    switch (ntohl(wqe->opmod_wqeidx_opcode) & (0x000000ff)){
+      case IBV_WR_RDMA_WRITE:
+      case IBV_WR_RDMA_WRITE_WITH_IMM:
+      case IBV_WR_RDMA_READ:
+        base_blocks = 2;
+        break;
+      case IBV_WR_SEND:
+      default:
+        base_blocks = 1;
+    }
+
+    gds_info->num_sge = (ntohl(wqe->qpn_ds) & (0x0000007f)) - base_blocks;
+
     struct mlx5_sge* sge = &(wqe->sge);
     size_t blocks_per_wqe = (qp->swq_stride / sizeof(mlx5_sge));
 
-    uint16_t blocks_left = ((qp->swq_size - (qp->swq_cnt % qp->swq_size)) * qp->swq_stride) - 2;
+    uint16_t blocks_left = ((qp->swq_size - (qp->swq_cnt % qp->swq_size)) * qp->swq_stride) - base_blocks;
     //we need to monitor how many blocks we have left before wrap around.
 
     for (size_t i = 0; i< gds_info->num_sge; ++i){
