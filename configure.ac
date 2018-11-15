@@ -163,7 +163,7 @@ AC_CHECK_HEADER(infiniband/peer_ops.h, [],
     AC_MSG_ERROR([<infiniband/peer_ops.h> not found.  libgdsync requires verbs peer-direct support.]))
 
 AC_CHECK_HEADERS([infiniband/mlx5dv.h], [],
-    AC_MSG_ERROR([<infiniband/peer_ops.h> not found.  libgdsync requires verbs peer-direct support.]))
+    AC_MSG_ERROR([<infiniband/mlx5dv.h> not found.  libgdsync requires direct verbs support.]))
 
 AC_CHECK_DECLS([mlx5dv_init_obj],
                [], [], [[#include <infiniband/mlx5dv.h>]])
