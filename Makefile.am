@@ -95,7 +95,7 @@ endif
 SUFFIXES= .cu
 
 .cu.o:
-	$(NVCC) $(CPPFLAGS) $(AM_LDFLAGS)  $(AM_CPPFLAGS) $(NVCCFLAGS) $(GENCODE_FLAGS) -c -o $@ $<
+	$(NVCC) $(CPPFLAGS) $(AM_CPPFLAGS) $(NVCCFLAGS) $(GENCODE_FLAGS) -c -o $@ $<
 
 .cu.lo:
 	$(LIBTOOL) --tag=CXX --mode=compile $(top_srcdir)/cudalt $(NVCC) --resource-usage -o $@ -c $< $(CPPFLAGS) $(AM_CPPFLAGS) $(NVCCFLAGS) $(GENCODE_FLAGS)

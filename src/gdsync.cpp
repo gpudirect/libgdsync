@@ -1885,8 +1885,10 @@ int gds_add_dv_qp_ctx(struct gds_qp* gqp){
         dv_obj.qp.out = dv_qp;
         int ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_QP);
 
-        if (ret)
+        if (ret){
+          free(dv_qp);
           return ret;
+        }
 
         gqp->swq_cnt = 0;
         gqp->swq_size = dv_qp->sq.wqe_cnt;

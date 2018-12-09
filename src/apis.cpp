@@ -1192,8 +1192,6 @@ struct mlx5_send_wqe{
     uint32_t opmod_wqeidx_opcode;
     uint32_t qpn_ds;
     uint64_t ctrl34;
-    uint64_t send12;
-    uint64_t send34;
     struct mlx5_sge sge;
 };
 
