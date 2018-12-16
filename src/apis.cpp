@@ -127,13 +127,14 @@ out:
 //-----------------------------------------------------------------------------
 
 #define ntohll(x) (((uint64_t)(ntohl((int)((x << 32) >> 32))) << 32) |  (uint32_t)ntohl(((int)(x >> 32))))
-static void gds_dump_swr(const char * func_name, struct ibv_qp_swr_info swr_info)
+
+static void gds_dump_swr(const char * func_name, struct gds_swr_info swr_info)
 {
     gds_dbg("[%s] wr_id=%lx, num_sge=%d\n", func_name, swr_info.wr_id, swr_info.num_sge);
 
     for(int j=0; j < swr_info.num_sge; j++)
     {
-        gds_dbg("[%s]    SGE=%d, Size ptr=0x%08x, Size=%d (0x%08x), +offset=%d\n", 
+        gds_dbg("[%s]    SGE=%d, Size ptr=00x%lx, Size=%d (0x%08x), +offset=%d\n",
             func_name,
             j,
             (uintptr_t)swr_info.sge_list[j].ptr_to_size, 
@@ -141,14 +142,14 @@ static void gds_dump_swr(const char * func_name, struct ibv_qp_swr_info swr_info
             (uint32_t) ((uint32_t*)swr_info.sge_list[j].ptr_to_size)[0],
             ((uint32_t) ntohl( ((uint32_t*)swr_info.sge_list[j].ptr_to_size)[0]) ) + swr_info.sge_list[j].offset );
 
-        gds_dbg("[%s]    SGE=%d, lkey ptr=0x%08x, lkey=%d (0x%08x)\n", 
+        gds_dbg("[%s]    SGE=%d, lkey ptr=00x%lx, lkey=%d (0x%08x)\n", 
             func_name,
             j,
             (uintptr_t)swr_info.sge_list[j].ptr_to_lkey, 
             (uint32_t) ntohl( ((uint32_t*)swr_info.sge_list[j].ptr_to_lkey)[0]) ,
             (uint32_t) ((uint32_t*)swr_info.sge_list[j].ptr_to_lkey)[0]);
 
-        gds_dbg("[%s]    SGE=%d, Addr ptr=%lx, Addr=%lx -offset=%lx\n", 
+        gds_dbg("[%s]    SGE=%d, Addr ptr=00x%lx, Addr=%lx -offset=%lx\n",
             func_name,
             j,
             (uintptr_t)swr_info.sge_list[j].ptr_to_addr, 
@@ -233,7 +234,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                             (int)p_ewr->sg_list[i].length
                 );
             }
-            memset(&(request->gds_sinfo.swr_info), 0, sizeof(struct ibv_qp_swr_info));
+            memset(&(request->gds_sinfo.swr_info), 0, sizeof(struct gds_swr_info));
         }
 
         ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
@@ -246,18 +247,19 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                 }
                 goto out;
         }
-    
+
         if(get_info)
         {
-            ret = ibv_exp_query_send_info(qp->qp, p_ewr->wr_id, &(request->gds_sinfo.swr_info));
+            ret = gds_query_last_info(qp, &(request->gds_sinfo.swr_info));
             if(ret)
             {
-                fprintf(stderr, "ibv_exp_query_send_info returned %d: %s\n", ret, strerror(ret));
+                fprintf(stderr, "gds_query_last_info returned %d: %s\n", ret, strerror(ret));
                 goto out;
             }
 
             gds_dump_swr("gds_prepare_send", request->gds_sinfo.swr_info);
         }
+        ret = gds_report_post(qp /*, p_ewr*/); //increment counter.
 
         ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
         if (ret) {
@@ -1178,6 +1180,70 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
         }
 out:
         return ret;
+}
+
+struct mlx5_sge{
+    uint32_t byte_count;
+    uint32_t key;
+    uint64_t addr;
+};
+
+struct mlx5_send_wqe{
+    uint32_t opmod_wqeidx_opcode;
+    uint32_t qpn_ds;
+    uint64_t ctrl34;
+    struct mlx5_sge sge;
+};
+
+int gds_report_post(struct gds_qp *qp  /*, struct gds_send_wr* wr*/){
+    ++(qp->swq_cnt);
+    return 0;
+    /*//Smarter Alternative for cases we use larger wqes:
+    struct mlx5_send_wqe* wqe = (struct mlx5_send_wqe*)  ((char*) qp->swq + qp->swq_stride * ((qp->swq_cnt) % qp->swq_size));
+    size_t ds = (ntohl(wqe->qpn_ds) & (0x0000007f));
+    size_t wqes_per_block = (qp->swq_stride / sizeof(mlx5_sge));
+    size_t num_blocks = ds / wqes_per_block + !!(ds % wqes_per_block);
+    (qp->swq_cnt)+=num_blocks;
+    return 0;
+    */
+}
+
+int gds_query_last_info(struct gds_qp *qp, struct gds_swr_info* gds_info){
+    struct mlx5_send_wqe* wqe = (struct mlx5_send_wqe*)  ((char*) qp->swq + qp->swq_stride * ((qp->swq_cnt) % qp->swq_size));
+
+    size_t base_blocks = 1;
+    switch (ntohl(wqe->opmod_wqeidx_opcode) & (0x000000ff)){
+      case IBV_WR_RDMA_WRITE:
+      case IBV_WR_RDMA_WRITE_WITH_IMM:
+      case IBV_WR_RDMA_READ:
+        base_blocks = 2;
+        break;
+      case IBV_WR_SEND:
+      default:
+        base_blocks = 1;
+    }
+
+    gds_info->num_sge = (ntohl(wqe->qpn_ds) & (0x0000007f)) - base_blocks;
+
+    struct mlx5_sge* sge = &(wqe->sge);
+    size_t blocks_per_wqe = (qp->swq_stride / sizeof(mlx5_sge));
+
+    uint16_t blocks_left = ((qp->swq_size - (qp->swq_cnt % qp->swq_size)) * qp->swq_stride) - base_blocks;
+    //we need to monitor how many blocks we have left before wrap around.
+
+    for (size_t i = 0; i< gds_info->num_sge; ++i){
+        gds_info->sge_list[i].ptr_to_size = (uintptr_t) &(sge->byte_count);
+        gds_info->sge_list[i].ptr_to_lkey = (uintptr_t) &(sge->key);
+        gds_info->sge_list[i].ptr_to_addr = (uintptr_t) &(sge->addr);
+        gds_info->sge_list[i].offset = 0; //why is that here?
+        if (i == blocks_left){
+          sge = (struct mlx5_sge*) qp->swq;
+        } else {
+          (++sge);
+        }
+    }
+    gds_info->wr_id = 1;  //just exists to match old API.
+    return 0;
 }
 
 //-----------------------------------------------------------------------------

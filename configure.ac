@@ -47,6 +47,18 @@ else
     fi
 fi
 
+AC_ARG_WITH([libmlx5],
+    AC_HELP_STRING([--with-libmlx5], [ Set path to libmlx5s installation ]))
+if test x$with_libmlx5 = x || test x$with_libmlx5 = xno; then
+    want_libmlx5=no
+else
+    want_libmlx5=yes
+    if test -d $with_libmlx5; then
+        CPPFLAGS="$CPPFLAGS -I$with_libmlx5/include"
+        LDFLAGS="$LDFLAGS -L$with_libmlx5/lib"
+    fi
+fi
+
 AC_ARG_WITH([gdrcopy],
     AC_HELP_STRING([--with-gdrcopy], [ Set path to gdrcopy installation ]))
 if test x$with_gdrcopy = x || test x$with_gdrcopy = xno; then
@@ -149,6 +161,13 @@ AC_CHECK_LIB(ibverbs, ibv_exp_create_qp,
 
 AC_CHECK_HEADER(infiniband/peer_ops.h, [],
     AC_MSG_ERROR([<infiniband/peer_ops.h> not found.  libgdsync requires verbs peer-direct support.]))
+
+AC_CHECK_HEADERS([infiniband/mlx5dv.h], [],
+    AC_MSG_ERROR([<infiniband/mlx5dv.h> not found.  libgdsync requires direct verbs support.]))
+
+AC_CHECK_DECLS([mlx5dv_init_obj],
+               [], [], [[#include <infiniband/mlx5dv.h>]])
+
 AC_HEADER_STDC
 
 dnl Checks for typedefs, structures, and compiler characteristics.
@@ -175,11 +194,10 @@ LDFLAGS="$LDFLAGS -L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64
 NVCCFLAGS="$NVCCFLAGS"
 CUDA_CFLAGS="$CUDA_CFLAGS"
 CUDA_LDFLAGS="-L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64 -L$CUDA_PATH/lib"
-CUDA_LIBS="-lcuda -lcudart -lcufft"
+CUDA_LIBS="-lcuda -lcudart -lcufft -lmlx5"
 NVCCFLAGS="$NVCCFLAGS $CUDA_CFLAGS $CUDA_LDFLAGS $CUDA_LIBS"
 AC_SUBST(NVCC, [nvcc])
 AC_SUBST(NVCCFLAGS)
-
 
 dnl AC_CHECK_MEMBER([union CUstreamBatchMemOpParams_union.flushRemoteWrites],
 dnl   [AC_SUBST( HAS_CUDA_MEMOP_FLUSH_REMOTE_WRITES, 1 )],
