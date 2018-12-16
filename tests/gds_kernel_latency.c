@@ -1103,7 +1103,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 if(ctx->validate)
                 {
                         cudaDeviceSynchronize();
-
+                        MPI_Barrier(MPI_COMM_WORLD);
                         cudaMemcpy(ctx->validate_buf, ctx->rxbuf, ctx->size, cudaMemcpyDefault);
                         char *value = (char*)ctx->validate_buf;
                         char expected=i%CHAR_MAX;
