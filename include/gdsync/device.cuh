@@ -146,7 +146,7 @@ namespace gdsync {
             int ret = ERROR_TIMEOUT;
             volatile clock_t tmout = clock() + large_timeout;
             do {
-                if (~(*sem.access_once() | sem.value)) {
+                if (0 == ~(*sem.access_once() | sem.value)) {
                     ret = 0;
                     break;
                 }
