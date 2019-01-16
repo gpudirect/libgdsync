@@ -104,12 +104,43 @@ else
         mpi_home=$with_mpi
         MPICC=${mpi_home}/bin/mpicc
         MPICXX=${mpi_home}/bin/mpic++
-        CPPFLAGS="$CPPFLAGS -I${mpi_home}/include"
-        LDFLAGS="$LDFLAGS -L${mpi_home}/lib -L${mpi_home}/lib64"
     else
-        echo "MPI dir does not exist"
+        echo "MPI dir $with_mpi does not exist"
+        exit
     fi
 fi
+if ! test -e ${MPICC}; then
+    echo "cannot find mpicc at ${MPICC}"
+    exit
+fi
+dnl CPPFLAGS="$CPPFLAGS -I${mpi_home}/include"
+dnl LDFLAGS="$LDFLAGS -L${mpi_home}/lib -L${mpi_home}/lib64"
+
+dnl based on https://github.com/tgamblin/libra/blob/master/m4/lx_find_mpi.m4
+dnl mpi_cxx_show=$( $MPICXX -c foo.cpp -showme::compile )
+dnl mpi_cxx_defines=$(echo "$mpi_cxx_show" | grep -o -- '\(^\| \)-D\([[^\"[:space:]]]\+\|\"[[^\"[:space:]]]\+\"\)')
+dnl mpi_cxx_includes=$(echo "$mpi_cxx_show" | grep -o -- '\(^\| \)-I\([[^\"[:space:]]]\+\|\"[[^\"[:space:]]]\+\"\)')
+dnl mpi_cxx_link_paths=$(echo "$mpi_cxx_show" | grep -o -- '\(^\| \)-L\([[^\"[:space:]]]\+\|\"[[^\"[:space:]]]\+\"\)')
+dnl mpi_cxx_libs=$(echo "$mpi_cxx_show" | grep -o -- '\(^\| \)-l\([[^\"[:space:]]]\+\|\"[[^\"[:space:]]]\+\"\)')
+dnl mpi_cc_show=$( $MPICC -c foo.c -showme )
+dnl mpi_cc_defines=$(echo "$mpi_cc_show" | grep -o -- '\(^\| \)-D\([[^\"[:space:]]]\+\|\"[[^\"[:space:]]]\+\"\)')
+dnl mpi_cc_includes=$(echo "$mpi_cc_show" | grep -o -- '\(^\| \)-I\([[^\"[:space:]]]\+\|\"[[^\"[:space:]]]\+\"\)'')
+
+testrun=$($MPICC -showme:compile 2>/dev/null 1>/dev/null)
+rc=$?
+if [[ "$rc" -eq 0 ]]; then
+    MPI_CPPFLAGS=$($MPICC -showme:compile)
+    MPI_CFLAGS=$($MPICC -showme:compile)
+    MPI_CXXFLAGS=$($MPICXX -showme:compile)
+    MPI_LDADD=$($MPICXX -showme:link)
+else
+    echo "this MPI library does not support -showme, trying our best but it might not be enough."
+    MPI_CPPFLAGS="-I${mpi_home}/include"
+    MPI_CFLAGS="${MPI_CPPFLAGS}"
+    MPI_CXXFLAGS="${MPI_CPPFLAGS}"
+    MPI_LDADD="-L${mpi_home}/lib64 -L${mpi_home}/lib -lmpi"
+fi
+
 
 dnl Specify CUDA Location
 AC_ARG_WITH(cuda-toolkit,
@@ -185,6 +216,14 @@ AC_MSG_NOTICE([Setting MPI_PATH = ${mpi_home} ])
 AC_SUBST( MPI_PATH, [${mpi_home} ])
 AC_SUBST( MPICC, [${MPICC} ])
 AC_SUBST( MPICXX, [${MPICXX} ])
+AC_SUBST( MPI_CPPFLAGS, [${MPI_CPPFLAGS}] )
+AC_SUBST( MPI_CFLAGS,   [${MPI_CFLAGS}]   )
+AC_SUBST( MPI_CXXFLAGS, [${MPI_CXXFLAGS}] )
+AC_SUBST( MPI_LDADD,    [${MPI_LDADD}]    )
+AC_MSG_NOTICE([MPI_CPPFLAGS = ${MPI_CPPFLAGS} ])
+AC_MSG_NOTICE([MPI_CFLAGS   = ${MPI_CFLAGS} ])
+AC_MSG_NOTICE([MPI_CXXFLAGS = ${MPI_CXXFLAGS} ])
+AC_MSG_NOTICE([MPI_LDADD    = ${MPI_LDADD} ])
 
 CPPFLAGS="$CPPFLAGS -I$CUDA_DRV_PATH/include -I$CUDA_PATH/include"
 LDFLAGS="$LDFLAGS -L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64 -L$CUDA_PATH/lib"
