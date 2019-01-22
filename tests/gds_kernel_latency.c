@@ -101,8 +101,8 @@ int prof_idx = 0;
 #define USE_CUDA_PROFILER 1
 
 enum {
-	PINGPONG_RECV_WRID = 1,
-	PINGPONG_SEND_WRID = 2,
+        PINGPONG_RECV_WRID = 1,
+        PINGPONG_SEND_WRID = 2,
 };
 
 static int page_size;
@@ -117,34 +117,37 @@ int max_batch_len = 20;
 int stream_cb_error = 0;
 
 struct pingpong_context {
-	struct ibv_context	*context;
-	struct ibv_comp_channel *channel;
-	struct ibv_pd		*pd;
-	struct ibv_mr		*mr;
+        struct ibv_context      *context;
+        struct ibv_comp_channel *channel;
+        struct ibv_pd           *pd;
+        struct ibv_mr           *rxmr;
+        struct ibv_mr           *txmr;
         struct ibv_mr           *mrexp;
-	struct ibv_cq		*tx_cq;
-	struct ibv_cq		*rx_cq;
-	struct ibv_qp		*qp;
-	struct gds_qp		*gds_qp;
-	struct ibv_ah		*ah;
-	void			*buf;
-	char			*txbuf;
-	char			*txbufexp;
+        struct ibv_cq           *tx_cq;
+        struct ibv_cq           *rx_cq;
+        struct ibv_qp           *qp;
+        struct gds_qp           *gds_qp;
+        struct ibv_ah           *ah;
+        char                    *txbuf;
+        int                     txtot_size;
+        char                    *txbufexp;
         uint32_t                *txbufexp_size;
         uint32_t                *txbufexp_lkey;
         uintptr_t               *txbufexp_addr;
         char                    *rxbuf;
+        int                     rxtot_size;
+        size_t                  alloc_size;
         char                    *rx_flag;
-	int			 size;
-        int                      sizeexp;
+        int                      buf_size;
+        int                      buf_sizeexp;
         int                      calc_size;
-	int			 rx_depth;
-	int			 pending;
-	struct ibv_port_attr     portinfo;
-	int                      gpu_id;
-	int                      kernel_duration;
-	int                      peersync;
-	int                      peersync_gpu_cq;
+        int                      rx_depth;
+        int                      pending;
+        struct ibv_port_attr     portinfo;
+        int                      gpu_id;
+        int                      kernel_duration;
+        int                      peersync;
+        int                      peersync_gpu_cq;
         int                      consume_rx_cqe;
         int                      gpumem;
         int                      use_desc_apis;
@@ -161,22 +164,22 @@ struct pingpong_context {
 static int my_rank, comm_size;
 
 struct pingpong_dest {
-	int lid;
-	int qpn;
-	int psn;
-	union ibv_gid gid;
+        int lid;
+        int qpn;
+        int psn;
+        union ibv_gid gid;
 };
 
 static inline unsigned long align_to(unsigned long val, unsigned long pow2)
 {
-	return (val + pow2 - 1) & ~(pow2 - 1);
+        return (val + pow2 - 1) & ~(pow2 - 1);
 }
 
 
 static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size, int calc_size,
-					    int rx_depth, int port,
-					    int use_event,
-					    int gpu_id,
+                                            int rx_depth, int port,
+                                            int use_event,
+                                            int gpu_id,
                                             int peersync,
                                             int peersync_gpu_cq,
                                             int peersync_gpu_dbrec,
@@ -188,60 +191,65 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                             int exp_send_info,
                                             int validate)
 {
-	struct pingpong_context *ctx;
+        struct pingpong_context *ctx;
 
-	if (gpu_id >=0 && gpu_init(gpu_id, sched_mode)) {
-		fprintf(stderr, "error in GPU init.\n");
-		return NULL;
-	}
+        if (gpu_id >=0 && gpu_init(gpu_id, sched_mode)) {
+                fprintf(stderr, "error in GPU init.\n");
+                return NULL;
+        }
 
-	ctx = malloc(sizeof *ctx);
-	if (!ctx)
-		return NULL;
+        ctx = malloc(sizeof *ctx);
+        if (!ctx)
+                return NULL;
 
-	ctx->size      = size;
-        ctx->sizeexp   = size/2;
-	ctx->calc_size = calc_size;
-	ctx->rx_depth = rx_depth;
-	ctx->gpu_id   = gpu_id;
-        ctx->gpumem   = use_gpumem;
-        ctx->use_desc_apis = use_desc_apis;
+        ctx->buf_size           = size;
+        ctx->buf_sizeexp        = size/2;
+        ctx->calc_size          = calc_size;
+        ctx->rx_depth           = rx_depth;
+        ctx->gpu_id             = gpu_id;
+        ctx->gpumem             = use_gpumem;
+        ctx->use_desc_apis      = use_desc_apis;
         ctx->skip_kernel_launch = skip_kernel_launch;
-        ctx->validate = validate;
+        ctx->validate           = validate;
         //Exposed send info
-        ctx->exp_send_info = exp_send_info;
-        ctx->txbufexp = NULL;
-        ctx->txbufexp_size = NULL;
-        ctx->txbufexp_lkey = NULL;
-        ctx->txbufexp_addr=NULL;
+        ctx->exp_send_info      = exp_send_info;
+        ctx->txbufexp           = NULL;
+        ctx->txbufexp_size      = NULL;
+        ctx->txbufexp_lkey      = NULL;
+        ctx->txbufexp_addr      = NULL;
 
-        size_t alloc_size = 3 * align_to(size + 40, page_size);
-	if (ctx->gpumem) {
-		ctx->buf = gpu_malloc(page_size, alloc_size);
-                printf("allocated GPU memory at %p\n", ctx->buf);
+        size_t alloc_size = max_batch_len * align_to(size + 40, page_size);
+        ctx->rxtot_size = alloc_size;
+        ctx->txtot_size = ctx->rxtot_size;
+
+        if (ctx->gpumem) {
+                ctx->txbuf = gpu_malloc(page_size, ctx->txtot_size);
+                ctx->rxbuf = gpu_malloc(page_size, ctx->rxtot_size);
+                printf("allocated GPU memory at txbuf=%p (size %d), rxbuf=%p (size=%d)\n", ctx->txbuf, ctx->txtot_size, ctx->rxbuf, ctx->rxtot_size);
                 if(ctx->exp_send_info == 1)
                 {
-                	ctx->txbufexp = gpu_malloc(page_size, alloc_size);
-                        ctx->txbufexp_size = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t));
-                        ctx->txbufexp_lkey = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t));
-                        ctx->txbufexp_addr = (uintptr_t*)gpu_malloc(page_size, sizeof(uintptr_t));
+                        ctx->txbufexp = gpu_malloc(page_size, ctx->txtot_size);
+                        ctx->txbufexp_size = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_lkey = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_addr = (uintptr_t*)gpu_malloc(page_size, sizeof(uintptr_t)*max_batch_len);
                 }
-	} else {
-		ctx->buf = memalign(page_size, alloc_size);
-                printf("allocated CPU memory at %p\n", ctx->buf);
+        } else {
+                ctx->txbuf = memalign(page_size, ctx->txtot_size); //posix_memalign
+                ctx->rxbuf = memalign(page_size, ctx->rxtot_size);
+                printf("allocated CPU memory at txbuf=%p, rxbuf=%p\n", ctx->txbuf, ctx->rxbuf);
                 if(ctx->exp_send_info == 1)
                 {
-                	ctx->txbufexp = memalign(page_size, alloc_size);
-                        ctx->txbufexp_size = (uint32_t*)memalign(page_size, sizeof(uint32_t));
-                	ctx->txbufexp_lkey = (uint32_t*)memalign(page_size, sizeof(uint32_t));
-                        ctx->txbufexp_addr = (uintptr_t*)memalign(page_size, sizeof(uintptr_t));
+                        ctx->txbufexp = memalign(page_size, ctx->txtot_size);
+                        ctx->txbufexp_size = (uint32_t*)memalign(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_lkey = (uint32_t*)memalign(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_addr = (uintptr_t*)memalign(page_size, sizeof(uintptr_t)*max_batch_len);
                 }
         }
 
-	if (!ctx->buf) {
-		fprintf(stderr, "Couldn't allocate work buf.\n");
-		goto clean_ctx;
-	}                
+        if (!ctx->txbuf || !ctx->rxbuf) {
+                fprintf(stderr, "Couldn't allocate work buf.\n");
+                goto clean_ctx;
+        }
         if(ctx->exp_send_info == 1)
         {
                 if(!ctx->txbufexp)
@@ -271,16 +279,16 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 
         if(ctx->validate)
         {
-                ctx->validate_buf = memalign(page_size, alloc_size);
+                ctx->validate_buf = memalign(page_size, ctx->rxtot_size);
                 if (!ctx->validate_buf) {
                         fprintf(stderr, "Couldn't allocate validate buf.\n");
                         goto clean_ctx;
                 }
         }
 
-        gpu_info("allocated ctx buffer %p\n", ctx->buf);
-        ctx->rxbuf = (char*)ctx->buf;
-        ctx->txbuf = (char*)ctx->buf + align_to(size + 40, page_size);
+        //gpu_info("allocated ctx buffer %p\n", ctx->buf);
+        // ctx->rxbuf = (char*)ctx->buf;
+        // ctx->txbuf = (char*)ctx->buf + align_to(size + 40, page_size);
 
         gpu_info("txbuf address 0x%lx\n", ctx->txbuf);
         if(ctx->exp_send_info == 1)
@@ -294,16 +302,24 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 goto clean_ctx;
         }
 
-	ctx->kernel_duration = 0;
-	ctx->peersync = peersync;
+        ctx->kernel_duration = 0;
+        ctx->peersync = peersync;
         ctx->peersync_gpu_cq = peersync_gpu_cq;
         ctx->consume_rx_cqe = consume_rx_cqe;
 
         // must be ZERO!!! for rx_flag to work...
-	if (ctx->gpumem)
-		gpu_memset(ctx->buf, 0, alloc_size);
-	else
-		memset(ctx->buf, 0, alloc_size);
+        if (ctx->gpumem)
+        {
+                gpu_memset(ctx->txbuf, 0, ctx->txtot_size);
+                gpu_memset(ctx->rxbuf, 0, ctx->rxtot_size);
+                //gpu_memset(ctx->buf, 0, alloc_size);
+        }
+        else
+        {
+                memset(ctx->txbuf, 0, ctx->txtot_size);
+                memset(ctx->rxbuf, 0, ctx->rxtot_size);
+                //memset(ctx->buf, 0, alloc_size);
+        }
 
         memset(ctx->rx_flag, 0, alloc_size);
         gpu_register_host_mem(ctx->rx_flag, alloc_size);
@@ -314,44 +330,50 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         gpu_launch_kernel(ctx->calc_size, ctx->peersync);
         CUCHECK(cuCtxSynchronize());
 
-	ctx->context = ibv_open_device(ib_dev);
-	if (!ctx->context) {
-		gpu_err("Couldn't get context for %s\n",
-			ibv_get_device_name(ib_dev));
-		goto clean_buffer;
-	}
+        ctx->context = ibv_open_device(ib_dev);
+        if (!ctx->context) {
+                gpu_err("Couldn't get context for %s\n",
+                        ibv_get_device_name(ib_dev));
+                goto clean_buffer;
+        }
 
-	if (use_event) {
-		ctx->channel = ibv_create_comp_channel(ctx->context);
-		if (!ctx->channel) {
-			gpu_err("Couldn't create completion channel\n");
-			goto clean_device;
-		}
-	} else
-		ctx->channel = NULL;
+        if (use_event) {
+                ctx->channel = ibv_create_comp_channel(ctx->context);
+                if (!ctx->channel) {
+                        gpu_err("Couldn't create completion channel\n");
+                        goto clean_device;
+                }
+        } else
+                ctx->channel = NULL;
 
-	ctx->pd = ibv_alloc_pd(ctx->context);
-	if (!ctx->pd) {
-		gpu_err("Couldn't allocate PD\n");
-		goto clean_comp_channel;
-	}
+        ctx->pd = ibv_alloc_pd(ctx->context);
+        if (!ctx->pd) {
+                gpu_err("Couldn't allocate PD\n");
+                goto clean_comp_channel;
+        }
 
-	ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, alloc_size, IBV_ACCESS_LOCAL_WRITE);
-	if (!ctx->mr) {
-		gpu_err("Couldn't register MR\n");
-		goto clean_pd;
-	}
+        ctx->rxmr = ibv_reg_mr(ctx->pd, ctx->rxbuf, ctx->rxtot_size, IBV_ACCESS_LOCAL_WRITE);
+        if (!ctx->rxmr) {
+                gpu_err("Couldn't register RX MR\n");
+                goto clean_pd;
+        }
+
+        ctx->txmr = ibv_reg_mr(ctx->pd, ctx->txbuf, ctx->txtot_size, IBV_ACCESS_LOCAL_WRITE);
+        if (!ctx->txmr) {
+                gpu_err("Couldn't register TX MR\n");
+                goto clean_pd;
+        }
 
         if(ctx->exp_send_info == 1)
         {
-                ctx->mrexp = ibv_reg_mr(ctx->pd, ctx->txbufexp, alloc_size, IBV_ACCESS_LOCAL_WRITE);
+                ctx->mrexp = ibv_reg_mr(ctx->pd, ctx->txbufexp, ctx->txtot_size, IBV_ACCESS_LOCAL_WRITE);
                 if (!ctx->mrexp) {
                         gpu_err("Couldn't register MR exp\n");
                         goto clean_pd;
                 }
 
                 if (ctx->gpumem) {
-                        gpu_memset32(ctx->txbufexp_size, ctx->sizeexp, 1);
+                        gpu_memset32(ctx->txbufexp_size, ctx->buf_sizeexp, 1);
                         gpu_memset32(ctx->txbufexp_lkey, ctx->mrexp->lkey, 1);
                         
                         uint32_t tmp_addr[2];
@@ -363,16 +385,16 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                 cudaMemcpyDefault
                                 ));
 
-                        gpu_memset(ctx->txbufexp, 0, alloc_size);
+                        gpu_memset(ctx->txbufexp, 0, ctx->txtot_size);
                 }
                 else {
-                        ctx->txbufexp_size[0] = ctx->sizeexp;
+                        ctx->txbufexp_size[0] = ctx->buf_sizeexp;
                         ctx->txbufexp_lkey[0] = ctx->mrexp->lkey;
                         ctx->txbufexp_addr[0]=(uintptr_t)(ctx->txbufexp);
                         gpu_info("exp_send_info - hostmem: new tx size: %d instead of %d. New tx addr: %lx instead of %lx\n", 
-                                ctx->txbufexp_size[0], ctx->size, ctx->txbufexp_addr[0], ctx->txbuf);
+                                ctx->txbufexp_size[0], ctx->buf_size, ctx->txbufexp_addr[0], ctx->txbuf);
 
-                        memset(ctx->txbufexp, 0, alloc_size);
+                        memset(ctx->txbufexp, 0, ctx->txtot_size);
 
                 }
         }
@@ -402,37 +424,38 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         if (!ctx->gds_qp)  {
                 gpu_err("Couldn't create QP\n");
                 goto clean_mr;
-	}
+        }
         ctx->qp = ctx->gds_qp->qp;
         ctx->tx_cq = ctx->gds_qp->qp->send_cq;
         ctx->rx_cq = ctx->gds_qp->qp->recv_cq;
 
-	{
-		struct ibv_qp_attr attr = {
-			.qp_state        = IBV_QPS_INIT,
-			.pkey_index      = 0,
-			.port_num        = port,
-			.qkey            = 0x11111111,
-			.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE
-		};
+        {
+                struct ibv_qp_attr attr = {
+                        .qp_state        = IBV_QPS_INIT,
+                        .pkey_index      = 0,
+                        .port_num        = port,
+                        .qkey            = 0x11111111,
+                        .qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE
+                };
 
-		if (ibv_modify_qp(ctx->qp, &attr,
-				  IBV_QP_STATE              |
-				  IBV_QP_PKEY_INDEX         |
-				  IBV_QP_PORT               |
-				  ((IBV_QPT_UD == gds_qpt) ? IBV_QP_QKEY : IBV_QP_ACCESS_FLAGS))) {
-			gpu_err("Failed to modify QP to INIT\n");
-			goto clean_qp;
-		}
-	}
+                if (ibv_modify_qp(ctx->qp, &attr,
+                                  IBV_QP_STATE              |
+                                  IBV_QP_PKEY_INDEX         |
+                                  IBV_QP_PORT               |
+                                  ((IBV_QPT_UD == gds_qpt) ? IBV_QP_QKEY : IBV_QP_ACCESS_FLAGS))) {
+                        gpu_err("Failed to modify QP to INIT\n");
+                        goto clean_qp;
+                }
+        }
 
-	return ctx;
+        return ctx;
 
 clean_qp:
-	gds_destroy_qp(ctx->gds_qp);
+        gds_destroy_qp(ctx->gds_qp);
 
 clean_mr:
-	ibv_dereg_mr(ctx->mr);
+        ibv_dereg_mr(ctx->rxmr);
+        ibv_dereg_mr(ctx->txmr);
         if(ctx->exp_send_info == 1)
                 ibv_dereg_mr(ctx->mrexp);
 
@@ -440,89 +463,17 @@ clean_pd:
         ibv_dealloc_pd(ctx->pd);
 
 clean_comp_channel:
-	if (ctx->channel)
-		ibv_destroy_comp_channel(ctx->channel);
+        if (ctx->channel)
+                ibv_destroy_comp_channel(ctx->channel);
 
 clean_device:
-	ibv_close_device(ctx->context);
+        ibv_close_device(ctx->context);
 
 clean_buffer:
         if(ctx->validate)
                 free(ctx->validate_buf);
         if (ctx->gpumem)
         {
-                gpu_free(ctx->buf);
-                if( ctx->exp_send_info == 1 )
-                {
-                        gpu_free(ctx->txbufexp);
-                        gpu_free(ctx->txbufexp_size);
-                        gpu_free(ctx->txbufexp_lkey);
-                        gpu_free(ctx->txbufexp_addr);
-                }
-        }
-	else 
-	{
-                free(ctx->buf);
-                if( ctx->exp_send_info == 1 )
-                {
-                        free(ctx->txbufexp);
-                        free(ctx->txbufexp_size);
-                        free(ctx->txbufexp_lkey);
-                        free(ctx->txbufexp_addr);
-                }
-        }
-
-clean_ctx:
-	if (ctx->gpu_id >= 0)
-		gpu_finalize();
-	free(ctx);
-
-	return NULL;
-}
-
-int pp_close_ctx(struct pingpong_context *ctx)
-{
-	if (gds_destroy_qp(ctx->gds_qp)) {
-		gpu_err("Couldn't destroy QP\n");
-	}
-
-	if (ibv_dereg_mr(ctx->mr)) {
-		gpu_err("Couldn't deregister MR\n");
-	}
-
-        if(ctx->exp_send_info == 1)
-        {
-                if (ibv_dereg_mr(ctx->mrexp))
-                        gpu_err("Couldn't deregister MR EXP\n");
-        }
-
-	if (IBV_QPT_UD == gds_qpt) {
-		if (ibv_destroy_ah(ctx->ah)) {
-			gpu_err("Couldn't destroy AH\n");
-		}
-	}
-
-	if (ibv_dealloc_pd(ctx->pd)) {
-		gpu_err("Couldn't deallocate PD\n");
-	}
-
-	if (ctx->channel) {
-		if (ibv_destroy_comp_channel(ctx->channel)) {
-			gpu_err("Couldn't destroy completion channel\n");
-		}
-	}
-
-	if (ibv_close_device(ctx->context)) {
-		gpu_err("Couldn't release context\n");
-	}
-
-        if(ctx->validate)
-                free(ctx->validate_buf);
-
-
-        if (ctx->gpumem)
-        {
-                gpu_free(ctx->buf);
                 if( ctx->exp_send_info == 1 )
                 {
                         gpu_free(ctx->txbufexp);
@@ -533,7 +484,6 @@ int pp_close_ctx(struct pingpong_context *ctx)
         }
         else 
         {
-                free(ctx->buf);
                 if( ctx->exp_send_info == 1 )
                 {
                         free(ctx->txbufexp);
@@ -543,12 +493,85 @@ int pp_close_ctx(struct pingpong_context *ctx)
                 }
         }
 
-	if (ctx->gpu_id >= 0)
-		gpu_finalize();
+clean_ctx:
+        if (ctx->gpu_id >= 0)
+                gpu_finalize();
+        free(ctx);
 
-	free(ctx);
+        return NULL;
+}
 
-	return 0;
+int pp_close_ctx(struct pingpong_context *ctx)
+{
+        if (gds_destroy_qp(ctx->gds_qp)) {
+                gpu_err("Couldn't destroy QP\n");
+        }
+
+        if (ibv_dereg_mr(ctx->txmr)) {
+                gpu_err("Couldn't deregister TX MR\n");
+        }
+        
+        if (ibv_dereg_mr(ctx->rxmr)) {
+                gpu_err("Couldn't deregister RX MR\n");
+        }
+
+        if(ctx->exp_send_info == 1)
+        {
+                if (ibv_dereg_mr(ctx->mrexp))
+                        gpu_err("Couldn't deregister MR EXP\n");
+        }
+
+        if (IBV_QPT_UD == gds_qpt) {
+                if (ibv_destroy_ah(ctx->ah)) {
+                        gpu_err("Couldn't destroy AH\n");
+                }
+        }
+
+        if (ibv_dealloc_pd(ctx->pd)) {
+                gpu_err("Couldn't deallocate PD\n");
+        }
+
+        if (ctx->channel) {
+                if (ibv_destroy_comp_channel(ctx->channel)) {
+                        gpu_err("Couldn't destroy completion channel\n");
+                }
+        }
+
+        if (ibv_close_device(ctx->context)) {
+                gpu_err("Couldn't release context\n");
+        }
+
+        if(ctx->validate)
+                free(ctx->validate_buf);
+
+
+        if (ctx->gpumem)
+        {
+                if( ctx->exp_send_info == 1 )
+                {
+                        gpu_free(ctx->txbufexp);
+                        gpu_free(ctx->txbufexp_size);
+                        gpu_free(ctx->txbufexp_lkey);
+                        gpu_free(ctx->txbufexp_addr);
+                }
+        }
+        else 
+        {
+                if( ctx->exp_send_info == 1 )
+                {
+                        free(ctx->txbufexp);
+                        free(ctx->txbufexp_size);
+                        free(ctx->txbufexp_lkey);
+                        free(ctx->txbufexp_addr);
+                }
+        }
+
+        if (ctx->gpu_id >= 0)
+                gpu_finalize();
+
+        free(ctx);
+
+        return 0;
 }
 
 static int poll_send_cq(struct pingpong_context *ctx)
@@ -630,27 +653,29 @@ static int poll_recv_cq(struct pingpong_context *ctx)
 
 static int pp_post_recv(struct pingpong_context *ctx, int n)
 {
-	struct ibv_sge list = {
-		.addr	= (uintptr_t) ctx->rxbuf,
-		.length = ctx->size + 40, // good for IBV_QPT_UD
-		.lkey	= ctx->mr->lkey
-	};
+        int i;
+        for (i = 0; i < n; ++i)
+        {
+                struct ibv_sge list = {
+                        .addr   = (uintptr_t) (ctx->rxbuf+(i*align_to(ctx->buf_size + 40, page_size))),
+                        .length = ctx->buf_size + 40, // good for IBV_QPT_UD
+                        .lkey   = ctx->rxmr->lkey
+                };
 
-	if (IBV_QPT_UD != gds_qpt) list.length = ctx->size;
-	
-	struct ibv_recv_wr wr = {
-		.wr_id	    = PINGPONG_RECV_WRID,
-		.sg_list    = &list,
-		.num_sge    = 1,
-	};
-	struct ibv_recv_wr *bad_wr;
-	int i;
+                if (IBV_QPT_UD != gds_qpt) list.length = ctx->buf_size;
+                
+                struct ibv_recv_wr wr = {
+                        .wr_id      = PINGPONG_RECV_WRID,
+                        .sg_list    = &list,
+                        .num_sge    = 1,
+                };
+                struct ibv_recv_wr *bad_wr;
 
-	for (i = 0; i < n; ++i)
-		if (ibv_post_recv(ctx->qp, &wr, &bad_wr))
-			break;
+                if (ibv_post_recv(ctx->qp, &wr, &bad_wr))
+                        break;
+        }
 
-	return i;
+        return i;
 }
 
 static int pp_wait_cq(struct pingpong_context *ctx, int is_client)
@@ -692,82 +717,82 @@ static int pp_wait_cq(struct pingpong_context *ctx, int is_client)
         return ret;
 }
 
-static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *p_gpu_stream)
+static int pp_post_gpu_send(struct pingpong_context *ctx, int iteration, uint32_t qpn, CUstream *p_gpu_stream)
 {
         int ret = 0;
-	struct ibv_sge list = {
-		.addr	= (uintptr_t) ctx->txbuf,
-		.length = ctx->size,
-		.lkey	= ctx->mr->lkey
-	};
-	gds_send_wr ewr = {
-		.wr_id	    = PINGPONG_SEND_WRID,
-		.sg_list    = &list,
-		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
-		.wr         = {
-			.ud = {
-				 .ah          = ctx->ah,
-				 .remote_qpn  = qpn,
-				 .remote_qkey = 0x11111111
-			 }
-		},
-		.comp_mask = 0
-	};
+        struct ibv_sge list = {
+                .addr   = (uintptr_t) (ctx->txbuf+(iteration*align_to(ctx->buf_size + 40, page_size))),
+                .length = ctx->buf_size,
+                .lkey   = ctx->txmr->lkey
+        };
+        gds_send_wr ewr = {
+                .wr_id      = PINGPONG_SEND_WRID,
+                .sg_list    = &list,
+                .num_sge    = 1,
+                .exp_opcode = IBV_EXP_WR_SEND,
+                .exp_send_flags = IBV_EXP_SEND_SIGNALED,
+                .wr         = {
+                        .ud = {
+                                 .ah          = ctx->ah,
+                                 .remote_qpn  = qpn,
+                                 .remote_qkey = 0x11111111
+                         }
+                },
+                .comp_mask = 0
+        };
 #if 0
-	if (IBV_QPT_UD != gds_qpt) {
-		memset(&ewr, 0, sizeof(ewr));
-		ewr.num_sge = 1;
-		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-		ewr.exp_opcode = IBV_EXP_WR_SEND;
-		ewr.wr_id = PINGPONG_SEND_WRID;
-		ewr.sg_list = &list;
-		ewr.next = NULL;
-	}
+        if (IBV_QPT_UD != gds_qpt) {
+                memset(&ewr, 0, sizeof(ewr));
+                ewr.num_sge = 1;
+                ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
+                ewr.exp_opcode = IBV_EXP_WR_SEND;
+                ewr.wr_id = PINGPONG_SEND_WRID;
+                ewr.sg_list = &list;
+                ewr.next = NULL;
+        }
 #endif
-	gds_send_wr *bad_ewr;
+        gds_send_wr *bad_ewr;
         return gds_stream_queue_send(*p_gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
 }
 
-static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
+static int pp_prepare_gpu_send(struct pingpong_context *ctx, int iteration, uint32_t qpn, gds_send_request_t *req)
 {
         int ret = 0;
-	struct ibv_sge list = {
-		.addr	= (uintptr_t) ctx->txbuf,
-		.length = ctx->size,
-		.lkey	= ctx->mr->lkey
-	};
-	gds_send_wr ewr = {
-		.wr_id	    = PINGPONG_SEND_WRID,
-		.sg_list    = &list,
-		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
-		.wr         = {
-			.ud = {
-				 .ah          = ctx->ah,
-				 .remote_qpn  = qpn,
-				 .remote_qkey = 0x11111111
-			 }
-		},
-		.comp_mask = 0
-	};
-	
-	if (IBV_QPT_UD != gds_qpt) {
-		memset(&ewr, 0, sizeof(ewr));
-		ewr.num_sge = 1;
-		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-		ewr.exp_opcode = IBV_EXP_WR_SEND;
-		ewr.wr_id = PINGPONG_SEND_WRID;
-		ewr.sg_list = &list;
-		ewr.next = NULL;
-	}
-	
-	if( ctx->exp_send_info == 1 )
-		ewr.exp_send_flags |= IBV_EXP_SEND_GET_INFO;
+        struct ibv_sge list = {
+                .addr   = (uintptr_t) (ctx->txbuf+(iteration*align_to(ctx->buf_size + 40, page_size))),
+                .length = ctx->buf_size,
+                .lkey   = ctx->txmr->lkey
+        };
+        gds_send_wr ewr = {
+                .wr_id      = PINGPONG_SEND_WRID,
+                .sg_list    = &list,
+                .num_sge    = 1,
+                .exp_opcode = IBV_EXP_WR_SEND,
+                .exp_send_flags = IBV_EXP_SEND_SIGNALED,
+                .wr         = {
+                        .ud = {
+                                 .ah          = ctx->ah,
+                                 .remote_qpn  = qpn,
+                                 .remote_qkey = 0x11111111
+                         }
+                },
+                .comp_mask = 0
+        };
+        
+        if (IBV_QPT_UD != gds_qpt) {
+                memset(&ewr, 0, sizeof(ewr));
+                ewr.num_sge = 1;
+                ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
+                ewr.exp_opcode = IBV_EXP_WR_SEND;
+                ewr.wr_id = PINGPONG_SEND_WRID;
+                ewr.sg_list = &list;
+                ewr.next = NULL;
+        }
+        
+        if( ctx->exp_send_info == 1 )
+                ewr.exp_send_flags |= IBV_EXP_SEND_GET_INFO;
 
-	gds_send_wr *bad_ewr;
+        gds_send_wr *bad_ewr;
         return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
 }
 
@@ -805,7 +830,7 @@ out:
 static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uint32_t qpn, int is_client)
 {
         int retcode = 0;
-	int i, ret = 0;
+        int i, ret = 0;
         int posted_recv = 0;
 
         //printf("post_work posting %d\n", n_posts);
@@ -825,306 +850,311 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         return 0;
         }
         PROF(&prof, prof_idx++);
-	for (i = 0; i < posted_recv; ++i) {
-                if(ctx->validate)
-                {
-                        cudaDeviceSynchronize();
+        
+        if(ctx->validate)
+        {
+                if (ctx->gpumem)
+                        gpu_memset(ctx->rxbuf, 0, ctx->rxtot_size);
+                else
+                        memset(ctx->rxbuf, 0, ctx->rxtot_size);
 
+                //Useless?
+                cudaDeviceSynchronize();
+                for (i = 0; i < posted_recv; ++i)
+                {
                         if (ctx->gpumem)
                         {
-                                gpu_memset(ctx->txbuf, i%CHAR_MAX, ctx->size);
+                                gpu_memset(ctx->txbuf+(i*align_to(ctx->buf_size + 40, page_size)), i%CHAR_MAX, ctx->buf_size);
                                 //We need to cover the entire buffer
                                 if(ctx->exp_send_info)
-                                        gpu_memset(ctx->txbufexp, (i+1)%CHAR_MAX, ctx->size);
+                                        gpu_memset(ctx->txbufexp+(i*align_to(ctx->buf_size + 40, page_size)), (i+1)%CHAR_MAX, ctx->buf_size);
                         }
                         else
                         {
-                                memset(ctx->txbuf, i%CHAR_MAX, ctx->size);
+                                memset(ctx->txbuf+(i*align_to(ctx->buf_size + 40, page_size)), i%CHAR_MAX, ctx->buf_size);
                                 if(ctx->exp_send_info)
-                                        memset(ctx->txbufexp, (i+1)%CHAR_MAX, ctx->size);
+                                        memset(ctx->txbufexp+(i*align_to(ctx->buf_size + 40, page_size)), (i+1)%CHAR_MAX, ctx->buf_size);
                         }
                 }
+        }
 
-                if (is_client) {
-			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
-				cudaEventRecord(start_time[event_idx], gpu_stream);
-			}
-                        if (ctx->use_desc_apis) {
-                                work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
-                                int k = 0;
-                                ret = pp_prepare_gpu_send(ctx, qpn, &wdesc->send_rq);
-                                if (ret) {
-                                        retcode = -ret;
-                                        break;
-                                }
-                                assert(k < N_WORK_DESCS);
-                                wdesc->descs[k].tag = GDS_TAG_SEND;
-                                wdesc->descs[k].send = &wdesc->send_rq;
-                                ++k;
+        MPI_Barrier(MPI_COMM_WORLD);
 
-                                if( ctx->exp_send_info == 1 )
-                                {
-                                	ret = gds_prepare_send_info(
-                                                &wdesc->send_rq,
-                                                &(ctx->txbufexp_size[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
-                                                &(ctx->txbufexp_lkey[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
-                                                &(ctx->txbufexp_addr[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST);
+        for (i = 0; i < posted_recv; ++i)
+        {
+            if (is_client) {
+                if (gds_enable_event_prof && (event_idx < MAX_EVENTS))
+                    cudaEventRecord(start_time[event_idx], gpu_stream);
 
-                                        if (ret) {
-                                                retcode = -ret;
-                                                break;
-                                        }
-                                }
+                if (ctx->use_desc_apis) {
+                    work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
+                    int k = 0;
+                    ret = pp_prepare_gpu_send(ctx, i, qpn, &wdesc->send_rq);
+                    if (ret) {
+                        retcode = -ret;
+                        break;
+                    }
+                    assert(k < N_WORK_DESCS);
+                    wdesc->descs[k].tag = GDS_TAG_SEND;
+                    wdesc->descs[k].send = &wdesc->send_rq;
+                    ++k;
 
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
-                                if (ret) {
-                                        retcode = -ret;
-                                        break;
-                                }
-                                assert(k < N_WORK_DESCS);
-                                wdesc->descs[k].tag = GDS_TAG_WAIT;
-                                wdesc->descs[k].wait = &wdesc->wait_tx_rq;
-                                ++k;
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
-                                if (ret) {
-                                        retcode = -ret;
-                                        break;
-                                }
-                                assert(k < N_WORK_DESCS);
-                                wdesc->descs[k].tag = GDS_TAG_WAIT;
-                                wdesc->descs[k].wait = &wdesc->wait_rx_rq;
-                                ++k;
-                                wdesc->n_descs = k;
+                    if( ctx->exp_send_info == 1 )
+                    {
+                        ret = gds_prepare_send_info(
+                            &wdesc->send_rq,
+                            &(ctx->txbufexp_size[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
+                            &(ctx->txbufexp_lkey[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
+                            &(ctx->txbufexp_addr[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST);
 
-                                if( ctx->exp_send_info == 1 )
-                                {
-                                        ret = gds_update_send_info(
-                                                &wdesc->send_rq,
-                                                (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC,
-                                                0);
-
-                                        if (ret) {
-                                                retcode = -ret;
-                                                break;
-                                        }
-                                }
-
-                                if (ctx->peersync) {
-                                        ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
-                                        free(wdesc);
-                                        if (ret) {
-                                                retcode = -ret;
-                                                break;
-                                        }
-                                } else {
-                                        gpu_dbg("adding post_work_cb to stream=%p\n", gpu_stream);
-                                        CUCHECK(cuStreamAddCallback(gpu_stream, post_work_cb, wdesc, 0));
-                                }
+                        if (ret) {
+                            retcode = -ret;
+                            break;
                         }
-                        else if (ctx->peersync) {
-                                ret = pp_post_gpu_send(ctx, qpn, &gpu_stream);
-                                if (ret) {
-                                        gpu_err("error %d in pp_post_gpu_send, posted_recv=%d posted_so_far=%d is_client=%d \n",
-                                                ret, posted_recv, i, is_client);
-                                        retcode = -ret;
-                                        break;
-                                }
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->send_cq, 0);
-                                if (ret) {
-                                        // TODO: rollback gpu send
-                                        gpu_err("error %d in gds_stream_wait_cq\n", ret);
-                                        retcode = -ret;
-                                        break;
-                                }
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
-                                if (ret) {
-                                        // TODO: rollback gpu send and wait send_cq
-                                        gpu_err("[%d] error %d in gds_stream_wait_cq\n", my_rank, ret);
-                                        //exit(EXIT_FAILURE);
-                                        retcode = -ret;
-                                        break;
-                                }
-                        } else {
-                                gpu_err("!peersync case only supported when using descriptor APIs\n");
-                                retcode = -EINVAL;
-                                break;
+                    }
+
+                    ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
+                    if (ret) {
+                        retcode = -ret;
+                        break;
+                    }
+                    assert(k < N_WORK_DESCS);
+                    wdesc->descs[k].tag = GDS_TAG_WAIT;
+                    wdesc->descs[k].wait = &wdesc->wait_tx_rq;
+                    ++k;
+                    ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
+                    if (ret) {
+                        retcode = -ret;
+                        break;
+                    }
+                    assert(k < N_WORK_DESCS);
+                    wdesc->descs[k].tag = GDS_TAG_WAIT;
+                    wdesc->descs[k].wait = &wdesc->wait_rx_rq;
+                    ++k;
+                    wdesc->n_descs = k;
+
+                    if( ctx->exp_send_info == 1 )
+                    {
+                        ret = gds_update_send_info(
+                            &wdesc->send_rq,
+                            (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC,
+                            0);
+
+                        if (ret) {
+                            retcode = -ret;
+                            break;
                         }
+                    }
 
-			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
-				cudaEventRecord(stop_time[event_idx], gpu_stream);
-				event_idx++;
-			} 
-                        if (ctx->skip_kernel_launch) {
-                                gpu_warn_once("[%d] NOT LAUNCHING ANY KERNEL AT ALL\n", my_rank);
-                        } else {
-                                gpu_launch_kernel(ctx->calc_size, ctx->peersync);
+                    if (ctx->peersync) {
+                        ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
+                        free(wdesc);
+                        if (ret) {
+                            retcode = -ret;
+                            break;
                         }
-
-                } else { // !is_client == server
-
-                        if (ctx->use_desc_apis) {
-                                work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
-                                int k = 0;
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
-                                if (ret) {
-                                        retcode = -ret;
-                                        break;
-                                }
-                                assert(k < N_WORK_DESCS);
-                                wdesc->descs[k].tag = GDS_TAG_WAIT;
-                                wdesc->descs[k].wait = &wdesc->wait_rx_rq;
-                                ++k;
-                                wdesc->n_descs = k;
-                                if (ctx->peersync) {
-                                        ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
-                                        free(wdesc);
-                                        if (ret) {
-                                                retcode = -ret;
-                                                break;
-                                        }
-                                } else {
-                                        gpu_dbg("adding post_work_cb to stream=%p\n", gpu_stream);
-                                        CUCHECK(cuStreamAddCallback(gpu_stream, post_work_cb, wdesc, 0));
-                                }
-                        } else if (ctx->peersync) {
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
-                                if (ret) {
-                                        // TODO: rollback gpu send and wait send_cq
-                                        gpu_err("error %d in gds_stream_wait_cq\n", ret);
-                                        //exit(EXIT_FAILURE);
-                                        retcode = -ret;
-                                        break;
-                                }
-                        } else {
-                                gpu_err("!peersync case only supported when using descriptor APIs\n");
-                                retcode = -EINVAL;
-                                break;
-                        }
-
-                        if (ctx->skip_kernel_launch) {
-                                gpu_warn_once("NOT LAUNCHING ANY KERNEL AT ALL\n");
-                        } else {
-                                gpu_launch_kernel(ctx->calc_size, ctx->peersync);
-                        }
-
-			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
-				cudaEventRecord(start_time[event_idx], gpu_stream);
-			} 
-
-                        if (ctx->use_desc_apis) {
-                                work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
-                                int k = 0;
-                                ret = pp_prepare_gpu_send(ctx, qpn, &wdesc->send_rq);
-                                if (ret) {
-                                        retcode = -ret;
-                                        break;
-                                }
-                                assert(k < N_WORK_DESCS);
-                                wdesc->descs[k].tag = GDS_TAG_SEND;
-                                wdesc->descs[k].send = &wdesc->send_rq;
-                                ++k;
-
-                                if( ctx->exp_send_info == 1 )
-                                {
-                                        ret = gds_prepare_send_info(
-                                                &wdesc->send_rq,
-                                                &(ctx->txbufexp_size[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
-                                                &(ctx->txbufexp_lkey[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
-                                                &(ctx->txbufexp_addr[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST);
-
-                                        if (ret) {
-                                                retcode = -ret;
-                                                break;
-                                        }
-                                }
-
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
-                                if (ret) {
-                                        retcode = -ret;
-                                        break;
-                                }
-                                assert(k < N_WORK_DESCS);
-                                wdesc->descs[k].tag = GDS_TAG_WAIT;
-                                wdesc->descs[k].wait = &wdesc->wait_tx_rq;
-                                ++k;
-                                wdesc->n_descs = k;
-
-                                if( ctx->exp_send_info == 1 )
-                                {
-                                        ret = gds_update_send_info(
-                                                &wdesc->send_rq,
-                                                (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC,
-                                                0);
-
-                                        if (ret) {
-                                                retcode = -ret;
-                                                break;
-                                        }
-                                }
-
-                                if (ctx->peersync) {
-                                        ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
-                                        free(wdesc);
-                                        if (ret) {
-                                                retcode = -ret;
-                                                break;
-                                        }
-                                } else {
-                                        gpu_dbg("adding post_work_cb to stream=%p\n", gpu_stream);
-                                        CUCHECK(cuStreamAddCallback(gpu_stream, post_work_cb, wdesc, 0));
-                                }
-                        } else if (ctx->peersync) {
-                                ret = pp_post_gpu_send(ctx, qpn, &gpu_stream);
-                                if (ret) {
-                                        gpu_err("error %d in pp_post_gpu_send, posted_recv=%d posted_so_far=%d is_client=%d \n",
-                                                ret, posted_recv, i, is_client);
-                                        retcode = -ret;
-                                        break;
-                                }
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->send_cq, 0);
-                                if (ret) {
-                                        // TODO: rollback gpu send
-                                        gpu_err("error %d in gds_stream_wait_cq\n", ret);
-                                        retcode = -ret;
-                                        break;
-                                }
-                        } else {
-                                gpu_err("!peersync case only supported when using descriptor APIs\n");
-                                retcode = -EINVAL;
-                                break;
-                        }
-
-			if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
-				cudaEventRecord(stop_time[event_idx], gpu_stream);
-				event_idx++;
-			} 
+                    } else {
+                        gpu_dbg("adding post_work_cb to stream=%p\n", gpu_stream);
+                        CUCHECK(cuStreamAddCallback(gpu_stream, post_work_cb, wdesc, 0));
+                    }
+                } else if (ctx->peersync) {
+                    ret = pp_post_gpu_send(ctx, i, qpn, &gpu_stream);
+                    if (ret) {
+                        gpu_err("error %d in pp_post_gpu_send, posted_recv=%d posted_so_far=%d is_client=%d \n",
+                            ret, posted_recv, i, is_client);
+                        retcode = -ret;
+                        break;
+                    }
+                    ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->send_cq, 0);
+                    if (ret) {
+                        // TODO: rollback gpu send
+                        gpu_err("error %d in gds_stream_wait_cq\n", ret);
+                        retcode = -ret;
+                        break;
+                    }
+                    ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                    if (ret) {
+                        // TODO: rollback gpu send and wait send_cq
+                        gpu_err("[%d] error %d in gds_stream_wait_cq\n", my_rank, ret);
+                        //exit(EXIT_FAILURE);
+                        retcode = -ret;
+                        break;
+                    }
+                } else {
+                    gpu_err("!peersync case only supported when using descriptor APIs\n");
+                    retcode = -EINVAL;
+                    break;
                 }
 
-                if(ctx->validate)
+                if (gds_enable_event_prof && (event_idx < MAX_EVENTS)) {
+                    cudaEventRecord(stop_time[event_idx], gpu_stream);
+                    event_idx++;
+                } 
+                if (ctx->skip_kernel_launch)
+                    gpu_warn_once("[%d] NOT LAUNCHING ANY KERNEL AT ALL\n", my_rank);
+                else
+                    gpu_launch_kernel(ctx->calc_size, ctx->peersync);
+            } else { // !is_client == server
+                if (ctx->use_desc_apis) {
+                    work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
+                    int k = 0;
+                    ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
+                    if (ret) {
+                        retcode = -ret;
+                        break;
+                    }
+                    assert(k < N_WORK_DESCS);
+                    wdesc->descs[k].tag = GDS_TAG_WAIT;
+                    wdesc->descs[k].wait = &wdesc->wait_rx_rq;
+                    ++k;
+                    wdesc->n_descs = k;
+                    if (ctx->peersync) {
+                        ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
+                        free(wdesc);
+                        if (ret) {
+                            retcode = -ret;
+                            break;
+                        }
+                    } else {
+                        gpu_dbg("adding post_work_cb to stream=%p\n", gpu_stream);
+                        CUCHECK(cuStreamAddCallback(gpu_stream, post_work_cb, wdesc, 0));
+                    }
+                } else if (ctx->peersync) {
+                    ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                    if (ret) {
+                        // TODO: rollback gpu send and wait send_cq
+                        gpu_err("error %d in gds_stream_wait_cq\n", ret);
+                        //exit(EXIT_FAILURE);
+                        retcode = -ret;
+                        break;
+                    }
+                } else {
+                    gpu_err("!peersync case only supported when using descriptor APIs\n");
+                    retcode = -EINVAL;
+                    break;
+                }
+
+                if (ctx->skip_kernel_launch)
+                    gpu_warn_once("NOT LAUNCHING ANY KERNEL AT ALL\n");
+                else
+                    gpu_launch_kernel(ctx->calc_size, ctx->peersync);
+
+                if (gds_enable_event_prof && (event_idx < MAX_EVENTS))
+                    cudaEventRecord(start_time[event_idx], gpu_stream);
+
+                if (ctx->use_desc_apis) {
+                        work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
+                        int k = 0;
+                        ret = pp_prepare_gpu_send(ctx, i, qpn, &wdesc->send_rq);
+                        if (ret) {
+                                retcode = -ret;
+                                break;
+                        }
+                        assert(k < N_WORK_DESCS);
+                        wdesc->descs[k].tag = GDS_TAG_SEND;
+                        wdesc->descs[k].send = &wdesc->send_rq;
+                        ++k;
+
+                        if( ctx->exp_send_info == 1 )
+                        {
+                                ret = gds_prepare_send_info(
+                                        &wdesc->send_rq,
+                                        &(ctx->txbufexp_size[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
+                                        &(ctx->txbufexp_lkey[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST,
+                                        &(ctx->txbufexp_addr[0]), (ctx->gpumem == 1) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST);
+
+                                if (ret) {
+                                        retcode = -ret;
+                                        break;
+                                }
+                        }
+
+                        ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
+                        if (ret) {
+                                retcode = -ret;
+                                break;
+                        }
+                        assert(k < N_WORK_DESCS);
+                        wdesc->descs[k].tag = GDS_TAG_WAIT;
+                        wdesc->descs[k].wait = &wdesc->wait_tx_rq;
+                        ++k;
+                        wdesc->n_descs = k;
+
+                        if( ctx->exp_send_info == 1 )
+                        {
+                                ret = gds_update_send_info(
+                                        &wdesc->send_rq,
+                                        (ctx->peersync == 1) ? GDS_ASYNC : GDS_SYNC,
+                                        0);
+
+                                if (ret) {
+                                        retcode = -ret;
+                                        break;
+                                }
+                        }
+
+                        if (ctx->peersync) {
+                                ret = gds_stream_post_descriptors(gpu_stream, k, wdesc->descs, 0);
+                                free(wdesc);
+                                if (ret) {
+                                        retcode = -ret;
+                                        break;
+                                }
+                        } else {
+                                gpu_dbg("adding post_work_cb to stream=%p\n", gpu_stream);
+                                CUCHECK(cuStreamAddCallback(gpu_stream, post_work_cb, wdesc, 0));
+                        }
+                } else if (ctx->peersync) {
+                    ret = pp_post_gpu_send(ctx, i, qpn, &gpu_stream);
+                    if (ret) {
+                        gpu_err("error %d in pp_post_gpu_send, posted_recv=%d posted_so_far=%d is_client=%d \n",
+                            ret, posted_recv, i, is_client);
+                        retcode = -ret;
+                        break;
+                    }
+                    ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->send_cq, 0);
+                    if (ret) {
+                        // TODO: rollback gpu send
+                        gpu_err("error %d in gds_stream_wait_cq\n", ret);
+                        retcode = -ret;
+                        break;
+                    }
+                } else {
+                    gpu_err("!peersync case only supported when using descriptor APIs\n");
+                    retcode = -EINVAL;
+                    break;
+                }
+
+                if (gds_enable_event_prof && (event_idx < MAX_EVENTS))
+                    cudaEventRecord(stop_time[event_idx], gpu_stream);
+                    event_idx++;
+            }
+
+            if(ctx->validate)
+            {
+                //Useless??
+                MPI_Barrier(MPI_COMM_WORLD);
+                cudaDeviceSynchronize();
+                cudaMemcpy(ctx->validate_buf, ctx->rxbuf+(i*align_to(ctx->buf_size + 40, page_size)), ctx->buf_size, cudaMemcpyDefault);
+                char *value = (char*)ctx->validate_buf;
+                char expected=i%CHAR_MAX;
+
+                for (int j=0; j<(ctx->buf_size); j++)
                 {
-                        cudaDeviceSynchronize();
-
-                        cudaMemcpy(ctx->validate_buf, ctx->rxbuf, ctx->size, cudaMemcpyDefault);
-                        char *value = (char*)ctx->validate_buf;
-                        char expected=i%CHAR_MAX;
-
-                        for (int j=0; j<(ctx->size); j++) {
-                                //Only half of the rxbuf (ctx->sizeexp) is filled with (i+1)
-                                //the second half is always 0
-                                if(ctx->exp_send_info)
-                                {
-                                        if(j < ctx->sizeexp)
-                                                expected=(i+1)%CHAR_MAX;
-                                        else
-                                                expected=0;
-                                }
-                                if (value[j] != expected) {
-                                        fprintf(stderr, "validation check failed index: %d expected: %d actual: %d iteration %d \n", j, expected, value[j], i);
-                                        retcode=-1;
-                                        goto out;
-                                }
-                        }
+                    //Only half of the rxbuf (ctx->buf_sizeexp) is filled with (i+1)
+                    //the second half is always 0
+                    if(ctx->exp_send_info)
+                    {
+                        if(j < ctx->buf_sizeexp) expected=(i+1)%CHAR_MAX;
+                        else expected=0;
+                    }
+                    if (value[j] != expected) {
+                        fprintf(stderr, "validation check failed index: %d expected: %d actual: %d iteration %d \n", j, expected, value[j], i);
+                        retcode=-1;
+                        goto out;
+                    }
                 }
+            }
         }
         PROF(&prof, prof_idx++);
         if (!retcode) {
@@ -1135,73 +1165,73 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
         }
 
 out:
-	return retcode;
+        return retcode;
 }
 
 static void usage(const char *argv0)
 {
-	printf("Usage:\n");
-	printf("  %s            start a server and wait for connection\n", argv0);
-	printf("  %s <host>     connect to server at <host>\n", argv0);
-	printf("\n");
-	printf("Options:\n");
-	printf("  -p, --port=<port>      listen on/connect to port <port> (default 18515)\n");
-	printf("  -d, --ib-dev=<dev>     use IB device <dev> (default first device found)\n");
-	printf("  -i, --ib-port=<port>   use port <port> of IB device (default 1)\n");
-	printf("  -s, --size=<size>      size of message to exchange (default 1024)\n");
-	printf("  -r, --rx-depth=<dep>   number of receives to post at a time (default 500)\n");
-	printf("  -n, --iters=<iters>    number of exchanges (default 1000)\n");
-	printf("  -e, --events           sleep on CQ events (default poll)\n");
-	printf("  -g, --gid-idx=<gid index> local port gid index\n");
+        printf("Usage:\n");
+        printf("  %s            start a server and wait for connection\n", argv0);
+        printf("  %s <host>     connect to server at <host>\n", argv0);
+        printf("\n");
+        printf("Options:\n");
+        printf("  -p, --port=<port>      listen on/connect to port <port> (default 18515)\n");
+        printf("  -d, --ib-dev=<dev>     use IB device <dev> (default first device found)\n");
+        printf("  -i, --ib-port=<port>   use port <port> of IB device (default 1)\n");
+        printf("  -s, --size=<size>      size of message to exchange (default 1024)\n");
+        printf("  -r, --rx-depth=<dep>   number of receives to post at a time (default 500)\n");
+        printf("  -n, --iters=<iters>    number of exchanges (default 1000)\n");
+        printf("  -e, --events           sleep on CQ events (default poll)\n");
+        printf("  -g, --gid-idx=<gid index> local port gid index\n");
         printf("  -v, --validate           validate\n");
-	printf("  -S, --gpu-calc-size=<size>  size of GPU compute buffer (default 128KB)\n");
-	printf("  -G, --gpu-id           use specified GPU (default 0)\n");
-	printf("  -B, --batch-length=<n> max batch length (default 20)\n");
-	printf("  -P, --peersync            enable GPUDirect PeerSync support (default enabled)\n");
-	printf("  -C, --peersync-gpu-cq     enable GPUDirect PeerSync GPU CQ support (default disabled)\n");
-	printf("  -D, --peersync-gpu-dbrec  enable QP DBREC on GPU memory (default disabled)\n");
-	printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
-	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
-	printf("  -T, --time-gds-ops        evaluate time needed to execute gds operations using cuda events\n");
-	printf("  -k, --qp-kind             select IB transport kind used by GDS QPs. (-K 1) for UD, (-K 2) for RC\n");
-	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
-	printf("  -E, --gpu-mem             allocate GPU intead of CPU memory buffers\n");
-	printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
-	printf("  -I, --send-info	    modify send info after CPU posting\n");
+        printf("  -S, --gpu-calc-size=<size>  size of GPU compute buffer (default 128KB)\n");
+        printf("  -G, --gpu-id           use specified GPU (default 0)\n");
+        printf("  -B, --batch-length=<n> max batch length (default 20)\n");
+        printf("  -P, --peersync            enable GPUDirect PeerSync support (default enabled)\n");
+        printf("  -C, --peersync-gpu-cq     enable GPUDirect PeerSync GPU CQ support (default disabled)\n");
+        printf("  -D, --peersync-gpu-dbrec  enable QP DBREC on GPU memory (default disabled)\n");
+        printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
+        printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
+        printf("  -T, --time-gds-ops        evaluate time needed to execute gds operations using cuda events\n");
+        printf("  -k, --qp-kind             select IB transport kind used by GDS QPs. (-K 1) for UD, (-K 2) for RC\n");
+        printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
+        printf("  -E, --gpu-mem             allocate GPU intead of CPU memory buffers\n");
+        printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
+        printf("  -I, --send-info           modify send info after CPU posting\n");
 
 
 }
 
 int main(int argc, char *argv[])
 {
-	struct ibv_device      **dev_list;
-	struct ibv_device	*ib_dev;
-	struct pingpong_context *ctx;
-	struct pingpong_dest     my_dest;
-	struct pingpong_dest    *rem_dest = NULL;
-	struct timeval           rstart, start, end;
-	const char              *ib_devname = NULL;
-	char                    *servername = NULL;
-	int                      port = 18515;
-	int                      ib_port = 1;
-	int                      size = 1024;
-	int                      calc_size = 128*1024;
-	int                      rx_depth = 2*512;
-	int                      iters = 1000;
-	int                      use_event = 0;
-	int                      routs;
+        struct ibv_device      **dev_list;
+        struct ibv_device       *ib_dev;
+        struct pingpong_context *ctx;
+        struct pingpong_dest     my_dest;
+        struct pingpong_dest    *rem_dest = NULL;
+        struct timeval           rstart, start, end;
+        const char              *ib_devname = NULL;
+        char                    *servername = NULL;
+        int                      port = 18515;
+        int                      ib_port = 1;
+        int                      size = 1024;
+        int                      calc_size = 128*1024;
+        int                      rx_depth = 2*512;
+        int                      iters = 1000;
+        int                      use_event = 0;
+        int                      routs;
         int                      nposted;
-	int                      num_cq_events = 0;
-	int                      sl = 0;
-	int			 gidx = -1;
-	char			 gid[INET6_ADDRSTRLEN];
-	int                      gpu_id = 0;
+        int                      num_cq_events = 0;
+        int                      sl = 0;
+        int                      gidx = -1;
+        char                     gid[INET6_ADDRSTRLEN];
+        int                      gpu_id = 0;
         int                      peersync = 1;
         int                      peersync_gpu_cq = 0;
         int                      peersync_gpu_dbrec = 0;
         int                      warmup = 10;
         int                      consume_rx_cqe = 0;
-	int                      gds_qp_type = 1;
+        int                      gds_qp_type = 1;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
         int                      ret = 0;
         int                      use_gpumem = 0;
@@ -1233,144 +1263,144 @@ int main(int argc, char *argv[])
                 MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
-	srand48(getpid() * time(NULL));
+        srand48(getpid() * time(NULL));
 
-	while (1) {
-		int c;
+        while (1) {
+                int c;
 
-		static struct option long_options[] = {
-			{ .name = "port",     		.has_arg = 1, .val = 'p' },
-			{ .name = "ib-dev",   		.has_arg = 1, .val = 'd' },
-			{ .name = "ib-port",  		.has_arg = 1, .val = 'i' },
-			{ .name = "size",     		.has_arg = 1, .val = 's' },
-			{ .name = "rx-depth", 		.has_arg = 1, .val = 'r' },
-			{ .name = "iters",    		.has_arg = 1, .val = 'n' },
-			{ .name = "sl",       		.has_arg = 1, .val = 'l' },
-			{ .name = "events",   		.has_arg = 0, .val = 'e' },
-			{ .name = "gid-idx",  		.has_arg = 1, .val = 'g' },
+                static struct option long_options[] = {
+                        { .name = "port",               .has_arg = 1, .val = 'p' },
+                        { .name = "ib-dev",             .has_arg = 1, .val = 'd' },
+                        { .name = "ib-port",            .has_arg = 1, .val = 'i' },
+                        { .name = "size",               .has_arg = 1, .val = 's' },
+                        { .name = "rx-depth",           .has_arg = 1, .val = 'r' },
+                        { .name = "iters",              .has_arg = 1, .val = 'n' },
+                        { .name = "sl",                 .has_arg = 1, .val = 'l' },
+                        { .name = "events",             .has_arg = 0, .val = 'e' },
+                        { .name = "gid-idx",            .has_arg = 1, .val = 'g' },
                         { .name = "validate",           .has_arg = 0, .val = 'v' },
-			{ .name = "gpu-id",          	.has_arg = 1, .val = 'G' },
-			{ .name = "peersync",        	.has_arg = 0, .val = 'P' },
-			{ .name = "peersync-gpu-cq", 	.has_arg = 0, .val = 'C' },
-			{ .name = "peersync-gpu-dbrec", .has_arg = 1, .val = 'D' },
+                        { .name = "gpu-id",             .has_arg = 1, .val = 'G' },
+                        { .name = "peersync",           .has_arg = 0, .val = 'P' },
+                        { .name = "peersync-gpu-cq",    .has_arg = 0, .val = 'C' },
+                        { .name = "peersync-gpu-dbrec", .has_arg = 1, .val = 'D' },
                         { .name = "peersync-desc-apis", .has_arg = 0, .val = 'U' },
-			{ .name = "gpu-calc-size",   	.has_arg = 1, .val = 'S' },
-			{ .name = "batch-length",    	.has_arg = 1, .val = 'B' },
-			{ .name = "consume-rx-cqe",  	.has_arg = 0, .val = 'Q' },
-			{ .name = "time-gds-ops",  	.has_arg = 0, .val = 'T' },
-			{ .name = "qp-kind",         	.has_arg = 1, .val = 'k' },
-			{ .name = "gpu-sched-mode",  	.has_arg = 1, .val = 'M' },
-			{ .name = "gpu-mem",         	.has_arg = 0, .val = 'E' },
-			{ .name = "skip-kernel-launch", .has_arg = 0, .val = 'K' },
-			{ .name = "send-info", 		.has_arg = 0, .val = 'I' },
+                        { .name = "gpu-calc-size",      .has_arg = 1, .val = 'S' },
+                        { .name = "batch-length",       .has_arg = 1, .val = 'B' },
+                        { .name = "consume-rx-cqe",     .has_arg = 0, .val = 'Q' },
+                        { .name = "time-gds-ops",       .has_arg = 0, .val = 'T' },
+                        { .name = "qp-kind",            .has_arg = 1, .val = 'k' },
+                        { .name = "gpu-sched-mode",     .has_arg = 1, .val = 'M' },
+                        { .name = "gpu-mem",            .has_arg = 0, .val = 'E' },
+                        { .name = "skip-kernel-launch", .has_arg = 0, .val = 'K' },
+                        { .name = "send-info",          .has_arg = 0, .val = 'I' },
 
-			{ 0 }
-		};
+                        { 0 }
+                };
 
-		c = getopt_long(argc, argv, "p:d:i:s:r:n:l:evg:G:k:S:B:PCDQTM:EUKI", long_options, NULL);
-		if (c == -1)
-			break;
+                c = getopt_long(argc, argv, "p:d:i:s:r:n:l:evg:G:k:S:B:PCDQTM:EUKI", long_options, NULL);
+                if (c == -1)
+                        break;
 
-		switch (c) {
-		case 'p':
-			port = strtol(optarg, NULL, 0);
-			if (port < 0 || port > 65535) {
-				usage(argv[0]);
+                switch (c) {
+                case 'p':
+                        port = strtol(optarg, NULL, 0);
+                        if (port < 0 || port > 65535) {
+                                usage(argv[0]);
                                 ret = 1;
                                 exit(EXIT_FAILURE);
-			}
-			break;
+                        }
+                        break;
 
-		case 'd':
-			ib_devname = strdupa(optarg);
-			break;
+                case 'd':
+                        ib_devname = strdupa(optarg);
+                        break;
 
-		case 'i':
-			ib_port = strtol(optarg, NULL, 0);
-			if (ib_port < 0) {
-				usage(argv[0]);
-				ret = 1;
+                case 'i':
+                        ib_port = strtol(optarg, NULL, 0);
+                        if (ib_port < 0) {
+                                usage(argv[0]);
+                                ret = 1;
                                 exit(EXIT_FAILURE);
-			}
-			break;
+                        }
+                        break;
 
-		case 's':
-			size = strtol(optarg, NULL, 0);
-			break;
+                case 's':
+                        size = strtol(optarg, NULL, 0);
+                        break;
 
-		case 'S':
-			calc_size = strtol(optarg, NULL, 0);
-			break;
+                case 'S':
+                        calc_size = strtol(optarg, NULL, 0);
+                        break;
 
-		case 'r':
-			rx_depth = strtol(optarg, NULL, 0);
-			break;
+                case 'r':
+                        rx_depth = strtol(optarg, NULL, 0);
+                        break;
 
-		case 'n':
-			iters = strtol(optarg, NULL, 0);
-			break;
+                case 'n':
+                        iters = strtol(optarg, NULL, 0);
+                        break;
 
-		case 'l':
-			sl = strtol(optarg, NULL, 0);
-			break;
+                case 'l':
+                        sl = strtol(optarg, NULL, 0);
+                        break;
 
-		case 'e':
-			++use_event;
-			break;
+                case 'e':
+                        ++use_event;
+                        break;
 
-		case 'g':
-			gidx = strtol(optarg, NULL, 0);
-			break;
+                case 'g':
+                        gidx = strtol(optarg, NULL, 0);
+                        break;
 
                 case 'v':
                         validate = 1;
                         printf("INFO: validate=1\n");
                         break;
 
-		case 'G':
-			gpu_id = strtol(optarg, NULL, 0);
+                case 'G':
+                        gpu_id = strtol(optarg, NULL, 0);
                         printf("INFO: gpu id=%d\n", gpu_id);
-			break;
+                        break;
 
-		case 'B':
-			max_batch_len = strtol(optarg, NULL, 0);
+                case 'B':
+                        max_batch_len = strtol(optarg, NULL, 0);
                         printf("INFO: max_batch_len=%d\n", max_batch_len);
-			break;
+                        break;
 
-		case 'P':
-			peersync = !peersync;
+                case 'P':
+                        peersync = !peersync;
                         printf("INFO: switching PeerSync %s\n", peersync?"ON":"OFF");
-			break;
-			
-		case 'k':
-			gds_qp_type = (int) strtol(optarg, NULL, 0);
+                        break;
+                        
+                case 'k':
+                        gds_qp_type = (int) strtol(optarg, NULL, 0);
                         switch (gds_qp_type) {
                         case 1: printf("INFO: GDS_QPT %s\n","UD"); gds_qpt = IBV_QPT_UD; break;
                         case 2: printf("INFO: GDS_QPT %s\n","RC"); gds_qpt = IBV_QPT_RC; break;
                         default: printf("ERROR: unexpected value 1 for UD or 2 for RC \n"); exit(EXIT_FAILURE); break;
                         }
-			break;
-		case 'Q':
-			consume_rx_cqe = !consume_rx_cqe;
+                        break;
+                case 'Q':
+                        consume_rx_cqe = !consume_rx_cqe;
                         printf("INFO: switching consume_rx_cqe %s\n", consume_rx_cqe?"ON":"OFF");
-			break;
-			
-		case 'T':
-			gds_enable_event_prof = !gds_enable_event_prof;
+                        break;
+                        
+                case 'T':
+                        gds_enable_event_prof = !gds_enable_event_prof;
                         printf("INFO: gds_enable_event_prof %s\n", gds_enable_event_prof?"ON":"OFF");
-			break;
+                        break;
 
-		case 'C':
-			peersync_gpu_cq = !peersync_gpu_cq;
+                case 'C':
+                        peersync_gpu_cq = !peersync_gpu_cq;
                         printf("INFO: switching %s PeerSync GPU CQ\n", peersync_gpu_cq?"ON":"OFF");
-			break;
+                        break;
 
-		case 'D':
-			peersync_gpu_dbrec= !peersync_gpu_dbrec;
+                case 'D':
+                        peersync_gpu_dbrec= !peersync_gpu_dbrec;
                         printf("INFO: switching %s PeerSync GPU QP DBREC\n", peersync_gpu_dbrec?"ON":"OFF");
-			break;
+                        break;
 
-		case 'M':
+                case 'M':
                 {
                         char m = *optarg;
                         printf("INFO: sched mode '%c'\n", m);
@@ -1400,15 +1430,15 @@ int main(int argc, char *argv[])
                         break;
 
                 case 'I':
-                	exp_send_info = 1;
+                        exp_send_info = 1;
                         printf("INFO: modify send info after CPU posting=%d\n", exp_send_info);
                         break;
 
-		default:
-			usage(argv[0]);
-			return 1;
-		}
-	}
+                default:
+                        usage(argv[0]);
+                        return 1;
+                }
+        }
 
         if (!peersync && !use_desc_apis) {
                 gpu_err("!peersync case only supported when using descriptor APIs, enabling them\n");
@@ -1437,7 +1467,7 @@ int main(int argc, char *argv[])
                                 hostnames, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, MPI_COMM_WORLD));
 
         if (my_rank == 1) {
-		servername = hostnames[0];
+                servername = hostnames[0];
                 printf("[%d] pid=%d server:%s\n", my_rank, getpid(), servername);
         } else {
                 printf("[%d] pid=%d client:%s\n", my_rank, getpid(), hostnames[1]);
@@ -1453,13 +1483,13 @@ int main(int argc, char *argv[])
         //prof_init(&prof, 100, 100, "100ns", 25*4, 2, tags);
         prof_disable(&prof);
 
-	page_size = sysconf(_SC_PAGESIZE);
+        page_size = sysconf(_SC_PAGESIZE);
 
-	dev_list = ibv_get_device_list(NULL);
-	if (!dev_list) {
-		perror("Failed to get IB devices list");
-		return 1;
-	}
+        dev_list = ibv_get_device_list(NULL);
+        if (!dev_list) {
+                perror("Failed to get IB devices list");
+                return 1;
+        }
 
         if (!ib_devname) {
                 const char *value = getenv("USE_HCA"); 
@@ -1471,31 +1501,31 @@ int main(int argc, char *argv[])
                 printf("[%d] requested IB device: <%s>\n", my_rank, ib_devname);
         }
 
-	{
-		const char *value = getenv("GDS_ENABLE_EVENT_PROF"); 
-		if (value != NULL) {
-			gds_enable_event_prof = atoi(value);
-		}
-	}
+        {
+                const char *value = getenv("GDS_ENABLE_EVENT_PROF"); 
+                if (value != NULL) {
+                        gds_enable_event_prof = atoi(value);
+                }
+        }
 
-	if (!ib_devname) {
+        if (!ib_devname) {
                 printf("[%d] picking 1st available device\n", my_rank);
-		ib_dev = *dev_list;
-		if (!ib_dev) {
-			gpu_err("[%d] No IB devices found\n", my_rank);
-			return 1;
-		}
-	} else {
-		int i;
-		for (i = 0; dev_list[i]; ++i)
-			if (!strcmp(ibv_get_device_name(dev_list[i]), ib_devname))
-				break;
-		ib_dev = dev_list[i];
-		if (!ib_dev) {
-			gpu_err("IB device %s not found\n", ib_devname);
-			return 1;
-		}
-	}
+                ib_dev = *dev_list;
+                if (!ib_dev) {
+                        gpu_err("[%d] No IB devices found\n", my_rank);
+                        return 1;
+                }
+        } else {
+                int i;
+                for (i = 0; dev_list[i]; ++i)
+                        if (!strcmp(ibv_get_device_name(dev_list[i]), ib_devname))
+                                break;
+                ib_dev = dev_list[i];
+                if (!ib_dev) {
+                        gpu_err("IB device %s not found\n", ib_devname);
+                        return 1;
+                }
+        }
 
         {
                 const char *env = getenv("USE_GPU");
@@ -1505,50 +1535,51 @@ int main(int argc, char *argv[])
                 }
         }
         printf("[%d] use gpumem: %d\n", my_rank, use_gpumem);
-	ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis, skip_kernel_launch, exp_send_info, validate);
-	if (!ctx)
-		return 1;
+        printf("[%d] use peersync: %d\n", my_rank, peersync);
+        ctx = pp_init_ctx(ib_dev, size, calc_size, rx_depth, ib_port, 0, gpu_id, peersync, peersync_gpu_cq, peersync_gpu_dbrec, consume_rx_cqe, sched_mode, use_gpumem, use_desc_apis, skip_kernel_launch, exp_send_info, validate);
+        if (!ctx)
+                return 1;
 
-	int nrecv = pp_post_recv(ctx, max_batch_len);
-	if (nrecv < max_batch_len) {
-		gpu_warn("[%d] Could not post all receive, requested %d, actually posted %d\n", my_rank, max_batch_len, nrecv);
-		return 1;
-	}
+        int nrecv = pp_post_recv(ctx, max_batch_len);
+        if (nrecv < max_batch_len) {
+                gpu_warn("[%d] Could not post all receive, requested %d, actually posted %d\n", my_rank, max_batch_len, nrecv);
+                return 1;
+        }
 
-	if (pp_get_port_info(ctx->context, ib_port, &ctx->portinfo)) {
-		gpu_err("[%d] Couldn't get port info\n", my_rank);
-		return 1;
-	}
-	my_dest.lid = ctx->portinfo.lid;
-	my_dest.qpn = ctx->qp->qp_num;
-	my_dest.psn = (IBV_QPT_UD == gds_qpt) ? (lrand48() & 0xffffff) : 0;
+        if (pp_get_port_info(ctx->context, ib_port, &ctx->portinfo)) {
+                gpu_err("[%d] Couldn't get port info\n", my_rank);
+                return 1;
+        }
+        my_dest.lid = ctx->portinfo.lid;
+        my_dest.qpn = ctx->qp->qp_num;
+        my_dest.psn = (IBV_QPT_UD == gds_qpt) ? (lrand48() & 0xffffff) : 0;
 
-	if (gidx >= 0) {
-		if (ibv_query_gid(ctx->context, ib_port, gidx, &my_dest.gid)) {
-			gpu_err("Could not get local gid for gid index "
-								"%d\n", gidx);
-			return 1;
-		}
-	} else
-		memset(&my_dest.gid, 0, sizeof my_dest.gid);
+        if (gidx >= 0) {
+                if (ibv_query_gid(ctx->context, ib_port, gidx, &my_dest.gid)) {
+                        gpu_err("Could not get local gid for gid index "
+                                                                "%d\n", gidx);
+                        return 1;
+                }
+        } else
+                memset(&my_dest.gid, 0, sizeof my_dest.gid);
 
-	printf("[%d]  local address:  LID 0x%04x, QPN 0x%06x, PSN 0x%06x: GID %s\n",
-	       my_rank, my_dest.lid, my_dest.qpn, my_dest.psn, gid);
-	inet_ntop(AF_INET6, &my_dest.gid, gid, sizeof gid);
+        printf("[%d]  local address:  LID 0x%04x, QPN 0x%06x, PSN 0x%06x: GID %s\n",
+               my_rank, my_dest.lid, my_dest.qpn, my_dest.psn, gid);
+        inet_ntop(AF_INET6, &my_dest.gid, gid, sizeof gid);
 
-	struct pingpong_dest all_dest[4] = {{0,}};
+        struct pingpong_dest all_dest[4] = {{0,}};
         all_dest[my_rank] = my_dest;
         MPI_CHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, 
                                 all_dest, sizeof(all_dest[0]), MPI_CHAR, MPI_COMM_WORLD));
         rem_dest = &all_dest[my_rank?0:1];
-	inet_ntop(AF_INET6, &rem_dest->gid, gid, sizeof gid);
+        inet_ntop(AF_INET6, &rem_dest->gid, gid, sizeof gid);
 
-	printf("[%d] remote address: LID 0x%04x, QPN 0x%06x, PSN 0x%06x, GID %s\n",
-	       my_rank, rem_dest->lid, rem_dest->qpn, rem_dest->psn, gid);
+        printf("[%d] remote address: LID 0x%04x, QPN 0x%06x, PSN 0x%06x, GID %s\n",
+               my_rank, rem_dest->lid, rem_dest->qpn, rem_dest->psn, gid);
 
         if (IBV_QPT_UD == gds_qpt) {
                 struct ibv_qp_attr attr = {
-                        .qp_state		= IBV_QPS_RTR
+                        .qp_state               = IBV_QPS_RTR
                 };
 
                 if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
@@ -1558,8 +1589,8 @@ int main(int argc, char *argv[])
 
                 MPI_Barrier(MPI_COMM_WORLD);
 
-                attr.qp_state	    = IBV_QPS_RTS;
-                attr.sq_psn	    = my_dest.psn;
+                attr.qp_state       = IBV_QPS_RTS;
+                attr.sq_psn         = my_dest.psn;
 
                 if (ibv_modify_qp(ctx->qp, &attr,
                                   IBV_QP_STATE              |
@@ -1591,48 +1622,48 @@ int main(int argc, char *argv[])
                 }
 
         }
-	else {
+        else {
                 struct ibv_qp_attr attr = {
-			.qp_state       = IBV_QPS_RTR,
-			.path_mtu       = ctx->portinfo.active_mtu,
-			.dest_qp_num    = rem_dest->qpn,
-			.rq_psn         = rem_dest->psn,
-			.ah_attr.dlid   = rem_dest->lid,
-			.max_dest_rd_atomic     = 1,
-			.min_rnr_timer          = 12,
-			.ah_attr.is_global      = 0,
-			.ah_attr.sl             = 0,
-			.ah_attr.src_path_bits  = 0,
-			.ah_attr.port_num       = ib_port
+                        .qp_state       = IBV_QPS_RTR,
+                        .path_mtu       = ctx->portinfo.active_mtu,
+                        .dest_qp_num    = rem_dest->qpn,
+                        .rq_psn         = rem_dest->psn,
+                        .ah_attr.dlid   = rem_dest->lid,
+                        .max_dest_rd_atomic     = 1,
+                        .min_rnr_timer          = 12,
+                        .ah_attr.is_global      = 0,
+                        .ah_attr.sl             = 0,
+                        .ah_attr.src_path_bits  = 0,
+                        .ah_attr.port_num       = ib_port
                 };
 
                 if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU
-						   | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN
-						   | IBV_QP_MIN_RNR_TIMER | IBV_QP_MAX_DEST_RD_ATOMIC))) {
+                                                   | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN
+                                                   | IBV_QP_MIN_RNR_TIMER | IBV_QP_MAX_DEST_RD_ATOMIC))) {
                         gpu_err("Failed to modify QP to RTR\n");
                         return 1;
                 }
-		
-		memset(&attr, 0, sizeof(struct ibv_qp_attr));
-		attr.qp_state       = IBV_QPS_RTS;
-		attr.sq_psn         = 0;
-		attr.timeout        = 20;
-		attr.retry_cnt      = 7;
-		attr.rnr_retry      = 7;
-		attr.max_rd_atomic  = 1;
+                
+                memset(&attr, 0, sizeof(struct ibv_qp_attr));
+                attr.qp_state       = IBV_QPS_RTS;
+                attr.sq_psn         = 0;
+                attr.timeout        = 20;
+                attr.retry_cnt      = 7;
+                attr.rnr_retry      = 7;
+                attr.max_rd_atomic  = 1;
 
-		if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT
-						     | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY
-						   | IBV_QP_MAX_QP_RD_ATOMIC))) {
+                if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT
+                                                     | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY
+                                                   | IBV_QP_MAX_QP_RD_ATOMIC))) {
                         gpu_err("Failed to modify QP to RTS\n");
                         return 1;
-		}
-	}
+                }
+        }
 
         MPI_Barrier(MPI_COMM_WORLD);
 
         // for performance reasons, multiple batches back-to-back are posted here
-	ctx->rcnt = 0;
+        ctx->rcnt = 0;
         ctx->scnt = 0;
         ctx->n_tx_ev = 0;
         ctx->n_rx_ev = 0;
@@ -1644,14 +1675,14 @@ int main(int argc, char *argv[])
         int n_post = 0;
         int n_posted = 0;
         int batch;
-	int ii;
+        int ii;
 
-	if (gds_enable_event_prof) {
-		for (ii = 0; ii < MAX_EVENTS; ii++) {
-			cudaEventCreate(&start_time[ii]);
-			cudaEventCreate(&stop_time[ii]);
-		}
-	}
+        if (gds_enable_event_prof) {
+                for (ii = 0; ii < MAX_EVENTS; ii++) {
+                        cudaEventCreate(&start_time[ii]);
+                        cudaEventCreate(&stop_time[ii]);
+                }
+        }
 
         if( ctx->exp_send_info == 1 )
         {
@@ -1686,12 +1717,12 @@ int main(int argc, char *argv[])
                         ret = 1;
                         goto out;
                 }
-		float usec = (end.tv_sec - start.tv_sec) * 1000000 +
-			(end.tv_usec - start.tv_usec);
-		printf("pre-posting took %.2f usec\n", usec);
+                float usec = (end.tv_sec - start.tv_sec) * 1000000 +
+                        (end.tv_usec - start.tv_usec);
+                printf("pre-posting took %.2f usec\n", usec);
                 pre_post_us = usec;
         }
-	ctx->pending = PINGPONG_RECV_WRID;
+        ctx->pending = PINGPONG_RECV_WRID;
 
         if (!my_rank) {
                 puts("");
@@ -1704,15 +1735,15 @@ int main(int argc, char *argv[])
                 fflush(stdout);
         }
 
-	if (gettimeofday(&start, NULL)) {
-		perror("gettimeofday");
-		return 1;
-	}
+        if (gettimeofday(&start, NULL)) {
+                perror("gettimeofday");
+                return 1;
+        }
         prof_enable(&prof);
         prof_idx = 0;
         int got_error = 0;
         int iter = 0;
-	while ((ctx->rcnt < iters || ctx->scnt < iters) && !got_error && !stream_cb_error) {
+        while ((ctx->rcnt < iters || ctx->scnt < iters) && !got_error && !stream_cb_error) {
                 ++iter;
                 PROF(&prof, prof_idx++);
 
@@ -1801,8 +1832,8 @@ int main(int argc, char *argv[])
                 }
                 //usleep(10);
                 PROF(&prof, prof_idx++);
-		prof_update(&prof);
-		prof_idx = 0;
+                prof_update(&prof);
+                prof_idx = 0;
 
                 //fprintf(stdout, "%d %d\n", rcnt, scnt); fflush(stdout);
 
@@ -1811,12 +1842,12 @@ int main(int argc, char *argv[])
                         gpu_err("exiting for error\n");
                         return 1;
                 }
-	}
+        }
 
-	if (gettimeofday(&end, NULL)) {
-		perror("gettimeofday");
-		ret = 1;
-	}
+        if (gettimeofday(&end, NULL)) {
+                perror("gettimeofday");
+                ret = 1;
+        }
 
 
         int rid;
@@ -1839,32 +1870,32 @@ int main(int argc, char *argv[])
                 }
         }
 
-	//ibv_ack_cq_events(ctx->cq, num_cq_events);
+        //ibv_ack_cq_events(ctx->cq, num_cq_events);
 
-	//expect work to be completed by now
+        //expect work to be completed by now
 
-	if (gds_enable_event_prof) {
-		for (ii = 0; ii < event_idx; ii++) {
-			cudaEventElapsedTime(&elapsed_time, start_time[ii], stop_time[ii]);
-			gpu_err("[%d] size = %d, time = %f\n", my_rank, ctx->size, 1000 * elapsed_time);
-		}
-		for (ii = 0; ii < MAX_EVENTS; ii++) {
-			cudaEventDestroy(stop_time[ii]);
-			cudaEventDestroy(start_time[ii]);
-		}
-	} 
+        if (gds_enable_event_prof) {
+                for (ii = 0; ii < event_idx; ii++) {
+                        cudaEventElapsedTime(&elapsed_time, start_time[ii], stop_time[ii]);
+                        gpu_err("[%d] size = %d, time = %f\n", my_rank, ctx->buf_size, 1000 * elapsed_time);
+                }
+                for (ii = 0; ii < MAX_EVENTS; ii++) {
+                        cudaEventDestroy(stop_time[ii]);
+                        cudaEventDestroy(start_time[ii]);
+                }
+        } 
 
         MPI_Barrier(MPI_COMM_WORLD);
-	if (pp_close_ctx(ctx))
-		ret = 1;
+        if (pp_close_ctx(ctx))
+                ret = 1;
 
-	ibv_free_device_list(dev_list);
-	//free(rem_dest);
+        ibv_free_device_list(dev_list);
+        //free(rem_dest);
 
         MPI_Barrier(MPI_COMM_WORLD);
         MPI_Finalize();
 out:
-	return ret;
+        return ret;
 }
 
 /*
