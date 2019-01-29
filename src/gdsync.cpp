@@ -1105,7 +1105,7 @@ int gds_post_ops_on_cpu(size_t n_ops, struct peer_op_wr *op, int post_flags)
                                 uint32_t data = gds_atomic_get(ptr);
                                 switch(op->type) {
                                 case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
-                                        done = (0 == ~(data | value));
+                                        done = (0 != ~(data | value));
                                         break;
                                 case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
                                         done = ((int32_t)data - (int32_t)value >= 0);
