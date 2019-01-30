@@ -139,7 +139,7 @@ struct pingpong_context {
         size_t                  alloc_size;
         char                    *rx_flag;
         int                     buf_size;
-        int                     buf_align;
+        int                     size_align;
         int                     buf_sizeexp;
         int                     calc_size;
         int                     rx_depth;
@@ -205,7 +205,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 return NULL;
 
         ctx->buf_size           = size;
-        ctx->buf_align          = align_to(ctx->buf_size + 40, page_size);
+        ctx->size_align         = align_to(ctx->buf_size + 40, page_size);
         ctx->buf_sizeexp        = size/2;
         ctx->calc_size          = calc_size;
         ctx->rx_depth           = rx_depth;
@@ -221,7 +221,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         ctx->txbufexp_lkey      = NULL;
         ctx->txbufexp_addr      = NULL;
 
-        size_t alloc_size = max_batch_len * ctx->buf_align;
+        size_t alloc_size = max_batch_len * ctx->size_align;
         ctx->rxtot_size = alloc_size;
         ctx->txtot_size = ctx->rxtot_size;
 
@@ -231,21 +231,21 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 printf("allocated GPU memory at txbuf=%p (size %d), rxbuf=%p (size=%d)\n", ctx->txbuf, ctx->txtot_size, ctx->rxbuf, ctx->rxtot_size);
                 if(ctx->exp_send_info == 1)
                 {
-                        ctx->txbufexp = gpu_malloc(page_size, ctx->txtot_size);
-                        ctx->txbufexp_size = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t)*max_batch_len);
-                        ctx->txbufexp_lkey = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t)*max_batch_len);
-                        ctx->txbufexp_addr = (uintptr_t*)gpu_malloc(page_size, sizeof(uintptr_t)*max_batch_len);
+                        ctx->txbufexp           = gpu_malloc(page_size, ctx->txtot_size);
+                        ctx->txbufexp_size      = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_lkey      = (uint32_t*)gpu_malloc(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_addr      = (uintptr_t*)gpu_malloc(page_size, sizeof(uintptr_t)*max_batch_len);
                 }
         } else {
-                assert(0 == posix_memalign((void **)&(ctx->txbuf), page_size, ctx->txtot_size));
-                assert(0 == posix_memalign((void **)&(ctx->rxbuf), page_size, ctx->rxtot_size));
+                ctx->txbuf = memalign(page_size, ctx->txtot_size);
+                ctx->rxbuf = memalign(page_size, ctx->rxtot_size);
                 printf("allocated CPU memory at txbuf=%p, rxbuf=%p\n", ctx->txbuf, ctx->rxbuf);
                 if(ctx->exp_send_info == 1)
                 {
-                        assert(0 == posix_memalign((void **)&(ctx->txbufexp), page_size, ctx->txtot_size));
-                        assert(0 == posix_memalign((void **)&(ctx->txbufexp_size), page_size, sizeof(uint32_t)*max_batch_len));
-                        assert(0 == posix_memalign((void **)&(ctx->txbufexp_lkey), page_size, sizeof(uint32_t)*max_batch_len));
-                        assert(0 == posix_memalign((void **)&(ctx->txbufexp_addr), page_size, sizeof(uintptr_t)*max_batch_len));
+                        ctx->txbufexp           = memalign(page_size, ctx->txtot_size);
+                        ctx->txbufexp_size      = memalign(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_lkey      = memalign(page_size, sizeof(uint32_t)*max_batch_len);
+                        ctx->txbufexp_addr      = memalign(page_size, sizeof(uintptr_t)*max_batch_len);
                 }
         }
 
@@ -253,6 +253,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 fprintf(stderr, "Couldn't allocate work buf.\n");
                 goto clean_ctx;
         }
+
         if(ctx->exp_send_info == 1)
         {
                 if(!ctx->txbufexp)
@@ -282,7 +283,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 
         if(ctx->validate)
         {
-                assert(0 == posix_memalign((void **)&(ctx->validate_buf), page_size, ctx->rxtot_size));
+                ctx->validate_buf = memalign(page_size, ctx->rxtot_size);
                 if (!ctx->validate_buf) {
                         fprintf(stderr, "Couldn't allocate validate buf.\n");
                         goto clean_ctx;
@@ -293,7 +294,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         if(ctx->exp_send_info == 1)
                 gpu_info("txbufexp address 0x%lx\n", ctx->txbufexp);
 
-        assert(0 == posix_memalign((void **)&(ctx->rx_flag), page_size, alloc_size));
+        ctx->rx_flag = memalign(page_size, alloc_size);
         if (!ctx->rx_flag) {
                 gpu_err("Couldn't allocate rx_flag buf\n");  
                 goto clean_ctx;
@@ -374,7 +375,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                                 gpu_memset32(&(ctx->txbufexp_lkey[i]), ctx->mrexp->lkey, 1);
                                 
                                 uint32_t tmp_addr[2];
-                                ((uintptr_t*)tmp_addr)[0] = (uintptr_t)(ctx->txbufexp+(i*ctx->buf_align));
+                                ((uintptr_t*)tmp_addr)[0] = (uintptr_t)(ctx->txbufexp+(i*ctx->size_align));
                                 CUDACHECK(cudaMemcpy( 
                                         (uint32_t*)&(ctx->txbufexp_addr[i]),
                                         (uint32_t*)tmp_addr,
@@ -387,17 +388,14 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                         else {
                                 ctx->txbufexp_size[i] = ctx->buf_sizeexp;
                                 ctx->txbufexp_lkey[i] = ctx->mrexp->lkey;
-                                ctx->txbufexp_addr[i]=(uintptr_t)(ctx->txbufexp+(i*ctx->buf_align));
+                                ctx->txbufexp_addr[i]=(uintptr_t)(ctx->txbufexp+(i*ctx->size_align));
                                 gpu_info("exp_send_info - hi=%d, ostmem: new tx size: %d instead of %d. New tx addr: %lx instead of %lx\n", 
                                         ctx->txbufexp_size[i], ctx->buf_size, ctx->txbufexp_addr[i], ctx->txbuf);
 
                                 memset(ctx->txbufexp, 0, ctx->txtot_size);
-
                         }
                 }
         }
-        
-
 
         int gds_flags = 0;
         if (peersync_gpu_cq)
@@ -515,7 +513,6 @@ int pp_close_ctx(struct pingpong_context *ctx)
 
         if(ctx->exp_send_info == 1)
         {
-                
                 if (ibv_dereg_mr(ctx->mrexp))
                         gpu_err("Couldn't deregister MR EXP\n");
         }
@@ -526,7 +523,7 @@ int pp_close_ctx(struct pingpong_context *ctx)
                         gpu_err("Couldn't destroy AH\n");
                 }
         }
-        
+
         if (ibv_dealloc_pd(ctx->pd)) {
                 gpu_err("Couldn't deallocate PD\n");
         }
@@ -536,6 +533,10 @@ int pp_close_ctx(struct pingpong_context *ctx)
                 if (ibv_destroy_comp_channel(ctx->channel)) {
                         gpu_err("Couldn't destroy completion channel\n");
                 }
+        }
+
+        if (ibv_close_device(ctx->context)) {
+                gpu_err("Couldn't release context\n");
         }
 
         if(ctx->validate)
@@ -555,15 +556,11 @@ int pp_close_ctx(struct pingpong_context *ctx)
         {
                 if( ctx->exp_send_info == 1 )
                 {
-                        free(ctx->txbufexp);                        
+                        free(ctx->txbufexp);
                         free(ctx->txbufexp_size);
                         free(ctx->txbufexp_lkey);
                         free(ctx->txbufexp_addr);
                 }
-        }
-        
-        if (ibv_close_device(ctx->context)) {
-                gpu_err("Couldn't release context\n");
         }
 
         if (ctx->gpu_id >= 0)
@@ -657,7 +654,7 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
         for (i = 0; i < n; ++i)
         {
                 struct ibv_sge list = {
-                        .addr   = (uintptr_t) (ctx->rxbuf+(i*ctx->buf_align)),
+                        .addr   = (uintptr_t) (ctx->rxbuf+(i*ctx->size_align)),
                         .length = ctx->buf_size + 40, // good for IBV_QPT_UD
                         .lkey   = ctx->rxmr->lkey
                 };
@@ -721,7 +718,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, int iteration, uint32_
 {
         int ret = 0;
         struct ibv_sge list = {
-                .addr   = (uintptr_t) (ctx->txbuf+(iteration*ctx->buf_align)),
+                .addr   = (uintptr_t) (ctx->txbuf+(iteration*ctx->size_align)),
                 .length = ctx->buf_size,
                 .lkey   = ctx->txmr->lkey
         };
@@ -759,7 +756,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, int iteration, uint
 {
         int ret = 0;
         struct ibv_sge list = {
-                .addr   = (uintptr_t) (ctx->txbuf+(iteration*ctx->buf_align)),
+                .addr   = (uintptr_t) (ctx->txbuf+(iteration*ctx->size_align)),
                 .length = ctx->buf_size,
                 .lkey   = ctx->txmr->lkey
         };
@@ -778,7 +775,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, int iteration, uint
                 },
                 .comp_mask = 0
         };
-        
+
         if (IBV_QPT_UD != gds_qpt) {
                 memset(&ewr, 0, sizeof(ewr));
                 ewr.num_sge = 1;
@@ -788,7 +785,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, int iteration, uint
                 ewr.sg_list = &list;
                 ewr.next = NULL;
         }
-        
+
         if( ctx->exp_send_info == 1 )
                 ewr.exp_send_flags |= IBV_EXP_SEND_GET_INFO;
 
@@ -862,16 +859,16 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 {
                         if (ctx->gpumem)
                         {
-                                gpu_memset(ctx->txbuf+(i*ctx->buf_align), i%CHAR_MAX, ctx->buf_size);
+                                gpu_memset(ctx->txbuf+(i*ctx->size_align), i%CHAR_MAX, ctx->buf_size);
                                 //We need to cover the entire buffer
                                 if(ctx->exp_send_info)
-                                        gpu_memset(ctx->txbufexp+(i*ctx->buf_align), (i+1)%CHAR_MAX, ctx->buf_size);
+                                        gpu_memset(ctx->txbufexp+(i*ctx->size_align), (i+1)%CHAR_MAX, ctx->buf_size);
                         }
                         else
                         {
-                                memset(ctx->txbuf+(i*ctx->buf_align), i%CHAR_MAX, ctx->buf_size);
+                                memset(ctx->txbuf+(i*ctx->size_align), i%CHAR_MAX, ctx->buf_size);
                                 if(ctx->exp_send_info)
-                                        memset(ctx->txbufexp+(i*ctx->buf_align), (i+1)%CHAR_MAX, ctx->buf_size);
+                                        memset(ctx->txbufexp+(i*ctx->size_align), (i+1)%CHAR_MAX, ctx->buf_size);
                         }
                 }
         }
@@ -1133,7 +1130,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                 //Useless??
                 MPI_Barrier(MPI_COMM_WORLD);
                 cudaDeviceSynchronize();
-                cudaMemcpy(ctx->validate_buf, ctx->rxbuf+(i*ctx->buf_align), ctx->buf_size, cudaMemcpyDefault);
+                cudaMemcpy(ctx->validate_buf, ctx->rxbuf+(i*ctx->size_align), ctx->buf_size, cudaMemcpyDefault);
                 char *value = (char*)ctx->validate_buf;
                 char expected=i%CHAR_MAX;
 
@@ -1196,8 +1193,6 @@ static void usage(const char *argv0)
         printf("  -E, --gpu-mem             allocate GPU intead of CPU memory buffers\n");
         printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
         printf("  -I, --send-info           modify send info after CPU posting\n");
-
-
 }
 
 int main(int argc, char *argv[])
