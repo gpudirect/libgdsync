@@ -27,8 +27,9 @@
 
 #pragma once
 
+#include <stdio.h>
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
+//#include <infiniband/verbs_exp.h>
 
 
 #ifdef USE_PROFILE
@@ -156,8 +157,10 @@ extern CUstream gpu_stream_server;
 extern CUstream gpu_stream_client;
 extern int gpu_num_sm;
 
-BEGIN_C_DECLS
-
+//BEGIN_C_DECLS
+#ifdef __cplusplus
+extern "C" {
+#endif
 int gpu_dbg_enabled();
 
 /* sched_mode=(CU_CTX_SCHED_SPIN,CU_CTX_SCHED_YIELD,CU_CTX_SCHED_BLOCKING_SYNC, CU_CTX_SCHED_AUTO) */
@@ -175,8 +178,10 @@ int gpu_wait_tracking_event(int tmout_us);
 
 int gpu_launch_void_kernel();
 int gpu_launch_dummy_kernel();
-
-END_C_DECLS
+#ifdef __cplusplus
+}
+#endif
+//END_C_DECLS
 
 /*
  * Local variables:

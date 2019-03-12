@@ -40,7 +40,7 @@
 using namespace std;
 
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
+//#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"

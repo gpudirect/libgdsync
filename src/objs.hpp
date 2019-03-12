@@ -29,11 +29,11 @@
 
 static const size_t max_gpus = 16;
 
-typedef struct ibv_exp_peer_direct_attr gds_peer_attr;
+//typedef struct ibv_exp_peer_direct_attr gds_peer_attr;
 
-struct gds_peer;
+//struct gds_peer;
 
-struct gds_buf: ibv_exp_peer_buf {
+/*struct gds_buf: ibv_exp_peer_buf {
         gds_peer   *peer;
         CUdeviceptr peer_addr;
         void       *handle;
@@ -43,13 +43,13 @@ struct gds_buf: ibv_exp_peer_buf {
                 length = sz;
                 comp_mask = 0;
         }
-};
+};*/
 
 struct gds_range {
         void *va;
         CUdeviceptr dptr;
         size_t size;
-        gds_buf *buf;
+        //gds_buf *buf;
         gds_memory_type_t type;
 };
 
@@ -67,7 +67,7 @@ static inline gds_range *range_from_id(uint64_t id)
 
 class task_queue;
 
-struct gds_peer {
+/*struct gds_peer {
         int gpu_id;
         CUdevice gpu_dev;
         CUcontext gpu_ctx;
@@ -103,19 +103,19 @@ struct gds_peer {
         gds_buf *buf_alloc_wq(size_t length, uint32_t dir, uint32_t alignment, int flags);
         gds_buf *buf_alloc(obj_type type, size_t length, uint32_t dir, uint32_t alignment, int flags);
         void free(gds_buf *buf);
-};
+};*/
 
-static inline uint64_t peer_to_id(gds_peer *peer)
+/*static inline uint64_t peer_to_id(gds_peer *peer)
 {
         assert(peer);
         return reinterpret_cast<uint64_t>(peer);
-}
+}*/
 
-static inline gds_peer *peer_from_id(uint64_t id)
+/*static inline gds_peer *peer_from_id(uint64_t id)
 {
         assert(id);
         return reinterpret_cast<gds_peer *>(id);
-}
+}*/
 
 /*
  * Local variables:

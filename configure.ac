@@ -144,12 +144,12 @@ dnl Checks for Verbs support
 AC_CHECK_LIB(ibverbs, ibv_get_device_list, [],
     AC_MSG_ERROR([ibv_get_device_list() not found.  libgdsync requires libibverbs.]))
 
-AC_CHECK_LIB(ibverbs, ibv_exp_create_qp,
-    AC_MSG_ERROR([ibv_exp_create_qp not found. libgdsync requires verbs extension support.]))
-
-AC_CHECK_HEADER(infiniband/peer_ops.h, [],
-    AC_MSG_ERROR([<infiniband/peer_ops.h> not found.  libgdsync requires verbs peer-direct support.]))
-AC_HEADER_STDC
+#AC_CHECK_LIB(ibverbs, ibv_exp_create_qp,
+#    AC_MSG_ERROR([ibv_exp_create_qp not found. libgdsync requires verbs extension support.]))
+#
+#AC_CHECK_HEADER(infiniband/peer_ops.h, [],
+#    AC_MSG_ERROR([<infiniband/peer_ops.h> not found.  libgdsync requires verbs peer-direct support.]))
+#AC_HEADER_STDC
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST

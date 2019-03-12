@@ -39,7 +39,7 @@
 using namespace std;
 
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
+//#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"
@@ -51,7 +51,7 @@ using namespace std;
 
 //-----------------------------------------------------------------------------
 
-gds_buf *gds_peer::alloc(size_t sz, uint32_t alignment)
+/*gds_buf *gds_peer::alloc(size_t sz, uint32_t alignment)
 {
         // TODO: support alignment
         // TODO: handle exception here
@@ -196,4 +196,4 @@ void gds_peer::unregister(gds_range *range)
                 //GPU mem does not need deregistration
         }
         delete range;
-}
+}*/

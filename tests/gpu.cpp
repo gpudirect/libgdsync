@@ -29,7 +29,7 @@
 #include <assert.h>
 
 #include <cuda_runtime_api.h>
-#include <infiniband/verbs_exp.h>
+//#include <infiniband/verbs_exp.h>
 
 #include "gdrapi.h"
 #include "gdsync.h"
@@ -72,92 +72,92 @@ int gpu_launch_void_kernel_on_stream(CUstream s);
 
 int gpu_init(int gpu_id, int sched_mode)
 {
-	int ret = 0;
+    int ret = 0;
 
-	CUCHECK(cuInit(0));
-	
-	int deviceCount = 0;
-	CUCHECK(cuDeviceGetCount(&deviceCount));
+    CUCHECK(cuInit(0));
 
-	// This function call returns 0 if there are no CUDA capable devices.
-	if (deviceCount == 0) {
-		gpu_err("There are no available device(s) that support CUDA\n");
-		ret = 1;
-		goto out;
-	} else {
-		gpu_dbg("There are %d devices supporting CUDA, picking N.%d\n", deviceCount, gpu_id);
+    int deviceCount = 0;
+    CUCHECK(cuDeviceGetCount(&deviceCount));
+
+    // This function call returns 0 if there are no CUDA capable devices.
+    if (deviceCount == 0) {
+        gpu_err("There are no available device(s) that support CUDA\n");
+        ret = 1;
+        goto out;
+    } else {
+        gpu_dbg("There are %d devices supporting CUDA, picking N.%d\n", deviceCount, gpu_id);
+    }
+    if (getenv("USE_GPU")) {
+        gpu_id = atoi(getenv("USE_GPU"));
+        gpu_info("overriding gpu_id with USE_GPU=%d\n", gpu_id);
+    }
+
+    if (gpu_id >= deviceCount) {
+        gpu_err("ERROR: requested GPU gpu_id beyond available\n");
+        ret = 1;
+        goto out;
+    }
+    gpu_blocking_sync_mode = (CU_CTX_SCHED_BLOCKING_SYNC == sched_mode) ? 1 : 0;
+
+    int i;
+    for (i=0; i<deviceCount; ++i) {
+        CUCHECK(cuDeviceGet(&gpu_device, i));
+        char name[128];
+        CUCHECK(cuDeviceGetName(name, sizeof(name), gpu_device));
+        int pciBusID, pciDeviceID;
+        cuDeviceGetAttribute(&pciBusID, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID, gpu_device);
+        cuDeviceGetAttribute(&pciDeviceID, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID, gpu_device);
+        //printf("  Device PCI Bus ID / PCI location ID:           %d / %d\n", pciBusID, pciDeviceID);
+        gpu_info("GPU id:%d dev:%d name:%s pci %d:%d\n", i, gpu_device, name, pciBusID, pciDeviceID);
+    }
+
+    CUCHECK(cuDeviceGet(&gpu_device, gpu_id));
+
+    gpu_info("creating CUDA Primary Ctx on device:%d id:%d\n", gpu_device, gpu_id);
+    CUCHECK(cuDevicePrimaryCtxRetain(&gpu_ctx, gpu_device));
+
+    gpu_dbg("making it the current CUDA Ctx\n");
+    CUCHECK(cuCtxSetCurrent(gpu_ctx));
+
+    // TODO: add a check for canMapHost
+
+    //CUCHECK(cuDeviceGetProperties(&prop, gpu_device));
+    cuDeviceGetAttribute(&gpu_num_sm, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, gpu_device);
+    gpu_dbg("num SMs per GPU:%d\n", gpu_num_sm);
+    cuDeviceGetAttribute(&gpu_clock_rate, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, gpu_device);
+    gpu_dbg("clock rate:%d\n", gpu_clock_rate);
+
+    CUCHECK(cuStreamCreate(&gpu_stream, 0));
+    gpu_dbg("created main test CUDA stream %p\n", gpu_stream);
+    CUCHECK(cuStreamCreate(&gpu_stream_server, 0));
+    gpu_dbg("created stream server CUDA stream %p\n", gpu_stream_server);
+    CUCHECK(cuStreamCreate(&gpu_stream_client, 0));
+    gpu_dbg("created stream client CUDA stream %p\n", gpu_stream_client);
+
+    {
+        int n;
+        int ev_flags = CU_EVENT_DISABLE_TIMING;
+        if (CU_CTX_SCHED_BLOCKING_SYNC == sched_mode) {
+            gpu_dbg("creating events with blocking sync behavior\n");
+            ev_flags |= CU_EVENT_BLOCKING_SYNC;
         }
-        if (getenv("USE_GPU")) {
-                gpu_id = atoi(getenv("USE_GPU"));
-                gpu_info("overriding gpu_id with USE_GPU=%d\n", gpu_id);
+        for (n=0; n<num_tracking_events; ++n) {
+            CUCHECK(cuEventCreate(&gpu_tracking_event[n], ev_flags));
+            gpu_dbg("created %d tracking event %p\n", n, gpu_tracking_event[n]);
         }
+    }        
 
-	if (gpu_id >= deviceCount) {
-		gpu_err("ERROR: requested GPU gpu_id beyond available\n");
-		ret = 1;
-		goto out;
-	}
-        gpu_blocking_sync_mode = (CU_CTX_SCHED_BLOCKING_SYNC == sched_mode) ? 1 : 0;
-
-	int i;
-	for (i=0; i<deviceCount; ++i) {
-		CUCHECK(cuDeviceGet(&gpu_device, i));
-		char name[128];
-		CUCHECK(cuDeviceGetName(name, sizeof(name), gpu_device));
-		int pciBusID, pciDeviceID;
-		cuDeviceGetAttribute(&pciBusID, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID, gpu_device);
-		cuDeviceGetAttribute(&pciDeviceID, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID, gpu_device);
-		//printf("  Device PCI Bus ID / PCI location ID:           %d / %d\n", pciBusID, pciDeviceID);
-		gpu_info("GPU id:%d dev:%d name:%s pci %d:%d\n", i, gpu_device, name, pciBusID, pciDeviceID);
-	}
-
-	CUCHECK(cuDeviceGet(&gpu_device, gpu_id));
-
-	gpu_info("creating CUDA Primary Ctx on device:%d id:%d\n", gpu_device, gpu_id);
-        CUCHECK(cuDevicePrimaryCtxRetain(&gpu_ctx, gpu_device));
-
-	gpu_dbg("making it the current CUDA Ctx\n");
-	CUCHECK(cuCtxSetCurrent(gpu_ctx));
-
-        // TODO: add a check for canMapHost
-
-        //CUCHECK(cuDeviceGetProperties(&prop, gpu_device));
-        cuDeviceGetAttribute(&gpu_num_sm, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, gpu_device);
-        gpu_dbg("num SMs per GPU:%d\n", gpu_num_sm);
-        cuDeviceGetAttribute(&gpu_clock_rate, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, gpu_device);
-        gpu_dbg("clock rate:%d\n", gpu_clock_rate);
-
-	CUCHECK(cuStreamCreate(&gpu_stream, 0));
-        gpu_dbg("created main test CUDA stream %p\n", gpu_stream);
-	CUCHECK(cuStreamCreate(&gpu_stream_server, 0));
-        gpu_dbg("created stream server CUDA stream %p\n", gpu_stream_server);
-	CUCHECK(cuStreamCreate(&gpu_stream_client, 0));
-        gpu_dbg("created stream client CUDA stream %p\n", gpu_stream_client);
-
-        {
-                int n;
-                int ev_flags = CU_EVENT_DISABLE_TIMING;
-                if (CU_CTX_SCHED_BLOCKING_SYNC == sched_mode) {
-                        gpu_dbg("creating events with blocking sync behavior\n");
-                        ev_flags |= CU_EVENT_BLOCKING_SYNC;
-                }
-                for (n=0; n<num_tracking_events; ++n) {
-                        CUCHECK(cuEventCreate(&gpu_tracking_event[n], ev_flags));
-                        gpu_dbg("created %d tracking event %p\n", n, gpu_tracking_event[n]);
-                }
-        }        
-
-        //  pipe cleaner
-        gpu_launch_void_kernel_on_stream(gpu_stream);
-        cuStreamSynchronize(gpu_stream);
+    //  pipe cleaner
+    gpu_launch_void_kernel_on_stream(gpu_stream);
+    cuStreamSynchronize(gpu_stream);
 
 out:
-        if (ret) {
-                if (gpu_ctx)
-                        CUCHECK(cuDevicePrimaryCtxRelease(gpu_device));
-        }
+    if (ret) {
+        if (gpu_ctx)
+            CUCHECK(cuDevicePrimaryCtxRelease(gpu_device));
+    }
 
-	return ret;
+    return ret;
 }
 
 int gpu_finalize()

@@ -39,6 +39,8 @@
     ( ((((v) & 0xffff0000U) >> 16) == GDS_API_MAJOR_VERSION) &&   \
       ((((v) & 0x0000ffffU) >> 0 ) >= GDS_API_MINOR_VERSION) )
 
+#include <infiniband/mlx5dv.h>
+
 typedef enum gds_param {
     GDS_PARAM_VERSION,
     GDS_NUM_PARAMS
@@ -54,20 +56,28 @@ enum gds_create_qp_flags {
     GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
-typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
-typedef struct ibv_exp_send_wr gds_send_wr;
+//typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
+typedef struct ibv_qp_init_attr_ex gds_qp_init_attr_t;
+//typedef struct ibv_exp_send_wr gds_send_wr;
+typedef struct ibv_send_wr gds_send_wr;
 
 struct gds_cq {
-        struct ibv_cq *cq;
-        uint32_t curr_offset;
+    struct ibv_cq *cq;
+    uint32_t curr_offset;
 };
 
 struct gds_qp {
-        struct ibv_qp *qp;
-        struct gds_cq send_cq;
-        struct gds_cq recv_cq;
-        struct ibv_exp_res_domain * res_domain;
-        struct ibv_context *dev_context;
+    struct ibv_qp *qp;
+    struct gds_cq send_cq;
+    struct gds_cq recv_cq;
+    //struct ibv_exp_res_domain * res_domain;
+    struct ibv_context *dev_context;
+    struct mlx5dv_qp dv_qp;
+    struct mlx5dv_cq dv_send_cq;
+    struct mlx5dv_cq dv_recv_cq;
+
+    unsigned int sq_cur_post;
+    unsigned int bf_offset;
 };
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
@@ -153,8 +163,8 @@ enum {
  */
 
 typedef struct gds_send_request {
-        struct ibv_exp_peer_commit commit;
-        struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+        //struct ibv_exp_peer_commit commit;
+        //struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
 } gds_send_request_t;
 
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
@@ -167,8 +177,8 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
  */
 
 typedef struct gds_wait_request {
-        struct ibv_exp_peer_peek peek;
-        struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+        //struct ibv_exp_peer_peek peek;
+        //struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
 } gds_wait_request_t;
 
 /**
