@@ -401,7 +401,8 @@ static int poll_send_cq(struct pingpong_context *ctx)
 
     while (cnt < max_batch_len) {
         //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len, wc);
-        ne = ibv_poll_cq(ctx->tx_cq, max_batch_len - cnt, wc);
+        //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len - cnt, wc);
+        ne = gds_poll_cq(&ctx->gds_qp->send_cq, max_batch_len - cnt, wc);
         if (ne < 0) {
             gpu_err("poll TX CQ failed %d\n", ne);
             return 1;
@@ -452,7 +453,8 @@ static int poll_recv_cq(struct pingpong_context *ctx)
 
     while (cnt < max_batch_len) {
         //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len, wc);
-        ne = ibv_poll_cq(ctx->rx_cq, max_batch_len - cnt, wc);
+        //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len - cnt, wc);
+        ne = gds_poll_cq(&ctx->gds_qp->recv_cq, max_batch_len - cnt, wc);
         if (ne < 0) {
             gpu_err("poll RX CQ failed %d\n", ne);
             return 1;
@@ -989,27 +991,27 @@ int main(int argc, char *argv[])
         int c;
 
         static struct option long_options[] = {
-            { .name = "port",     .has_arg = 1, .val = 'p' },
-            { .name = "ib-dev",   .has_arg = 1, .val = 'd' },
-            { .name = "ib-port",  .has_arg = 1, .val = 'i' },
-            { .name = "size",     .has_arg = 1, .val = 's' },
-            { .name = "rx-depth", .has_arg = 1, .val = 'r' },
-            { .name = "iters",    .has_arg = 1, .val = 'n' },
-            { .name = "sl",       .has_arg = 1, .val = 'l' },
-            { .name = "events",   .has_arg = 0, .val = 'e' },
-            { .name = "gid-idx",  .has_arg = 1, .val = 'g' },
-            { .name = "gpu-id",          .has_arg = 1, .val = 'G' },
-            { .name = "peersync",        .has_arg = 0, .val = 'P' },
-            { .name = "peersync-gpu-cq", .has_arg = 0, .val = 'C' },
+            { .name = "port",               .has_arg = 1, .val = 'p' },
+            { .name = "ib-dev",             .has_arg = 1, .val = 'd' },
+            { .name = "ib-port",            .has_arg = 1, .val = 'i' },
+            { .name = "size",               .has_arg = 1, .val = 's' },
+            { .name = "rx-depth",           .has_arg = 1, .val = 'r' },
+            { .name = "iters",              .has_arg = 1, .val = 'n' },
+            { .name = "sl",                 .has_arg = 1, .val = 'l' },
+            { .name = "events",             .has_arg = 0, .val = 'e' },
+            { .name = "gid-idx",            .has_arg = 1, .val = 'g' },
+            { .name = "gpu-id",             .has_arg = 1, .val = 'G' },
+            { .name = "peersync",           .has_arg = 0, .val = 'P' },
+            { .name = "peersync-gpu-cq",    .has_arg = 0, .val = 'C' },
             { .name = "peersync-gpu-dbrec", .has_arg = 1, .val = 'D' },
             { .name = "peersync-desc-apis", .has_arg = 0, .val = 'U' },
-            { .name = "gpu-calc-size",   .has_arg = 1, .val = 'S' },
-            { .name = "batch-length",    .has_arg = 1, .val = 'B' },
-            { .name = "consume-rx-cqe",  .has_arg = 0, .val = 'Q' },
-            { .name = "time-gds-ops",  .has_arg = 0, .val = 'T' },
-            { .name = "qp-kind",          .has_arg = 1, .val = 'k' },
-            { .name = "gpu-sched-mode",  .has_arg = 1, .val = 'M' },
-            { .name = "gpu-mem",         .has_arg = 0, .val = 'E' },
+            { .name = "gpu-calc-size",      .has_arg = 1, .val = 'S' },
+            { .name = "batch-length",       .has_arg = 1, .val = 'B' },
+            { .name = "consume-rx-cqe",     .has_arg = 0, .val = 'Q' },
+            { .name = "time-gds-ops",       .has_arg = 0, .val = 'T' },
+            { .name = "qp-kind",            .has_arg = 1, .val = 'k' },
+            { .name = "gpu-sched-mode",     .has_arg = 1, .val = 'M' },
+            { .name = "gpu-mem",            .has_arg = 0, .val = 'E' },
             { .name = "skip-kernel-launch", .has_arg = 0, .val = 'K' },
             { 0 }
         };
@@ -1169,6 +1171,12 @@ int main(int argc, char *argv[])
     } else {
         printf("[%d] pid=%d client:%s\n", my_rank, getpid(), hostnames[1]);
     }
+
+   
+    /*int trigger = 0;
+    while (trigger == 0)
+        sleep(5);*/
+    
 
     const char *tags = NULL;
     if (peersync) {
@@ -1389,8 +1397,6 @@ int main(int argc, char *argv[])
             ret = 1;
             goto out;
         }
-
-        printf("OK, entering pp_post_work\n");
 
         for (batch=0; batch<n_batches; ++batch) {
             n_post = min(min(ctx->rx_depth/2, iters-nposted), max_batch_len);

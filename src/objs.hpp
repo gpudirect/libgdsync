@@ -27,47 +27,105 @@
 
 #pragma once
 
+#include "task_queue.hpp"
+
 static const size_t max_gpus = 16;
 
+enum gds_peer_op_caps {
+    GDS_PEER_OP_FENCE_CAP   = (1 << GDS_PEER_OP_FENCE),
+    GDS_PEER_OP_STORE_DWORD_CAP = (1 << GDS_PEER_OP_STORE_DWORD),
+    GDS_PEER_OP_STORE_QWORD_CAP = (1 << GDS_PEER_OP_STORE_QWORD),
+    GDS_PEER_OP_COPY_BLOCK_CAP  = (1 << GDS_PEER_OP_COPY_BLOCK),
+    GDS_PEER_OP_POLL_AND_DWORD_CAP
+        = (1 << GDS_PEER_OP_POLL_AND_DWORD),
+    GDS_PEER_OP_POLL_NOR_DWORD_CAP
+        = (1 << GDS_PEER_OP_POLL_NOR_DWORD),
+    GDS_PEER_OP_POLL_GEQ_DWORD_CAP
+        = (1 << GDS_PEER_OP_POLL_GEQ_DWORD),
+};
+
+enum gds_peer_fence {
+    GDS_PEER_FENCE_OP_READ      = (1 << 0), 
+    GDS_PEER_FENCE_OP_WRITE     = (1 << 1), 
+    GDS_PEER_FENCE_FROM_CPU     = (1 << 2), 
+    GDS_PEER_FENCE_FROM_HCA     = (1 << 3), 
+    GDS_PEER_FENCE_MEM_SYS      = (1 << 4), 
+    GDS_PEER_FENCE_MEM_PEER     = (1 << 5), 
+};
+
+enum gds_peer_direction {
+	GDS_PEER_DIRECTION_FROM_CPU  = (1 << 0),
+	GDS_PEER_DIRECTION_FROM_HCA  = (1 << 1),
+	GDS_PEER_DIRECTION_FROM_PEER = (1 << 2),
+	GDS_PEER_DIRECTION_TO_CPU    = (1 << 3),
+	GDS_PEER_DIRECTION_TO_HCA    = (1 << 4),
+	GDS_PEER_DIRECTION_TO_PEER   = (1 << 5),
+};  
+
+#define GDS_PEER_IOMEMORY ((struct gds_buf *)-1UL)
+
+struct gds_peer;
+
+struct gds_buf_alloc_attr {
+    size_t      length;
+    uint32_t    dir;
+    uint64_t    peer_id;
+    uint32_t    alignment;
+    uint32_t    comp_mask;
+};
+
+struct gds_buf {
+    void       *addr;
+    size_t      length;
+    uint32_t    comp_mask;
+    gds_peer   *peer;
+    CUdeviceptr peer_addr;
+    void       *handle;
+
+    gds_buf(gds_peer *p, size_t sz): peer(p), peer_addr(0), handle(NULL) {
+        addr = NULL;
+        length = sz;
+        comp_mask = 0;
+    }
+};
+
 //typedef struct ibv_exp_peer_direct_attr gds_peer_attr;
+typedef struct {
+    uint64_t        peer_id;
+    struct gds_buf *(*buf_alloc)(struct gds_buf_alloc_attr *attr);
+    int             (*buf_release)(struct gds_buf *pb);
+    uint64_t        (*register_va)(void *start, size_t length, uint64_t peer_id, struct gds_buf *pb);
+    int             (*unregister_va)(uint64_t target_id, uint64_t peer_id);
+    uint64_t        caps;
+    size_t          peer_dma_op_map_len;
+    uint32_t        comp_mask;
+    uint32_t        version;
+} gds_peer_attr;
 
-//struct gds_peer;
-
-/*struct gds_buf: ibv_exp_peer_buf {
-        gds_peer   *peer;
-        CUdeviceptr peer_addr;
-        void       *handle;
-
-        gds_buf(gds_peer *p, size_t sz): peer(p), peer_addr(0), handle(NULL) {
-                addr = NULL;
-                length = sz;
-                comp_mask = 0;
-        }
-};*/
 
 struct gds_range {
-        void *va;
-        CUdeviceptr dptr;
-        size_t size;
-        //gds_buf *buf;
-        gds_memory_type_t type;
+    void *va;
+    CUdeviceptr dptr;
+    size_t size;
+    struct gds_buf *buf;
+    gds_memory_type_t type;
 };
 
 static inline uint64_t range_to_id(gds_range *range)
 {
-        assert(range);
-        return reinterpret_cast<uint64_t>(range);
+    assert(range);
+    return reinterpret_cast<uint64_t>(range);
 }
 
 static inline gds_range *range_from_id(uint64_t id)
 {
-        assert(id);
-        return reinterpret_cast<gds_range *>(id);
+    assert(id);
+    return reinterpret_cast<gds_range *>(id);
 }
 
 class task_queue;
 
-/*struct gds_peer {
+struct gds_peer {
         int gpu_id;
         CUdevice gpu_dev;
         CUcontext gpu_ctx;
@@ -98,24 +156,26 @@ class task_queue;
         // unregister all kinds of memory
         void unregister(gds_range *range);
 
-        gds_buf *alloc(size_t length, uint32_t alignment);
+        gds_buf *alloc(size_t length, uint32_t alignment, gds_memory_type_t mem_type);
         gds_buf *buf_alloc_cq(size_t length, uint32_t dir, uint32_t alignment, int flags);
         gds_buf *buf_alloc_wq(size_t length, uint32_t dir, uint32_t alignment, int flags);
         gds_buf *buf_alloc(obj_type type, size_t length, uint32_t dir, uint32_t alignment, int flags);
         void free(gds_buf *buf);
-};*/
+};
 
-/*static inline uint64_t peer_to_id(gds_peer *peer)
-{
-        assert(peer);
-        return reinterpret_cast<uint64_t>(peer);
-}*/
+typedef struct mlx5_cqe64 gds_cqe64;
 
-/*static inline gds_peer *peer_from_id(uint64_t id)
+static inline uint64_t peer_to_id(gds_peer *peer)
 {
-        assert(id);
-        return reinterpret_cast<gds_peer *>(id);
-}*/
+    assert(peer);
+    return reinterpret_cast<uint64_t>(peer);
+}
+
+static inline gds_peer *peer_from_id(uint64_t id)
+{
+    assert(id);
+    return reinterpret_cast<gds_peer *>(id);
+}
 
 /*
  * Local variables:

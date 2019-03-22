@@ -247,51 +247,51 @@ void gpu_post_release_tracking_event()
 
 int gpu_wait_tracking_event(int tmout_us)
 {
-        int ret = 0;
-        int n = (next_wait)%num_tracking_events;
+    int ret = 0;
+    int n = (next_wait)%num_tracking_events;
 
-        if (next_wait >= next_release) {
-                gpu_dbg("no pending tracking events next_wait=%d next_release=%d\n", next_wait, next_release);
-                return ENOMEM;
-        }
-        if (tmout_us < 0)
-                return EINVAL;
+    if (next_wait >= next_release) {
+        gpu_dbg("no pending tracking events next_wait=%d next_release=%d\n", next_wait, next_release);
+        return ENOMEM;
+    }
+    if (tmout_us < 0)
+        return EINVAL;
 
-        if (gpu_blocking_sync_mode) {
-                CUCHECK(cuEventSynchronize(gpu_tracking_event[n]));
+    if (gpu_blocking_sync_mode) {
+        CUCHECK(cuEventSynchronize(gpu_tracking_event[n]));
+        ++next_wait;
+    } else {
+        struct timespec ts;
+        clock_gettime(MYCLOCK, &ts);
+        uint64_t now = ts.tv_nsec/1000 + ts.tv_sec*1000000;
+        uint64_t tmout = now + tmout_us;
+        while (1) {
+            CUresult retcode = cuEventQuery(gpu_tracking_event[n]);
+            if (retcode == CUDA_SUCCESS) {
+                //gpu_dbg("event signaled\n");
                 ++next_wait;
-        } else {
-                struct timespec ts;
-                clock_gettime(MYCLOCK, &ts);
-                uint64_t now = ts.tv_nsec/1000 + ts.tv_sec*1000000;
-                uint64_t tmout = now + tmout_us;
-                while (1) {
-                        CUresult retcode = cuEventQuery(gpu_tracking_event[n]);
-                        if (retcode == CUDA_SUCCESS) {
-                                //gpu_dbg("event signaled\n");
-                                ++next_wait;
-                                break;
-                        } else if (retcode == CUDA_ERROR_NOT_READY) {
-                                // event has not been signaled yet
-                                //sleep(1);
-                        } else {
-                                CUCHECK(retcode);
-                                gpu_err("cuEventQuery error (%d)\n", retcode);
-                                ret = EFAULT;
-                                break;
-                        }
-                        // time-out check
-                        uint64_t now = ts.tv_nsec/1000 + ts.tv_sec*1000000;
-                        if (((int64_t)tmout-(int64_t)now) < (long)0) {
-                                gpu_info("timeout reached!! enabling debug tracing...\n");
-                                gpu_dbg_is_enabled = 1;
-                                ret = EAGAIN;
-                                break;
-                        }
-                }
+                break;
+            } else if (retcode == CUDA_ERROR_NOT_READY) {
+                // event has not been signaled yet
+                //sleep(1);
+            } else {
+                CUCHECK(retcode);
+                gpu_err("cuEventQuery error (%d)\n", retcode);
+                ret = EFAULT;
+                break;
+            }
+            // time-out check
+            uint64_t now = ts.tv_nsec/1000 + ts.tv_sec*1000000;
+            if (((int64_t)tmout-(int64_t)now) < (long)0) {
+                gpu_info("timeout reached!! enabling debug tracing...\n");
+                gpu_dbg_is_enabled = 1;
+                ret = EAGAIN;
+                break;
+            }
         }
+    }
 
-        return ret;
+    return ret;
 }
 
 /*
