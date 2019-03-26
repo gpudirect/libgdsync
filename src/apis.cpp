@@ -184,6 +184,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
     void *seg;
     void *qend;
     int i;
+    int nreq;
 
     struct mlx5_wqe_ctrl_seg *ctrl;
     struct mlx5_wqe_data_seg *dpseg;
@@ -209,45 +210,48 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
     //printf("===> wqe_cnt %u, stride %u, buf %p, bf.size %u\n", qp->dv_qp.sq.wqe_cnt, qp->dv_qp.sq.stride, qp->dv_qp.sq.buf, qp->dv_qp.bf.size);
 
     // Emulating ibv_exp_post_send
-    qend = (void *)((char *)qp->dv_qp.sq.buf + (qp->dv_qp.sq.wqe_cnt * qp->dv_qp.sq.stride));
+    for (nreq = 0; p_ewr; ++nreq, p_ewr = p_ewr->next) {
+        qend = (void *)((char *)qp->dv_qp.sq.buf + (qp->dv_qp.sq.wqe_cnt * qp->dv_qp.sq.stride));
 
-    idx = qp->sq_cur_post & (qp->dv_qp.sq.wqe_cnt - 1);
-    seg = (void *)((char *)qp->dv_qp.sq.buf + (idx * qp->dv_qp.sq.stride));
+        idx = qp->sq_cur_post & (qp->dv_qp.sq.wqe_cnt - 1);
+        seg = (void *)((char *)qp->dv_qp.sq.buf + (idx * qp->dv_qp.sq.stride));
 
-    ctrl = (struct mlx5_wqe_ctrl_seg *)seg;
+        ctrl = (struct mlx5_wqe_ctrl_seg *)seg;
 
-    seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_ctrl_seg));
-    size = sizeof(struct mlx5_wqe_ctrl_seg) / 16;
+        seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_ctrl_seg));
+        size = sizeof(struct mlx5_wqe_ctrl_seg) / 16;
 
-    dpseg = (struct mlx5_wqe_data_seg *)seg;
-    for (i = 0; i < p_ewr->num_sge; ++i) {
-        if (dpseg == qend) {
-            seg = qp->dv_qp.sq.buf;
-            dpseg = (struct mlx5_wqe_data_seg *)seg;
+        dpseg = (struct mlx5_wqe_data_seg *)seg;
+        for (i = 0; i < p_ewr->num_sge; ++i) {
+            if (dpseg == qend) {
+                seg = qp->dv_qp.sq.buf;
+                dpseg = (struct mlx5_wqe_data_seg *)seg;
+            }
+            if (p_ewr->sg_list[i].length) {
+                mlx5dv_set_data_seg(dpseg, p_ewr->sg_list[i].length, p_ewr->sg_list[i].lkey, p_ewr->sg_list[i].addr);
+                ++dpseg;
+                size += sizeof(struct mlx5_wqe_data_seg) / 16;
+            }
         }
-        if (p_ewr->sg_list[i].length) {
-            mlx5dv_set_data_seg(dpseg, p_ewr->sg_list[i].length, p_ewr->sg_list[i].lkey, p_ewr->sg_list[i].addr);
-            ++dpseg;
-            size += sizeof(struct mlx5_wqe_data_seg) / 16;
-        }
+
+        mlx5dv_set_ctrl_seg(ctrl, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, qp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
+
+        qp->send_cq.wrid[idx] = p_ewr->wr_id;
+        qp->sq_cur_post += (size * 16 + qp->dv_qp.sq.stride - 1) / qp->dv_qp.sq.stride;
     }
 
-    mlx5dv_set_ctrl_seg(ctrl, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, qp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
+    if (!nreq)
+        goto out;
 
-    qp->sq_cur_post += (size * 16 + qp->dv_qp.sq.stride - 1) / qp->dv_qp.sq.stride;
+        // Emulating post_send_db
+        // This is not used because we will always ring the doorbell from GPU
+        /*udma_to_device_barrier();
+        qp->dv_qp.dbrec[MLX5_SND_DBR] = htobe32(qp->sq_cur_post & 0xffff);
 
-    wmb();
-
-    // Emulating post_send_db
-    // This is not used because we will always ring the doorbell from GPU
-    /*udma_to_device_barrier();
-    qp->dv_qp.dbrec[MLX5_SND_DBR] = htobe32(qp->sq_cur_post & 0xffff);
-
-    mmio_wc_start();
-    *(__be64 *)(qp->dv_qp.bf.reg + qp->bf_offset) = *(__be64 *)ctrl;
-    mmio_flush_writes();
-    qp->bf_offset ^= qp->dv_qp.bf.size;*/
-
+        mmio_wc_start();
+        *(__be64 *)(qp->dv_qp.bf.reg + qp->bf_offset) = *(__be64 *)ctrl;
+        mmio_flush_writes();
+        qp->bf_offset ^= qp->dv_qp.bf.size;*/
 
     // Emulating ibv_exp_peer_commit_qp
     assert(request->commit.entries >= 3);
@@ -486,15 +490,17 @@ int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *
 
 //-----------------------------------------------------------------------------
 
-/*static int gds_abort_wait_cq(struct gds_cq *cq, gds_wait_request_t *request)
+static int gds_abort_wait_cq(struct gds_cq *cq, gds_wait_request_t *request)
 {
-        assert(cq);
-        assert(request);
-        struct ibv_exp_peer_abort_peek abort_ctx;
-        abort_ctx.peek_id = request->peek.peek_id;
-        abort_ctx.comp_mask = 0;
-        return ibv_exp_peer_abort_peek_cq(cq->cq, &abort_ctx);
-}*/
+    assert(cq);
+    assert(request);
+    /*struct ibv_exp_peer_abort_peek abort_ctx;
+    abort_ctx.peek_id = request->peek.peek_id;
+    abort_ctx.comp_mask = 0;
+    return ibv_exp_peer_abort_peek_cq(cq->cq, &abort_ctx);*/
+    ((struct gds_peek_entry *)request->peek.peek_id)->busy = 0;
+    return 0;
+}
 
 //-----------------------------------------------------------------------------
 
@@ -544,7 +550,7 @@ int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
         goto out;
     }
 
-    //retcode = gds_abort_wait_cq(cq, request);
+    retcode = gds_abort_wait_cq(cq, request);
 out:
     return retcode;
 }

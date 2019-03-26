@@ -1038,100 +1038,100 @@ int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags)
         //gds_dbg("op[%zu]=%p type:%08x\n", n, op, op->type);
         switch(op->type) {
             case GDS_PEER_OP_FENCE: {
-                                        gds_dbg("FENCE flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
-                                        uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
-                                        uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
-                                        uint32_t fence_mem = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_MEM_SYS|GDS_PEER_FENCE_MEM_PEER));
+                gds_dbg("FENCE flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
+                uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
+                uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
+                uint32_t fence_mem = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_MEM_SYS|GDS_PEER_FENCE_MEM_PEER));
 
-                                        if (fence_op == GDS_PEER_FENCE_OP_READ) {
-                                            gds_warnc(1, "nothing to do for read fences\n");
-                                            //retcode = EINVAL;
-                                            break;
-                                        }
-                                        else {
-                                            if (fence_from != GDS_PEER_FENCE_FROM_HCA) {
-                                                gds_err("unexpected from %08x fence, expected FROM_HCA\n", fence_from);
-                                                retcode = EINVAL;
-                                                break;
-                                            }
-                                            if (fence_mem == GDS_PEER_FENCE_MEM_PEER) {
-                                                gds_dbg("using light membar\n");
-                                                wmb();
-                                            }
-                                            else if (fence_mem == GDS_PEER_FENCE_MEM_SYS) {
-                                                gds_dbg("using heavy membar\n");
-                                                wmb();
-                                            }
-                                            else {
-                                                gds_err("unsupported fence combination\n");
-                                                retcode = EINVAL;
-                                                break;
-                                            }
-                                        }
-                                        break;
-                                    }
+                if (fence_op == GDS_PEER_FENCE_OP_READ) {
+                    gds_warnc(1, "nothing to do for read fences\n");
+                    //retcode = EINVAL;
+                    break;
+                }
+                else {
+                    if (fence_from != GDS_PEER_FENCE_FROM_HCA) {
+                        gds_err("unexpected from %08x fence, expected FROM_HCA\n", fence_from);
+                        retcode = EINVAL;
+                        break;
+                    }
+                    if (fence_mem == GDS_PEER_FENCE_MEM_PEER) {
+                        gds_dbg("using light membar\n");
+                        wmb();
+                    }
+                    else if (fence_mem == GDS_PEER_FENCE_MEM_SYS) {
+                        gds_dbg("using heavy membar\n");
+                        wmb();
+                    }
+                    else {
+                        gds_err("unsupported fence combination\n");
+                        retcode = EINVAL;
+                        break;
+                    }
+                }
+                break;
+            }
             case GDS_PEER_OP_STORE_DWORD: {
-                                              uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
-                                              uint32_t data = op->wr.dword_va.data;
-                                              // A || B || C || E
-                                              gds_dbg("STORE_DWORD ptr=%p data=%08" PRIx32 "\n", ptr, data);
-                                              gds_atomic_set(ptr, data);
-                                              break;
-                                          }
+                uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
+                uint32_t data = op->wr.dword_va.data;
+                // A || B || C || E
+                gds_dbg("STORE_DWORD ptr=%p data=%08" PRIx32 "\n", ptr, data);
+                gds_atomic_set(ptr, data);
+                break;
+            }
             case GDS_PEER_OP_STORE_QWORD: {
-                                              uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.qword_va.target_id)->va + op->wr.qword_va.offset);
-                                              uint64_t data = op->wr.qword_va.data;
-                                              gds_dbg("STORE_QWORD ptr=%p data=%016" PRIx64 "\n", ptr, data);
-                                              gds_atomic_set(ptr, data);
-                                              break;
-                                          }
+                uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.qword_va.target_id)->va + op->wr.qword_va.offset);
+                uint64_t data = op->wr.qword_va.data;
+                gds_dbg("STORE_QWORD ptr=%p data=%016" PRIx64 "\n", ptr, data);
+                gds_atomic_set(ptr, data);
+                break;
+            }
             case GDS_PEER_OP_COPY_BLOCK: {
-                                             uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.copy_op.target_id)->va + op->wr.copy_op.offset);
-                                             uint64_t *src = (uint64_t*)op->wr.copy_op.src;
-                                             size_t n_bytes = op->wr.copy_op.len;
-                                             gds_dbg("COPY_BLOCK ptr=%p src=%p len=%zu\n", ptr, src, n_bytes);
-                                             gds_bf_copy(ptr, src, n_bytes);
-                                             break;
-                                         }
+                uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.copy_op.target_id)->va + op->wr.copy_op.offset);
+                uint64_t *src = (uint64_t*)op->wr.copy_op.src;
+                size_t n_bytes = op->wr.copy_op.len;
+                gds_dbg("COPY_BLOCK ptr=%p src=%p len=%zu\n", ptr, src, n_bytes);
+                gds_bf_copy(ptr, src, n_bytes);
+                break;
+            }
             case GDS_PEER_OP_POLL_AND_DWORD:
             case GDS_PEER_OP_POLL_GEQ_DWORD:
             case GDS_PEER_OP_POLL_NOR_DWORD: {
-                                                 int poll_cond;
-                                                 uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
-                                                 uint32_t value = op->wr.dword_va.data;
-                                                 bool flush = true;
-                                                 if (post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH)
-                                                     flush = false;
-                                                 gds_dbg("WAIT_32 dev_ptr=%p data=%" PRIx32 " type=%" PRIx32 "\n", ptr, value, (uint32_t)op->type);
-                                                 bool done = false;
-                                                 do {
-                                                     uint32_t data = gds_atomic_get(ptr);
-                                                     switch(op->type) {
-                                                         case GDS_PEER_OP_POLL_NOR_DWORD:
-                                                             done = (0 != ~(data | value));
-                                                             break;
-                                                         case GDS_PEER_OP_POLL_GEQ_DWORD:
-                                                             done = ((int32_t)data - (int32_t)value >= 0);
-                                                             break;
-                                                         case GDS_PEER_OP_POLL_AND_DWORD:
-                                                             done = (0 != (data & value));
-                                                             break;
-                                                         default:
-                                                             gds_err("invalid op type %02x\n", op->type);
-                                                             retcode = EINVAL;
-                                                             goto out;
-                                                     }
-                                                     if (done)
-                                                         break;
-                                                     // TODO: more aggressive CPU relaxing needed here to avoid starving I/O fabric
-                                                     arch_cpu_relax();
-                                                 } while(true);
-                                                 break;
-                                             }
+                int poll_cond;
+                uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
+                uint32_t value = op->wr.dword_va.data;
+                bool flush = true;
+                if (post_flags & GDS_POST_OPS_DISCARD_WAIT_FLUSH)
+                    flush = false;
+                gds_dbg("WAIT_32 dev_ptr=%p data=%" PRIx32 " type=%" PRIx32 "\n", ptr, value, (uint32_t)op->type);
+                bool done = false;
+                do {
+                    uint32_t data = gds_atomic_get(ptr);
+                    switch(op->type) {
+                        case GDS_PEER_OP_POLL_NOR_DWORD:
+                            done = (0 != ~(data | value));
+                            break;
+                        case GDS_PEER_OP_POLL_GEQ_DWORD:
+                            done = ((int32_t)data - (int32_t)value >= 0);
+                            break;
+                        case GDS_PEER_OP_POLL_AND_DWORD:
+                            done = (0 != (data & value));
+                            break;
+                        default:
+                            gds_err("invalid op type %02x\n", op->type);
+                            retcode = EINVAL;
+                            goto out;
+                    }
+                    if (done)
+                        break;
+                    // TODO: more aggressive CPU relaxing needed here to avoid starving I/O fabric
+                    arch_cpu_relax();
+                } while(true);
+                break;
+            }
             default:
-                                             gds_err("undefined peer op type %d\n", op->type);
-                                             retcode = EINVAL;
-                                             break;
+                gds_err("undefined peer op type %d\n", op->type);
+                retcode = EINVAL;
+                break;
         }
         if (retcode) {
             gds_err("error %d at entry n=%zu\n", retcode, n);
@@ -1147,26 +1147,26 @@ out:
 
 int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uint32_t val)
 {
-        int retcode = 0;
-        int idx = 0;
+    int retcode = 0;
+    int idx = 0;
 
-        assert(info);
+    assert(info);
 
-        for (int j=0; j<count; j++) {
-                gds_dbg("peer_commit:%d idx=%d\n", j, idx);
-                //retcode = gds_post_ops_on_cpu(info[j].commit.entries, info[j].commit.storage);
-                if (retcode) {
-                        goto out;
-                }
+    for (int j=0; j<count; j++) {
+        gds_dbg("peer_commit:%d idx=%d\n", j, idx);
+        retcode = gds_post_ops_on_cpu(info[j].commit.entries, info[j].commit.storage);
+        if (retcode) {
+            goto out;
         }
+    }
 
-        if (dw) {
-                wmb();
-                gds_atomic_set(dw, val);
-        }
+    if (dw) {
+        wmb();
+        gds_atomic_set(dw, val);
+    }
 
 out:
-        return retcode;
+    return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -1915,6 +1915,8 @@ int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc)
             tmp->next = GDS_PEEK_ENTRY_N(cq, cq->peer_peek_free);
             cq->peer_peek_free = tmp;
         }
+        if (cq->type == GDS_CQ_TYPE_SQ)
+            wc[cnt].wr_id = cq->wrid[idx];
         ++cq->cons_index;
     }
     return p_ne;
@@ -2027,10 +2029,12 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
     memcpy(&gqp->send_cq, tx_gcq, sizeof(struct gds_cq));
     gqp->send_cq.cq = qp->send_cq;
     gqp->send_cq.curr_offset = 0;
+    gqp->send_cq.type = GDS_CQ_TYPE_SQ;
 
     memcpy(&gqp->recv_cq, rx_gcq, sizeof(struct gds_cq));
     gqp->recv_cq.cq = qp->recv_cq;
     gqp->recv_cq.curr_offset = 0;
+    gqp->recv_cq.type = GDS_CQ_TYPE_RQ;
 
     dv_obj = {
         .qp = {
@@ -2041,6 +2045,12 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
     ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_QP);
     if (ret != 0) {
         gds_err("error in mlx5dv_init_obj MLX5DV_OBJ_QP\n");
+        goto err;
+    }
+
+    gqp->send_cq.wrid = (uint64_t *)malloc(gqp->dv_qp.sq.wqe_cnt * sizeof(uint64_t));
+    if (!gqp->send_cq.wrid) {
+        gds_err("error in malloc gqp->send_cq.wrid\n");
         goto err;
     }
 

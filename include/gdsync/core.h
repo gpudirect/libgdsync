@@ -66,12 +66,20 @@ struct gds_peek_entry {
     uint32_t next;
 };
 
+typedef enum gds_cq_type {
+    GDS_CQ_TYPE_SQ,
+    GDS_CQ_TYPE_RQ
+} gds_cq_type_t;
+
 struct gds_cq {
     struct ibv_cq          *cq;
     uint32_t                curr_offset;
     uint32_t                cons_index;
+    gds_cq_type_t           type;
 
     struct mlx5dv_cq        dv_cq;
+
+    uint64_t               *wrid;
 
     uint64_t                active_buf_va_id;
 
