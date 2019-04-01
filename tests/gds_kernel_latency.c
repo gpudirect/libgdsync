@@ -397,46 +397,37 @@ static int poll_send_cq(struct pingpong_context *ctx)
 
     struct ibv_wc wc[max_batch_len];
     int ne, i;
-    int cnt = 0;
 
-    while (cnt < max_batch_len) {
-        //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len, wc);
-        //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len - cnt, wc);
-        ne = gds_poll_cq(&ctx->gds_qp->send_cq, max_batch_len - cnt, wc);
-        if (ne < 0) {
-            gpu_err("poll TX CQ failed %d\n", ne);
+    //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len, wc);
+    //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len - cnt, wc);
+    ne = gds_poll_cq(&ctx->gds_qp->send_cq, max_batch_len, wc);
+    if (ne < 0) {
+        gpu_err("poll TX CQ failed %d\n", ne);
+        return 1;
+    }
+
+    ctx->n_tx_ev = ne;
+
+    for (i = 0; i < ne; ++i) {
+        if (wc[i].status != IBV_WC_SUCCESS) {
+            gpu_err("Failed status %s (%d) for wr_id %d\n",
+                    ibv_wc_status_str(wc[i].status),
+                    wc[i].status, (int) wc[i].wr_id);
             return 1;
         }
 
-        //ctx->n_tx_ev = ne;
-
-        for (i = 0; i < ne; ++i) {
-            if (wc[i].status != IBV_WC_SUCCESS) {
-                gpu_err("Failed status %s (%d) for wr_id %d\n",
-                        ibv_wc_status_str(wc[i].status),
-                        wc[i].status, (int) wc[i].wr_id);
+        switch ((int) wc[i].wr_id) {
+            case PINGPONG_SEND_WRID:
+                ++ctx->scnt;
+                gpu_dbg("got send event scnt=%d\n", ctx->scnt);
+                break;
+            default:
+                gpu_err("Completion for unknown wr_id %d\n",
+                    (int) wc[i].wr_id);
+                ++ctx->scnt;
                 return 1;
-            }
-
-            switch ((int) wc[i].wr_id) {
-                case PINGPONG_SEND_WRID:
-                    ++ctx->scnt;
-                    gpu_dbg("got send event scnt=%d\n", ctx->scnt);
-                    break;
-                default:
-                    /*gpu_err("Completion for unknown wr_id %d\n",
-                      (int) wc[i].wr_id);*/
-                    gpu_dbg("Completion for unknown wr_id %d\n",
-                            (int) wc[i].wr_id);
-                    ++ctx->scnt;
-                    break;
-                    //return 1;
-            }
         }
-        cnt += ne;
     }
-
-    ctx->n_tx_ev = cnt;
 
     return 0;
 }
@@ -449,41 +440,36 @@ static int poll_recv_cq(struct pingpong_context *ctx)
     struct ibv_wc wc[max_batch_len];
     int ne = 0;
     int i;
-    int cnt = 0;
 
-    while (cnt < max_batch_len) {
-        //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len, wc);
-        //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len - cnt, wc);
-        ne = gds_poll_cq(&ctx->gds_qp->recv_cq, max_batch_len - cnt, wc);
-        if (ne < 0) {
-            gpu_err("poll RX CQ failed %d\n", ne);
+    //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len, wc);
+    //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len - cnt, wc);
+    ne = gds_poll_cq(&ctx->gds_qp->recv_cq, max_batch_len, wc);
+    if (ne < 0) {
+        gpu_err("poll RX CQ failed %d\n", ne);
+        return 1;
+    }
+
+    ctx->n_rx_ev = ne;
+
+    for (i = 0; i < ne; ++i) {
+        if (wc[i].status != IBV_WC_SUCCESS) {
+            gpu_err("[%d] Failed status %s (%d) for wr_id %d\n",
+                    my_rank, ibv_wc_status_str(wc[i].status),
+                    wc[i].status, (int) wc[i].wr_id);
             return 1;
         }
 
-        //ctx->n_rx_ev = ne;
-
-        for (i = 0; i < ne; ++i) {
-            if (wc[i].status != IBV_WC_SUCCESS) {
-                gpu_err("[%d] Failed status %s (%d) for wr_id %d\n",
-                        my_rank, ibv_wc_status_str(wc[i].status),
-                        wc[i].status, (int) wc[i].wr_id);
+        switch ((int) wc[i].wr_id) {
+            case PINGPONG_RECV_WRID:
+                ++ctx->rcnt;
+                gpu_dbg("[%d] got recv event rcnt=%d\n", my_rank, ctx->rcnt);
+                break;
+            default:
+                gpu_err("[%d] Completion for unknown wr_id %d\n",
+                        my_rank, (int) wc[i].wr_id);
                 return 1;
-            }
-
-            switch ((int) wc[i].wr_id) {
-                case PINGPONG_RECV_WRID:
-                    ++ctx->rcnt;
-                    gpu_dbg("[%d] got recv event rcnt=%d\n", my_rank, ctx->rcnt);
-                    break;
-                default:
-                    gpu_err("[%d] Completion for unknown wr_id %d\n",
-                            my_rank, (int) wc[i].wr_id);
-                    return 1;
-            }
         }
-        cnt += ne;
     }
-    ctx->n_rx_ev = cnt;
 
     return 0;
 }

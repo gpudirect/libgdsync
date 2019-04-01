@@ -44,7 +44,7 @@
 //#include <infiniband/verbs_exp.h>
 //#include <gdrapi.h>
 
-#include <util/udma_barrier.h>
+//#include <util/udma_barrier.h>
 
 #include "gdsync.h"
 #include "gdsync/tools.h"
@@ -221,6 +221,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_ctrl_seg));
         size = sizeof(struct mlx5_wqe_ctrl_seg) / 16;
 
+        //printf("-------\n");
         dpseg = (struct mlx5_wqe_data_seg *)seg;
         for (i = 0; i < p_ewr->num_sge; ++i) {
             if (dpseg == qend) {
@@ -229,12 +230,35 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
             }
             if (p_ewr->sg_list[i].length) {
                 mlx5dv_set_data_seg(dpseg, p_ewr->sg_list[i].length, p_ewr->sg_list[i].lkey, p_ewr->sg_list[i].addr);
+                /*printf("ctrl: %p, dpseg: %p\n", ctrl, dpseg);
+                {
+                    int i;
+                    printf("===> *dpseg: ");
+                    for (i = 0; i < sizeof(mlx5_wqe_data_seg); ++i)
+                        printf("0x%x ", *((uint8_t *)dpseg + i));
+                    printf("\n");
+                }*/
                 ++dpseg;
                 size += sizeof(struct mlx5_wqe_data_seg) / 16;
             }
         }
 
         mlx5dv_set_ctrl_seg(ctrl, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, qp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
+
+        /*printf("===> opmod: 0x%x, idx: 0x%x, opcode: 0x%x\n", 0, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND);
+        printf("===> qpn: 0x%x, ds: 0x%x\n", qp->qp->qp_num, size);
+        printf("===> fm_ce_se: 0x%x\n", MLX5_WQE_CTRL_CQ_UPDATE);
+        printf("===> imm: 0x%x\n", 0);
+
+        {
+            int i;
+            printf("===> *ctrl: ");
+            for (i = 0; i < sizeof(mlx5_wqe_ctrl_seg); ++i)
+                printf("0x%x ", *((uint8_t *)ctrl + i));
+            printf("\n");
+        }
+        printf("===> *ctrl (be64): 0x%llx\n", *(__be64 *)ctrl);
+        printf("-------\n\n");*/
 
         qp->send_cq.wrid[idx] = p_ewr->wr_id;
         qp->sq_cur_post += (size * 16 + qp->dv_qp.sq.stride - 1) / qp->dv_qp.sq.stride;
@@ -265,10 +289,16 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
     wr->wr.dword_va.data = htonl(qp->sq_cur_post & 0xffff);
     wr->wr.dword_va.target_id = qp->peer_va_id_dbr;
     wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
+    /*printf("===> type: 0x%x\n", wr->type);
+    printf("===> wr.dword_va.data: 0x%x\n", wr->wr.dword_va.data);
+    printf("===> wr.dword_va.target_id: 0x%lx\n", wr->wr.dword_va.target_id);
+    printf("===> wr.dword_va.offset: 0x%lx\n", wr->wr.dword_va.offset);*/
     wr = wr->next;
 
     wr->type = GDS_PEER_OP_FENCE;
     wr->wr.fence.fence_flags = GDS_PEER_FENCE_OP_WRITE | GDS_PEER_FENCE_FROM_HCA | GDS_PEER_FENCE_MEM_SYS;
+    /*printf("===> type: 0x%x\n", wr->type);
+    printf("===> wr.fence.fence_flags: 0x%lx\n", wr->wr.fence.fence_flags);*/
 	wr = wr->next;
 
     wr->type = GDS_PEER_OP_STORE_QWORD;
@@ -276,6 +306,10 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
     wr->wr.qword_va.target_id = qp->peer_va_id_bf;
     wr->wr.qword_va.offset = qp->bf_offset;
     //wr->wr.qword_va.offset = 0;
+	/*printf("===> type: 0x%x\n", wr->type);
+	printf("===> wr.qword_va.data: 1x%lx\n", wr->wr.qword_va.data);
+	printf("===> wr.qword_va.target_id: 0x%lx\n", wr->wr.qword_va.target_id);
+	printf("===> wr.qword_va.offset: 0x%lx\n", wr->wr.qword_va.offset);*/
 
     qp->bf_offset ^= qp->dv_qp.bf.size;
     request->commit.entries = 3;

@@ -1716,8 +1716,8 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 {
 	struct gds_cq *gcq = NULL;
 	//ibv_exp_cq_init_attr attr;
-	ibv_cq_init_attr_ex attr;
-	mlx5dv_cq_init_attr dv_attr;
+	//ibv_cq_init_attr_ex attr;
+	//mlx5dv_cq_init_attr dv_attr;
 	gds_peer *peer = NULL;
 	gds_peer_attr *peer_attr = NULL;
 	int ret=0;
@@ -1727,8 +1727,8 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
     gds_buf *peer_buf;
     int i;
 
-	memset(&attr, 0, sizeof(ibv_cq_init_attr_ex));
-	memset(&dv_attr, 0, sizeof(mlx5dv_cq_init_attr));
+	//memset(&attr, 0, sizeof(ibv_cq_init_attr_ex));
+	//memset(&dv_attr, 0, sizeof(mlx5dv_cq_init_attr));
 
 	if(!context)
 	{
@@ -1755,15 +1755,15 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 	peer->alloc_type = gds_peer::CQ;
 	peer->alloc_flags = flags;
 
-	attr.cqe = cqe;
+	/*attr.cqe = cqe;
 	attr.cq_context = cq_context;
 	attr.channel = channel;
-	attr.comp_vector = comp_vector;
+	attr.comp_vector = comp_vector;*/
 
 	//attr.comp_mask = GDS_CQ_INIT_ATTR_PEER_DIRECT;
-	attr.comp_mask = IBV_CQ_INIT_ATTR_MASK_FLAGS;
+	//attr.comp_mask = IBV_CQ_INIT_ATTR_MASK_FLAGS;
 	//attr.flags = 0; // see ibv_exp_cq_create_flags
-	attr.flags = IBV_CREATE_CQ_ATTR_SINGLE_THREADED; // see ibv_create_cq_attr_flags
+	//attr.flags = IBV_CREATE_CQ_ATTR_SINGLE_THREADED; // see ibv_create_cq_attr_flags
 	//attr.peer_direct_attrs = peer_attr;
 	/*if (res_domain) {
 	  gds_dbg("using peer->res_domain %p for CQ\n", res_domain);
@@ -1773,7 +1773,8 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 
 	int old_errno = errno;
 	//gcq->cq = ibv_exp_create_cq(context, cqe, cq_context, channel, comp_vector, &attr);
-	gcq->cq = (ibv_cq *)mlx5dv_create_cq(context, &attr, &dv_attr);
+	gcq->cq = ibv_create_cq(context, cqe, cq_context, channel, comp_vector);
+	//gcq->cq = (ibv_cq *)mlx5dv_create_cq(context, &attr, &dv_attr);
 	if (!gcq->cq) {
 		//gds_err("error %d in ibv_exp_create_cq, old errno %d\n", errno, old_errno);
 		gds_err("error %d in mlx5dv_create_cq, old errno %d\n", errno, old_errno);
@@ -1934,7 +1935,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
     gds_peer *peer = NULL;
     gds_peer_attr *peer_attr = NULL;
 
-    mlx5dv_qp_init_attr dv_qp_attr;
+    //mlx5dv_qp_init_attr dv_qp_attr;
 
     mlx5dv_obj dv_obj;
 
@@ -1997,9 +1998,9 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
     // peer registration
     qp_attr->send_cq = tx_gcq->cq;
     qp_attr->recv_cq = rx_gcq->cq;
-    qp_attr->pd = pd;
+    //qp_attr->pd = pd;
     //qp_attr->comp_mask |= GDS_QP_INIT_ATTR_PD;
-    qp_attr->comp_mask |= IBV_QP_INIT_ATTR_PD;
+    //qp_attr->comp_mask |= IBV_QP_INIT_ATTR_PD;
 
     peer->alloc_type = gds_peer::WQ;
     peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
@@ -2014,13 +2015,14 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
     //qp_attr->comp_mask |= GDS_QP_INIT_ATTR_PEER_DIRECT;
     //qp_attr->peer_direct_attrs = peer_attr;
 
-    memset(&dv_qp_attr, 0, sizeof(mlx5dv_qp_init_attr));
+    //memset(&dv_qp_attr, 0, sizeof(mlx5dv_qp_init_attr));
 
     //qp = ibv_exp_create_qp(context, qp_attr);
-    qp = mlx5dv_create_qp(context, qp_attr, &dv_qp_attr);
+    qp = ibv_create_qp(pd, qp_attr);
+    //qp = mlx5dv_create_qp(context, qp_attr, &dv_qp_attr);
     if (!qp)  {
         ret = EINVAL;
-        gds_err("error in ibv_exp_create_qp\n");
+        gds_err("error in ibv_create_qp\n");
         goto err;
     }
 
