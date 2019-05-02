@@ -179,14 +179,14 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         gds_init_send_info(request);
         assert(qp);
         assert(qp->qp);
-        ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
+        ret = ibv_post_send(qp->qp, p_ewr, bad_ewr);
         if (ret) {
 
                 if (ret == ENOMEM) {
                         // out of space error can happen too often to report
-                        gds_dbg("ENOMEM error %d in ibv_exp_post_send\n", ret);
+                        gds_dbg("ENOMEM error %d in ibv_post_send\n", ret);
                 } else {
-                        gds_err("error %d in ibv_exp_post_send\n", ret);
+                        gds_err("error %d in ibv_post_send\n", ret);
                 }
                 goto out;
         }
