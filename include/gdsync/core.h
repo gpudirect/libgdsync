@@ -54,7 +54,7 @@ enum gds_create_qp_flags {
     GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
-typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
+typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
 typedef struct ibv_exp_send_wr gds_send_wr;
 
 struct gds_cq {

@@ -33,6 +33,8 @@
 #include <string.h>
 #include <assert.h>
 
+#include <infiniband/verbs_exp.h>
+
 #include <gdsync.h>
 #include <gdsync/tools.h>
 
@@ -1807,6 +1809,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         int ret = 0;
         struct gds_qp *gqp = NULL;
         struct ibv_qp *qp = NULL;
+        struct ibv_exp_qp_init_attr exp_qp_attr;
         struct gds_cq *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
@@ -1821,6 +1824,9 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                 gds_err("invalid flags");
                 return NULL;
         }
+
+        memset(&exp_qp_attr, 0, sizeof(struct ibv_exp_qp_init_attr));
+        memcpy(&exp_qp_attr, qp_attr, sizeof(gds_qp_init_attr_t));
 
         gqp = (struct gds_qp*)calloc(1, sizeof(struct gds_qp));
         if (!gqp) {
@@ -1844,7 +1850,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         else
             gds_warn("NOT using gqp->res_domain\n");
 
-        tx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
+        tx_gcq = gds_create_cq_internal(context, exp_qp_attr.cap.max_send_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
                               gqp->res_domain);
         if (!tx_gcq) {
@@ -1853,7 +1859,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                 goto err;
         }
 
-        rx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
+        rx_gcq = gds_create_cq_internal(context, exp_qp_attr.cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
                               (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
                               gqp->res_domain);
         if (!rx_gcq) {
@@ -1863,10 +1869,10 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         }
 
         // peer registration
-        qp_attr->send_cq = tx_gcq->cq;
-        qp_attr->recv_cq = rx_gcq->cq;
-        qp_attr->pd = pd;
-        qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
+        exp_qp_attr.send_cq = tx_gcq->cq;
+        exp_qp_attr.recv_cq = rx_gcq->cq;
+        exp_qp_attr.pd = pd;
+        exp_qp_attr.comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
 
         peer->alloc_type = gds_peer::WQ;
         peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
@@ -1878,10 +1884,10 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                 gds_warn("QP WQ DBREC on GPU\n");
                 peer->alloc_flags |= GDS_ALLOC_DBREC_ON_GPU;
         }        
-        qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PEER_DIRECT;
-        qp_attr->peer_direct_attrs = peer_attr;
+        exp_qp_attr.comp_mask |= IBV_EXP_QP_INIT_ATTR_PEER_DIRECT;
+        exp_qp_attr.peer_direct_attrs = peer_attr;
 
-        qp = ibv_exp_create_qp(context, qp_attr);
+        qp = ibv_exp_create_qp(context, &exp_qp_attr);
         if (!qp)  {
                 ret = EINVAL;
                 gds_err("error in ibv_exp_create_qp\n");
@@ -1893,6 +1899,8 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         gqp->send_cq.curr_offset = 0;
         gqp->recv_cq.cq = qp->recv_cq;
         gqp->recv_cq.curr_offset = 0;
+
+        memcpy(qp_attr, &exp_qp_attr, sizeof(gds_qp_init_attr_t));
 
         gds_dbg("created gds_qp=%p\n", gqp);
 
