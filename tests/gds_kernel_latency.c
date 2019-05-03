@@ -492,6 +492,7 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 	return i;
 }
 
+#if 0
 static int pp_wait_cq(struct pingpong_context *ctx, int is_client)
 {
         int ret;
@@ -530,10 +531,10 @@ static int pp_wait_cq(struct pingpong_context *ctx, int is_client)
         }
         return ret;
 }
+#endif
 
 static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *p_gpu_stream)
 {
-        int ret = 0;
 	struct ibv_sge list = {
 		.addr	= (uintptr_t) ctx->txbuf,
 		.length = ctx->size,
@@ -570,7 +571,6 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 
 static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
 {
-        int ret = 0;
 	struct ibv_sge list = {
 		.addr	= (uintptr_t) ctx->txbuf,
 		.length = ctx->size,
@@ -960,7 +960,7 @@ int main(int argc, char *argv[])
 	struct pingpong_context *ctx;
 	struct pingpong_dest     my_dest;
 	struct pingpong_dest    *rem_dest = NULL;
-	struct timeval           rstart, start, end;
+	struct timeval           start, end;
 	const char              *ib_devname = NULL;
 	char                    *servername = NULL;
 	int                      port = 18515;
@@ -972,7 +972,6 @@ int main(int argc, char *argv[])
 	int                      use_event = 0;
 	int                      routs;
         int                      nposted;
-	int                      num_cq_events = 0;
 	int                      sl = 0;
 	int			 gidx = -1;
 	char			 gid[INET6_ADDRSTRLEN];
@@ -980,7 +979,6 @@ int main(int argc, char *argv[])
         int                      peersync = 1;
         int                      peersync_gpu_cq = 0;
         int                      peersync_gpu_dbrec = 0;
-        int                      warmup = 10;
         int                      consume_rx_cqe = 0;
 	int                      gds_qp_type = 1;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
@@ -1588,8 +1586,6 @@ int main(int argc, char *argv[])
                         }
                 }
         }
-
-	//ibv_ack_cq_events(ctx->cq, num_cq_events);
 
 	//expect work to be completed by now
 
