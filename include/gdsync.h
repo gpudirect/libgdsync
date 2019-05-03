@@ -33,7 +33,6 @@
  */
 
 #include <infiniband/verbs.h>
-#include <infiniband/peer_ops.h>
 
 #include <cuda.h>
 #include <gdrapi.h>

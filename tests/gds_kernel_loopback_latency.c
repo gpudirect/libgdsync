@@ -579,12 +579,57 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 }
 
 typedef struct work_desc {
-        gds_send_request_t send_rq;
-        gds_wait_request_t wait_tx_rq;
-        gds_wait_request_t wait_rx_rq;
+        gds_send_request_t *send_rq;
+        gds_wait_request_t *wait_tx_rq;
+        gds_wait_request_t *wait_rx_rq;
 #define N_WORK_DESCS 3
         gds_descriptor_t descs[N_WORK_DESCS];
 } work_desc_t;
+
+static void free_work_desc(work_desc_t *wdesc)
+{
+    if (!wdesc)
+        return;
+
+    if (wdesc->send_rq)
+        gds_free_send_request(wdesc->send_rq);
+
+    if (wdesc->wait_tx_rq)
+        gds_free_wait_request(wdesc->wait_tx_rq);
+
+    if (wdesc->wait_rx_rq)
+        gds_free_wait_request(wdesc->wait_rx_rq);
+
+    free(wdesc);
+}
+
+static int alloc_work_desc(work_desc_t **wdesc)
+{
+    *wdesc = (work_desc_t *)calloc(1, sizeof(work_desc_t));
+    if (*wdesc == NULL)
+        goto err;
+
+    if (gds_alloc_send_request(&(*wdesc)->send_rq, 1) != 0) {
+        gpu_err("cannot alloc send_rq\n");
+        goto err;
+    }
+
+    if (gds_alloc_wait_request(&(*wdesc)->wait_tx_rq, 1) != 0) {
+        gpu_err("cannot alloc wait_tx_rq\n");
+        goto err;
+    }
+
+    if (gds_alloc_wait_request(&(*wdesc)->wait_rx_rq, 1) != 0) {
+        gpu_err("cannot alloc wait_rx_rq\n");
+        goto err;
+    }
+
+    return 0;
+
+err:
+    free_work_desc(*wdesc);
+    return -ENOMEM;
+}
 
 static void post_work_cb(CUstream hStream, CUresult status, void *userData)\
 {
@@ -604,7 +649,7 @@ static void post_work_cb(CUstream hStream, CUresult status, void *userData)\
                 stream_cb_error = 1;
         }
 out:
-        free(wdesc);
+        free_work_desc(wdesc);
         NVTX_POP();
 }
 
@@ -640,43 +685,48 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
         NVTX_PUSH("post send+wait", 1);
 	for (i = 0; i < posted_recv; ++i) {
                 if (ctx->use_desc_apis) {
-                        work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
+                        work_desc_t *wdesc;
+                        if (alloc_work_desc(&wdesc) != 0) {
+                            gpu_err("cannot alloc work desc\n");
+                            exit(EXIT_FAILURE);
+                        }
+
                         int k = 0;
-                        ret = pp_prepare_gpu_send(ctx, qpn, &wdesc->send_rq);
+                        ret = pp_prepare_gpu_send(ctx, qpn, wdesc->send_rq);
                         if (ret) {
                                 retcode = -ret;
                                 break;
                         }
                         assert(k < N_WORK_DESCS);
                         wdesc->descs[k].tag = GDS_TAG_SEND;
-                        wdesc->descs[k].send = &wdesc->send_rq;
+                        wdesc->descs[k].send = wdesc->send_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
+                        ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, wdesc->wait_tx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
                         }
                         assert(k < N_WORK_DESCS);
                         wdesc->descs[k].tag = GDS_TAG_WAIT;
-                        wdesc->descs[k].wait = &wdesc->wait_tx_rq;
+                        wdesc->descs[k].wait = wdesc->wait_tx_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
+                        ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, wdesc->wait_rx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
                         }
                         assert(k < N_WORK_DESCS);
                         wdesc->descs[k].tag = GDS_TAG_WAIT;
-                        wdesc->descs[k].wait = &wdesc->wait_rx_rq;
+                        wdesc->descs[k].wait = wdesc->wait_rx_rq;
                         ++k;
 
                         if (ctx->peersync) {
                                 gpu_dbg("before gds_stream_post_descriptors\n");
                                 ret = gds_stream_post_descriptors(gpu_stream_server, k, wdesc->descs, 0);
                                 gpu_dbg("after gds_stream_post_descriptors\n");
-                                free(wdesc);
+                                free_work_desc(wdesc);
                                 if (ret) {
                                         retcode = -ret;
                                         break;

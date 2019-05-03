@@ -27,6 +27,9 @@
 
 #pragma once
 
+#include <infiniband/verbs_exp.h>
+#include <infiniband/peer_ops.h>
+
 static const size_t max_gpus = 16;
 
 typedef struct ibv_exp_peer_direct_attr gds_peer_attr;
@@ -121,6 +124,21 @@ typedef struct {
     struct gds_qp               gqp;
     struct ibv_exp_res_domain  *res_domain;
 } gds_qp_internal_t;
+
+enum {
+    GDS_SEND_INFO_MAX_OPS = 32,
+    GDS_WAIT_INFO_MAX_OPS = 32
+};
+
+struct gds_send_request {
+    struct ibv_exp_peer_commit commit;
+    struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+};
+
+struct gds_wait_request {
+    struct ibv_exp_peer_peek peek;
+    struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+};
 
 /*
  * Local variables:

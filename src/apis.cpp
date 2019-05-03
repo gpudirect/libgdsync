@@ -825,6 +825,52 @@ out:
 
 //-----------------------------------------------------------------------------
 
+int gds_alloc_send_request(gds_send_request_t **request, int num)
+{
+    if (num < 0)
+        return -EINVAL;
+
+    *request = (gds_send_request_t *)calloc(num, sizeof(gds_send_request_t));
+
+    if (*request == NULL && num != 0)
+        return -ENOMEM;
+
+    return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+void gds_free_send_request(gds_send_request_t *request)
+{
+    if (request)
+        free(request);
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_alloc_wait_request(gds_wait_request_t **request, int num)
+{
+    if (num < 0)
+        return -EINVAL;
+
+    *request = (gds_wait_request_t *)calloc(num, sizeof(gds_wait_request_t));
+
+    if (*request == NULL && num != 0)
+        return -ENOMEM;
+
+    return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+void gds_free_wait_request(gds_wait_request_t *request)
+{
+    if (request)
+        free(request);
+}
+
+//-----------------------------------------------------------------------------
+
 /*
  * Local variables:
  *  c-indent-level: 8
