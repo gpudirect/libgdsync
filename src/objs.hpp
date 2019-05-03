@@ -117,6 +117,11 @@ static inline gds_peer *peer_from_id(uint64_t id)
         return reinterpret_cast<gds_peer *>(id);
 }
 
+typedef struct {
+    struct gds_qp               gqp;
+    struct ibv_exp_res_domain  *res_domain;
+} gds_qp_internal_t;
+
 /*
  * Local variables:
  *  c-indent-level: 8
