@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.57)
-AC_INIT(libgdsync, 2.1, gpudirect@github.com)
+AC_INIT(libgdsync, 2.2, gpudirect@github.com)
 AC_CONFIG_SRCDIR([src/mem.hpp])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_HEADER(config.h)
