@@ -1,7 +1,21 @@
 dnl Process this file with autoconf to produce a configure script.
 
+dnl NOTE: the official suggestion for when to update the incremental version is:
+dnl "If the library source code has changed at all since the last update, then increment revision (‘c:r:a’ becomes ‘c:r+1:a’)."
+dnl from https://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
+m4_define([incremental_ver], [0])
+
+m4_define([major_ver], m4_esyscmd([awk '/#define GDS_API_MAJOR_VERSION/ { print $3}' include/gdsync/core.h| tr -d '\n']))
+m4_define([minor_ver], m4_esyscmd([awk '/#define GDS_API_MINOR_VERSION/ { print $3}' include/gdsync/core.h| tr -d '\n']))
+
+m4_define([project_version], [major_ver.minor_ver])
+m4_define([lt_cur], [m4_eval(major_ver + minor_ver)])
+m4_define([lt_rev], [incremental_ver])
+m4_define([lt_age], [minor_ver])
+m4_define([version_info], [lt_cur:lt_rev:lt_age])
+
 AC_PREREQ(2.57)
-AC_INIT(libgdsync, 2.2, gpudirect@github.com)
+AC_INIT(libgdsync, [project_version], gpudirect@github.com)
 AC_CONFIG_SRCDIR([src/mem.hpp])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_HEADER(config.h)
@@ -15,6 +29,8 @@ AC_PROG_LN_S
 AC_PROG_LIBTOOL
 
 LT_INIT
+
+AC_SUBST(VERSION_INFO, [version_info] )
 
 AX_CHECK_COMPILE_FLAG([-std=c++0x], [CXXFLAGS="$CXXFLAGS -std=c++0x"])
 AX_PTHREAD
@@ -185,6 +201,9 @@ dnl AC_CHECK_MEMBER([union CUstreamBatchMemOpParams_union.flushRemoteWrites],
 dnl   [AC_SUBST( HAS_CUDA_MEMOP_FLUSH_REMOTE_WRITES, 1 )],
 dnl   [AC_MSG_NOTICE([flushRemoteWrites is not defined])],
 dnl   [[#include <cuda.h>]])
+
+AC_MSG_NOTICE([project version: project_version ])
+AC_MSG_NOTICE([automake dynlib version info: version_info ])
 
 dnl Checks for CUDA >= 8.0
 AC_CHECK_LIB(cuda, cuStreamBatchMemOp, [],
