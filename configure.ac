@@ -1,10 +1,13 @@
 dnl Process this file with autoconf to produce a configure script.
 
-dnl m4_define([v_maj], [2])
-dnl m4_define([v_min], [2])
+dnl NOTE: the official suggestion for when to update the incremental version is:
+dnl "If the library source code has changed at all since the last update, then increment revision (‘c:r:a’ becomes ‘c:r+1:a’)."
+dnl from https://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
+m4_define([incremental_ver], [0])
+
 m4_define([major_ver], m4_esyscmd([awk '/#define GDS_API_MAJOR_VERSION/ { print $3}' include/gdsync/core.h| tr -d '\n']))
 m4_define([minor_ver], m4_esyscmd([awk '/#define GDS_API_MINOR_VERSION/ { print $3}' include/gdsync/core.h| tr -d '\n']))
-m4_define([incremental_ver], [0])
+
 m4_define([project_version], [major_ver.minor_ver])
 m4_define([lt_cur], [m4_eval(major_ver + minor_ver)])
 m4_define([lt_rev], [incremental_ver])
