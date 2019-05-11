@@ -130,14 +130,50 @@ enum {
     GDS_WAIT_INFO_MAX_OPS = 32
 };
 
-struct gds_send_request {
+typedef struct gds_send_request {
     struct ibv_exp_peer_commit commit;
     struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
-};
+} gds_send_request_s;
 
-struct gds_wait_request {
+typedef struct gds_wait_request {
     struct ibv_exp_peer_peek peek;
     struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+} gds_wait_request_s;
+
+static inline gds_send_request_s *to_gds_send_request_s(gds_send_request_t *request)
+{
+    assert(request);
+    assert(request->handle);
+
+    return (gds_send_request_s *)request->handle;
+}
+
+static inline const gds_send_request_s *to_gds_send_request_s(const gds_send_request_t *request)
+{
+    assert(request);
+    assert(request->handle);
+
+    return (gds_send_request_s *)request->handle;
+}
+
+static inline gds_wait_request_s *to_gds_wait_request_s(gds_wait_request_t *request)
+{
+    assert(request);
+    assert(request->handle);
+
+    return (gds_wait_request_s *)request->handle;
+}
+
+static inline const gds_wait_request_s *to_gds_wait_request_s(const gds_wait_request_t *request)
+{
+    assert(request);
+    assert(request->handle);
+
+    return (gds_wait_request_s *)request->handle;
+}
+
+enum gds_flag_internal {
+    GDS_FLAG_INTERNAL_KEEP_REQUESTS = 0x10
 };
 
 /*

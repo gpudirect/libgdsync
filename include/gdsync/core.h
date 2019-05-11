@@ -147,10 +147,9 @@ typedef enum gds_membar_flags {
  * Represents a posted send operation on a particular QP
  */
 
-typedef struct gds_send_request gds_send_request_t;
-
-int gds_alloc_send_request(gds_send_request_t **request, int num);
-void gds_free_send_request(gds_send_request_t *request);
+typedef struct {
+    void *handle;
+} gds_send_request_t;
 
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
@@ -161,7 +160,9 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
  * Represents a wait operation on a particular CQ
  */
 
-typedef struct gds_wait_request gds_wait_request_t;
+typedef struct {
+    void *handle;
+}gds_wait_request_t;
 
 int gds_alloc_wait_request(gds_wait_request_t **request, int num);
 void gds_free_wait_request(gds_wait_request_t *request);
@@ -274,8 +275,8 @@ typedef enum gds_tag {
 typedef struct gds_descriptor {
         gds_tag_t tag; /**< selector for union below */
         union {
-                gds_send_request_t  *send;
-                gds_wait_request_t  *wait;
+                gds_send_request_t   send;
+                gds_wait_request_t   wait;
                 gds_wait_value32_t   wait32;
                 gds_write_value32_t  write32;
                 gds_write_memory_t   writemem;

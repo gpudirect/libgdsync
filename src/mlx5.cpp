@@ -51,7 +51,7 @@
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_t *request)
+int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_s *request)
 {
         int retcode = 0;
         size_t n_ops = request->commit.entries;
@@ -159,26 +159,26 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
 
 int gds_mlx5_get_send_info(int count, const gds_send_request_t *requests, gds_mlx5_send_info_t *mlx5_infos)
 {
-        int retcode = 0;
+    int retcode = 0;
 
-	for (int j=0; j<count; j++) {
-                gds_mlx5_send_info *mlx5_i = mlx5_infos + j;
-                const gds_send_request_t *request = requests + j;
-                retcode = gds_mlx5_get_send_descs(mlx5_i, request);
-                if (retcode) {
-                        gds_err("error %d while retrieving descriptors for %dth request\n", retcode, j);
-                        break;
-                }
-                gds_dbg("mlx5_i: dbrec={%p,%08x} db={%p,%" PRIx64 "}\n",
-                        mlx5_i->dbrec_ptr, mlx5_i->dbrec_value, mlx5_i->db_ptr, mlx5_i->db_value);
-	}
+    for (int j=0; j<count; j++) {
+        gds_mlx5_send_info *mlx5_i = mlx5_infos + j;
+        const gds_send_request_s *request = to_gds_send_request_s(requests + j);
+        retcode = gds_mlx5_get_send_descs(mlx5_i, request);
+        if (retcode) {
+            gds_err("error %d while retrieving descriptors for %dth request\n", retcode, j);
+            break;
+        }
+        gds_dbg("mlx5_i: dbrec={%p,%08x} db={%p,%" PRIx64 "}\n",
+                mlx5_i->dbrec_ptr, mlx5_i->dbrec_value, mlx5_i->db_ptr, mlx5_i->db_value);
+    }
 
-	return retcode;
+    return retcode;
 }
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request_t *request)
+int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request_s *request)
 {
         int retcode = 0;
         size_t n_ops = request->peek.entries;
@@ -287,21 +287,21 @@ int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request
 
 int gds_mlx5_get_wait_info(int count, const gds_wait_request_t *requests, gds_mlx5_wait_info_t *mlx5_infos)
 {
-        int retcode = 0;
+    int retcode = 0;
 
-	for (int j=0; j<count; j++) {
-                gds_mlx5_wait_info *mlx5_i = mlx5_infos + j;
-                const gds_wait_request_t *request = requests + j;
-                retcode = gds_mlx5_get_wait_descs(mlx5_i, request);
-                if (retcode) {
-                        gds_err("error %d while retrieving descriptors for %dth request\n", retcode, j);
-                        break;
-                }
-                gds_dbg("wait[%d] cqe_ptr=%p cqe_value=0x%08x flag_ptr=%p flag_value=0x%08x\n", 
-                        j, mlx5_i->cqe_ptr, mlx5_i->cqe_value, mlx5_i->flag_ptr, mlx5_i->flag_value);
+    for (int j=0; j<count; j++) {
+        gds_mlx5_wait_info *mlx5_i = mlx5_infos + j;
+        const gds_wait_request_s *request = to_gds_wait_request_s(requests + j);
+        retcode = gds_mlx5_get_wait_descs(mlx5_i, request);
+        if (retcode) {
+            gds_err("error %d while retrieving descriptors for %dth request\n", retcode, j);
+            break;
         }
+        gds_dbg("wait[%d] cqe_ptr=%p cqe_value=0x%08x flag_ptr=%p flag_value=0x%08x\n", 
+                j, mlx5_i->cqe_ptr, mlx5_i->cqe_value, mlx5_i->flag_ptr, mlx5_i->flag_value);
+    }
 
-        return retcode;
+    return retcode;
 }
 
 //-----------------------------------------------------------------------------
