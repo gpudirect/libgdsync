@@ -57,17 +57,17 @@ enum gds_create_qp_flags {
 typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
 typedef struct ibv_send_wr gds_send_wr;
 
-struct gds_cq {
+typedef struct gds_cq {
         struct ibv_cq *cq;
         uint32_t curr_offset;
-};
+} gds_cq_t;
 
-struct gds_qp {
-        struct ibv_qp *qp;
-        struct gds_cq send_cq;
-        struct gds_cq recv_cq;
+typedef struct gds_qp {
+        struct ibv_qp      *qp;
+        gds_cq_t            send_cq;
+        gds_cq_t            recv_cq;
         struct ibv_context *dev_context;
-};
+} gds_qp_t;
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
  *
@@ -75,7 +75,7 @@ struct gds_qp {
  * use SRQ.
  */
 
-struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
+gds_qp_t *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                              gds_qp_init_attr_t *qp_init_attr,
                              int gpu_id, int flags);
 
@@ -83,7 +83,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
  *
  * The associated CQs are destroyed as well.
  */
-int gds_destroy_qp(struct gds_qp *qp);
+int gds_destroy_qp(gds_qp_t *qp);
 
 /* \brief: CPU-synchronous post send for peer QPs
  *
@@ -91,23 +91,23 @@ int gds_destroy_qp(struct gds_qp *qp);
  * - this API might have higher overhead than ibv_post_send. 
  * - It is provided for convenience only.
  */
-int gds_post_send(struct gds_qp *qp, gds_send_wr *wr, gds_send_wr **bad_wr);
+int gds_post_send(gds_qp_t *qp, gds_send_wr *wr, gds_send_wr **bad_wr);
 
 /* \brief: CPU-synchronous post recv for peer QPs
  *
  * Notes:
  * - there is no GPU-synchronous version of this because there is not a use case for it.
  */
-int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
+int gds_post_recv(gds_qp_t *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
 
-int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags);
+int gds_stream_wait_cq(CUstream stream, gds_cq_t *cq, int flags);
 
 /* \brief: GPU stream-synchronous send for peer QPs
  *
  * Notes:
  * - execution of the send operation happens in CUDA stream order
  */
-int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr);
+int gds_stream_queue_send(CUstream stream, gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr);
 
 
 // batched submission APIs
@@ -151,7 +151,7 @@ typedef struct {
     void *handle;
 } gds_send_request_t;
 
-int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
+int gds_prepare_send(gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
 int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
 
@@ -173,7 +173,7 @@ void gds_free_wait_request(gds_wait_request_t *request);
  *
  * flags: must be 0
  */
-int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
+int gds_prepare_wait_cq(gds_cq_t *cq, gds_wait_request_t *request, int flags);
 
 /**
  * Issues the descriptors contained in request on the CUDA stream
@@ -195,7 +195,7 @@ int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *
  * CQE poll-able.
  *
  */
-int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
+int gds_post_wait_cq(gds_cq_t *cq, gds_wait_request_t *request, int flags);
 
 
 

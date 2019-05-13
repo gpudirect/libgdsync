@@ -89,7 +89,7 @@ static void gds_init_wait_request(gds_wait_request_s *request, uint32_t offset)
 
 //-----------------------------------------------------------------------------
 
-static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_s * send_info, enum ibv_exp_rollback_flags flag)
+static int gds_rollback_qp(gds_qp_t *qp, gds_send_request_s *send_info, enum ibv_exp_rollback_flags flag)
 {
         struct ibv_exp_rollback_ctx rollback;
         int ret=0;
@@ -124,7 +124,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_prepare_send_internal(struct gds_qp *qp, gds_send_wr *p_ewr, 
+static int gds_prepare_send_internal(gds_qp_t *qp, gds_send_wr *p_ewr, 
                                         gds_send_wr **bad_ewr, 
                                         gds_send_request_s *request)
 {
@@ -152,7 +152,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_prepare_wait_cq_internal(struct gds_cq *cq, gds_wait_request_s *request, int flags)
+static int gds_prepare_wait_cq_internal(gds_cq_t *cq, gds_wait_request_s *request, int flags)
 {
     int retcode = 0;
     if (flags != 0) {
@@ -178,7 +178,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
+int gds_post_send(gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
         int ret = 0, ret_roll=0;
         gds_send_request_s send_info;
@@ -205,7 +205,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
+int gds_post_recv(gds_qp_t *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
 {
         int ret = 0;
 
@@ -224,7 +224,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, 
+int gds_prepare_send(gds_qp_t *qp, gds_send_wr *p_ewr, 
                      gds_send_wr **bad_ewr, 
                      gds_send_request_t *request)
 {
@@ -252,7 +252,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
+int gds_stream_queue_send(CUstream stream, gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
     int ret = 0, ret_roll = 0;
     gds_send_request_s send_info;
@@ -332,7 +332,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
+int gds_prepare_wait_cq(gds_cq_t *cq, gds_wait_request_t *request, int flags)
 {
     int ret = 0;
     gds_wait_request_s *wait_request = (gds_wait_request_s *)malloc(sizeof(gds_wait_request_s));
@@ -415,7 +415,7 @@ int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *
 
 //-----------------------------------------------------------------------------
 
-static int gds_abort_wait_cq(struct gds_cq *cq, gds_wait_request_s *request)
+static int gds_abort_wait_cq(gds_cq_t *cq, gds_wait_request_s *request)
 {
     assert(cq);
     assert(request);
@@ -427,7 +427,7 @@ static int gds_abort_wait_cq(struct gds_cq *cq, gds_wait_request_s *request)
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags)
+int gds_stream_wait_cq(CUstream stream, gds_cq_t *cq, int flags)
 {
     int retcode = 0;
     int ret;
@@ -464,7 +464,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
+int gds_post_wait_cq(gds_cq_t *cq, gds_wait_request_t *request, int flags)
 {
     int retcode = 0;
     gds_wait_request_s *wait_request = to_gds_wait_request_s(request);

@@ -1485,10 +1485,10 @@ gds_create_cq(struct ibv_context *context, int cqe,
 
 //-----------------------------------------------------------------------------
 
-struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
+gds_qp_t *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
 {
         int ret = 0;
-        struct gds_qp *gqp = NULL;
+        gds_qp_t *gqp = NULL;
         struct ibv_qp *qp = NULL;
         struct ibv_cq *rx_cq = NULL, *tx_cq = NULL;
         gds_peer *peer = NULL;
@@ -1500,7 +1500,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         assert(context);
         assert(qp_attr);
 
-        gqp = (struct gds_qp*)calloc(1, sizeof(struct gds_qp));
+        gqp = (gds_qp_t *)calloc(1, sizeof(gds_qp_t));
         if (!gqp) {
                 gds_err("cannot allocate memory\n");
                 return NULL;
@@ -1609,7 +1609,7 @@ err:
 
 //-----------------------------------------------------------------------------
 
-int gds_destroy_qp(struct gds_qp *qp)
+int gds_destroy_qp(gds_qp_t *qp)
 {
         int retcode = 0;
         int ret;

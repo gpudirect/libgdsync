@@ -195,7 +195,7 @@ typedef enum gds_alloc_qp_flags {
 
 typedef std::vector<CUstreamBatchMemOpParams> gds_op_list_t;
 
-struct gds_cq *gds_create_cq(struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags);
+gds_cq_t *gds_create_cq(struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags);
 int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_t *dw, uint32_t val);
 int gds_post_pokes_on_cpu(int count, gds_send_request_s *info, uint32_t *dw, uint32_t val);
 int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_s *request, uint32_t *dw, uint32_t val);

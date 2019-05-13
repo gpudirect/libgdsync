@@ -124,7 +124,7 @@ struct pingpong_context {
 	struct ibv_cq		*tx_cq;
 	struct ibv_cq		*rx_cq;
 	struct ibv_qp		*qp;
-	struct gds_qp		*gds_qp;
+	gds_qp_t		    *gds_qp;
 	struct ibv_ah		*ah;
 	void			*buf;
 	char			*txbuf;

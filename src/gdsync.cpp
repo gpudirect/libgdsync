@@ -1738,13 +1738,13 @@ static ibv_exp_res_domain *gds_create_res_domain(struct ibv_context *context)
 
 //-----------------------------------------------------------------------------
 
-static struct gds_cq *
+static gds_cq_t *
 gds_create_cq_internal(struct ibv_context *context, int cqe,
                         void *cq_context, struct ibv_comp_channel *channel,
                         int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags,
                         struct ibv_exp_res_domain * res_domain)
 {
-        struct gds_cq *gcq = NULL;
+        gds_cq_t *gcq = NULL;
         ibv_exp_cq_init_attr attr;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
@@ -1756,7 +1756,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
             return NULL;
         }
 
-        gcq = (struct gds_cq*)calloc(1, sizeof(struct gds_cq));
+        gcq = (gds_cq_t*)calloc(1, sizeof(gds_cq_t));
         if (!gcq) {
             gds_err("cannot allocate memory\n");
             return NULL;
@@ -1795,13 +1795,13 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 }
 
 //Note: general create cq function, not really used for now!
-struct gds_cq *
+gds_cq_t *
 gds_create_cq(struct ibv_context *context, int cqe,
               void *cq_context, struct ibv_comp_channel *channel,
               int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
         int ret = 0;
-        struct gds_cq *gcq = NULL;
+        gds_cq_t *gcq = NULL;
         //TODO: leak of res_domain
         struct ibv_exp_res_domain * res_domain;
         gds_dbg("cqe=%d gpu_id=%d cq_flags=%08x\n", cqe, gpu_id, flags);
@@ -1838,15 +1838,15 @@ gds_create_cq(struct ibv_context *context, int cqe,
 
 //-----------------------------------------------------------------------------
 
-struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
-                                gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
+gds_qp_t *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
+                        gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
 {
         int ret = 0;
         gds_qp_internal_t *gqpi = NULL;
-        struct gds_qp *gqp = NULL;
+        gds_qp_t *gqp = NULL;
         struct ibv_qp *qp = NULL;
         struct ibv_exp_qp_init_attr exp_qp_attr;
-        struct gds_cq *rx_gcq = NULL, *tx_gcq = NULL;
+        gds_cq_t *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         int old_errno = errno;
@@ -1953,7 +1953,7 @@ err:
 
 //-----------------------------------------------------------------------------
 
-int gds_destroy_qp(struct gds_qp *gqp)
+int gds_destroy_qp(gds_qp_t *gqp)
 {
         int retcode = 0;
         int ret;
