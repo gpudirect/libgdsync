@@ -1861,8 +1861,18 @@ gds_qp_t *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                 return NULL;
         }
 
+        // We need to create qp with exp-verbs since we need to enable peer ops.
+        // However, users provide us ib-verbs qp-init-attr.
+        // So, we copy field-by-field to exp-qp-init-attr.
+        // As MLNX OFED's ibv_qp_init_attr is not fully compatible with ibv_exp_qp_init_attr, field-by-field copy is preferred over memcpy.
         memset(&exp_qp_attr, 0, sizeof(struct ibv_exp_qp_init_attr));
-        memcpy(&exp_qp_attr, qp_attr, sizeof(gds_qp_init_attr_t));
+        exp_qp_attr.qp_context = qp_attr->qp_context;
+        exp_qp_attr.send_cq = qp_attr->send_cq;
+        exp_qp_attr.recv_cq = qp_attr->recv_cq;
+        exp_qp_attr.srq = qp_attr->srq;
+        memcpy(&exp_qp_attr.cap, &qp_attr->cap, sizeof(struct ibv_qp_cap));
+        exp_qp_attr.qp_type = qp_attr->qp_type;
+        exp_qp_attr.sq_sig_all = qp_attr->sq_sig_all;
 
         gqpi = (gds_qp_internal_t *)calloc(1, sizeof(gds_qp_internal_t));
         if (!gqpi) {
@@ -1938,7 +1948,16 @@ gds_qp_t *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         gqp->recv_cq.cq = qp->recv_cq;
         gqp->recv_cq.curr_offset = 0;
 
+        // The contents of some fields in exp_qp_attr are modified during the process.
+        // We copy them to qp_attr in order to expose back to the user.
         memcpy(qp_attr, &exp_qp_attr, sizeof(gds_qp_init_attr_t));
+        qp_attr->qp_context = exp_qp_attr.qp_context;
+        qp_attr->send_cq = exp_qp_attr.send_cq;
+        qp_attr->recv_cq = exp_qp_attr.recv_cq;
+        qp_attr->srq = exp_qp_attr.srq;
+        memcpy(&qp_attr->cap, &exp_qp_attr.cap, sizeof(struct ibv_qp_cap));
+        qp_attr->qp_type = exp_qp_attr.qp_type;
+        qp_attr->sq_sig_all = exp_qp_attr.sq_sig_all;
 
         gds_dbg("created gds_qp=%p\n", gqp);
 
