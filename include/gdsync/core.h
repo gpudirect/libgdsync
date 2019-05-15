@@ -164,9 +164,6 @@ typedef struct {
     void *handle;
 }gds_wait_request_t;
 
-int gds_alloc_wait_request(gds_wait_request_t **request, int num);
-void gds_free_wait_request(gds_wait_request_t *request);
-
 /**
  * Initializes a wait request out of the next heading CQE, which is kept in
  * cq->curr_offset.
