@@ -255,22 +255,22 @@ int gds_prepare_send(gds_qp_t *qp, gds_send_wr *p_ewr,
 int gds_stream_queue_send(CUstream stream, gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
     int ret = 0, ret_roll = 0;
-    gds_send_request_s send_info;
+    gds_send_request_t send_info;
     gds_descriptor_t descs[1];
 
     assert(qp);
     assert(p_ewr);
 
-    ret = gds_prepare_send_internal(qp, p_ewr, bad_ewr, &send_info);
+    ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
     if (ret) {
         gds_err("error %d in gds_prepare_send\n", ret);
         goto out;
     }
 
     descs[0].tag = GDS_TAG_SEND;
-    descs[0].send.handle = &send_info;
+    descs[0].send = &send_info;
 
-    ret = gds_stream_post_descriptors(stream, 1, descs, GDS_FLAG_INTERNAL_KEEP_REQUESTS);
+    ret = gds_stream_post_descriptors(stream, 1, descs, 0);
     if (ret) {
         gds_err("error %d in gds_stream_post_descriptors\n", ret);
         goto out;
@@ -312,7 +312,7 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
 
     for (k = 0; k < count; k++) {
         descs[k].tag = GDS_TAG_SEND;
-        descs[k].send = request[k];
+        descs[k].send = &request[k];
     }
 
     ret = gds_stream_post_descriptors(stream, count, descs, 0);
@@ -322,9 +322,6 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
     }
 
 out:
-    for (k = 0; k < count; k++)
-        request[k].handle = NULL;
-
     if (descs) 
         free(descs);
     return ret;
@@ -620,10 +617,10 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
         gds_descriptor_t *desc = descs + i;
         switch(desc->tag) {
             case GDS_TAG_SEND:
-                n_mem_ops += to_gds_send_request_s(&desc->send)->commit.entries + 2; // extra space, ugly
+                n_mem_ops += to_gds_send_request_s(desc->send)->commit.entries + 2; // extra space, ugly
                 break;
             case GDS_TAG_WAIT:
-                n_mem_ops += to_gds_wait_request_s(&desc->wait)->peek.entries + 2; // ditto
+                n_mem_ops += to_gds_wait_request_s(desc->wait)->peek.entries + 2; // ditto
                 break;
             case GDS_TAG_WAIT_VALUE32:
             case GDS_TAG_WRITE_VALUE32:
@@ -685,7 +682,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         gds_descriptor_t *desc = descs + i;
         switch(desc->tag) {
             case GDS_TAG_SEND: {
-                gds_send_request_s *sreq = to_gds_send_request_s(&desc->send);
+                gds_send_request_s *sreq = to_gds_send_request_s(desc->send);
                 retcode = gds_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
                 if (retcode) {
                     gds_err("error %d in gds_post_ops\n", retcode);
@@ -695,7 +692,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 break;
             }
             case GDS_TAG_WAIT: {
-                gds_wait_request_s *wreq = to_gds_wait_request_s(&desc->wait);
+                gds_wait_request_s *wreq = to_gds_wait_request_s(desc->wait);
                 int flags = 0;
                 if (move_flush && i != last_wait) {
                     gds_dbg("discarding FLUSH!\n");
@@ -752,12 +749,12 @@ out:
         for(i = 0; i < n_descs; ++i) {
             gds_descriptor_t *desc = descs + i;
             if (desc->tag == GDS_TAG_SEND) {
-                free(desc->send.handle);
-                desc->send.handle = NULL;
+                free(desc->send->handle);
+                desc->send->handle = NULL;
             }
             else if (desc->tag == GDS_TAG_WAIT) {
-                free(desc->wait.handle);
-                desc->wait.handle = NULL;
+                free(desc->wait->handle);
+                desc->wait->handle = NULL;
             }
         }
     }
@@ -776,7 +773,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
         switch(desc->tag) {
             case GDS_TAG_SEND: {
                 gds_dbg("desc[%zu] SEND\n", i);
-                gds_send_request_s *sreq = to_gds_send_request_s(&desc->send);
+                gds_send_request_s *sreq = to_gds_send_request_s(desc->send);
                 retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
                 if (retcode) {
                     gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
@@ -787,7 +784,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
             }
             case GDS_TAG_WAIT: {
                 gds_dbg("desc[%zu] WAIT\n", i);
-                gds_wait_request_s *wreq = to_gds_wait_request_s(&desc->wait);
+                gds_wait_request_s *wreq = to_gds_wait_request_s(desc->wait);
                 retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
                 if (retcode) {
                     gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
@@ -905,12 +902,12 @@ out:
     for(i = 0; i < n_descs; ++i) {
         gds_descriptor_t *desc = descs + i;
         if (desc->tag == GDS_TAG_SEND) {
-            free(desc->send.handle);
-            desc->send.handle = NULL;
+            free(desc->send->handle);
+            desc->send->handle = NULL;
         }
         else if (desc->tag == GDS_TAG_WAIT) {
-            free(desc->wait.handle);
-            desc->wait.handle = NULL;
+            free(desc->wait->handle);
+            desc->wait->handle = NULL;
         }
     }
     return ret;

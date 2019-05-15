@@ -654,7 +654,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         }
                         assert(k < N_WORK_DESCS);
                         wdesc->descs[k].tag = GDS_TAG_SEND;
-                        wdesc->descs[k].send = wdesc->send_rq;
+                        wdesc->descs[k].send = &wdesc->send_rq;
                         ++k;
 
                         ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
@@ -664,7 +664,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         }
                         assert(k < N_WORK_DESCS);
                         wdesc->descs[k].tag = GDS_TAG_WAIT;
-                        wdesc->descs[k].wait = wdesc->wait_tx_rq;
+                        wdesc->descs[k].wait = &wdesc->wait_tx_rq;
                         ++k;
 
                         ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
@@ -674,7 +674,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         }
                         assert(k < N_WORK_DESCS);
                         wdesc->descs[k].tag = GDS_TAG_WAIT;
-                        wdesc->descs[k].wait = wdesc->wait_rx_rq;
+                        wdesc->descs[k].wait = &wdesc->wait_rx_rq;
                         ++k;
 
                         if (ctx->peersync) {

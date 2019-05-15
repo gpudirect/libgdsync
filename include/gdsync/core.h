@@ -272,8 +272,8 @@ typedef enum gds_tag {
 typedef struct gds_descriptor {
         gds_tag_t tag; /**< selector for union below */
         union {
-                gds_send_request_t   send;
-                gds_wait_request_t   wait;
+                gds_send_request_t   *send;
+                gds_wait_request_t   *wait;
                 gds_wait_value32_t   wait32;
                 gds_write_value32_t  write32;
                 gds_write_memory_t   writemem;

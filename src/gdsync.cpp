@@ -1248,21 +1248,29 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_s
     int idx = 0;
     int k=0;
     gds_descriptor_t *descs = NULL;
+	gds_wait_request_t *request_t_array = NULL;
 
     assert(request);
     assert(count);
 
     descs = (gds_descriptor_t *)calloc(count, sizeof(gds_descriptor_t));
-    if(!descs)
-    {
+    if (!descs) {
         gds_err("Calloc for %d elements\n", count);
         retcode = ENOMEM;
         goto out;
     }
 
+	request_t_array = (gds_wait_request_t *)malloc(count * sizeof(gds_wait_request_t));
+    if (!request_t_array) {
+        gds_err("Malloc for %d elements\n", count);
+        retcode = ENOMEM;
+        goto out;
+    }
+
     for (k=0; k<count; k++) {
+        request_t_array[k].handle = &request[k];
         descs[k].tag = GDS_TAG_WAIT;
-        descs[k].wait.handle = &request[k];
+        descs[k].wait = &request_t_array[k];
     }
 
     retcode=gds_stream_post_descriptors(stream, count, descs, GDS_FLAG_INTERNAL_KEEP_REQUESTS);
@@ -1272,7 +1280,10 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_s
     }
 
 out:
-    if(descs) free(descs);
+    if (request_t_array)
+        free(request_t_array);
+    if (descs) 
+        free(descs);
     return retcode;
 }
 
@@ -1297,7 +1308,7 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
 
     for (k=0; k<count; k++) {
         descs[k].tag = GDS_TAG_WAIT;
-        descs[k].wait = request[k];
+        descs[k].wait = &request[k];
     }
 
     retcode=gds_stream_post_descriptors(stream, count, descs, 0);
