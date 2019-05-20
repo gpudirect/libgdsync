@@ -124,74 +124,26 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_prepare_send_internal(gds_qp_t *qp, gds_send_wr *p_ewr, 
-                                        gds_send_wr **bad_ewr, 
-                                        gds_send_request_s *request)
-{
-    int ret = 0;
-    gds_init_send_info(request);
-    ret = ibv_post_send(qp->qp, p_ewr, bad_ewr);
-    if (ret) {
-        if (ret == ENOMEM) {
-            // out of space error can happen too often to report
-            gds_dbg("ENOMEM error %d in ibv_post_send\n", ret);
-        } else {
-            gds_err("error %d in ibv_post_send\n", ret);
-        }
-        goto out;
-    }
-
-    ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
-    if (ret) {
-        gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
-        goto out;
-    }
-out:
-    return ret;
-}
-
-//-----------------------------------------------------------------------------
-
-static int gds_prepare_wait_cq_internal(gds_cq_t *cq, gds_wait_request_s *request, int flags)
-{
-    int retcode = 0;
-    if (flags != 0) {
-        gds_err("invalid flags != 0\n");
-        return EINVAL;
-    }
-
-    gds_init_wait_request(request, cq->curr_offset++);
-
-    retcode = ibv_exp_peer_peek_cq(cq->cq, &request->peek);
-    if (retcode == -ENOSPC) {
-        // TODO: handle too few entries
-        gds_err("not enough ops in peer_peek_cq\n");
-        goto out;
-    } else if (retcode) {
-        gds_err("error %d in peer_peek_cq\n", retcode);
-        goto out;
-    }
-    //gds_dump_wait_request(request, 1);
-out:
-    return retcode;
-}
-
-//-----------------------------------------------------------------------------
-
 int gds_post_send(gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
         int ret = 0, ret_roll=0;
-        gds_send_request_s send_info;
-        ret = gds_prepare_send_internal(qp, p_ewr, bad_ewr, &send_info);
+        gds_send_request_s *request;
+
+        gds_send_request_t send_info;
+        send_info.handle = NULL;
+
+        ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
         if (ret) {
                 gds_err("error %d in gds_prepare_send\n", ret);
                 goto out;
         }
 
-        ret = gds_post_pokes_on_cpu(1, &send_info, NULL, 0);
+        request = to_gds_send_request_s(&send_info);
+
+        ret = gds_post_pokes_on_cpu(1, request, NULL, 0);
         if (ret) {
                 gds_err("error %d in gds_post_pokes_on_cpu\n", ret);
-                ret_roll = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+                ret_roll = gds_rollback_qp(qp, request, IBV_EXP_ROLLBACK_ABORT_LATE);
                 if (ret_roll) {
                         gds_err("error %d in gds_rollback_qp\n", ret_roll);
                 }
@@ -200,6 +152,8 @@ int gds_post_send(gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
         }
 
 out:
+        if (send_info.handle != NULL)
+                free(send_info.handle);
         return ret;
 }
 
@@ -229,7 +183,7 @@ int gds_prepare_send(gds_qp_t *qp, gds_send_wr *p_ewr,
                      gds_send_request_t *request)
 {
     int ret = 0;
-    gds_send_request_s *send_request;
+    gds_send_request_s *send_request = NULL;
     assert(qp);
     assert(qp->qp);
 
@@ -239,13 +193,32 @@ int gds_prepare_send(gds_qp_t *qp, gds_send_wr *p_ewr,
         return ENOMEM;
     }
 
-    ret = gds_prepare_send_internal(qp, p_ewr, bad_ewr, send_request);
-    if (ret != 0) {
+    gds_init_send_info(send_request);
+    ret = ibv_post_send(qp->qp, p_ewr, bad_ewr);
+    if (ret) {
+        if (ret == ENOMEM) {
+            // out of space error can happen too often to report
+            gds_dbg("ENOMEM error %d in ibv_post_send\n", ret);
+        } else {
+            gds_err("error %d in ibv_post_send\n", ret);
+        }
+        goto out;
+    }
+
+    ret = ibv_exp_peer_commit_qp(qp->qp, &send_request->commit);
+    if (ret) {
+        gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
+        goto out;
+    }
+
+out:
+    if (ret != 0 && send_request != NULL) {
         free(send_request);
         return ret;
     }
 
-    request->handle = (void *)send_request;
+    if (ret == 0)
+        request->handle = (void *)send_request;
     
     return ret;
 }
@@ -331,23 +304,43 @@ out:
 
 int gds_prepare_wait_cq(gds_cq_t *cq, gds_wait_request_t *request, int flags)
 {
-    int ret = 0;
-    gds_wait_request_s *wait_request = (gds_wait_request_s *)malloc(sizeof(gds_wait_request_s));
+    int retcode = 0;
+    gds_wait_request_s *wait_request = NULL;
 
+    if (flags != 0) {
+        gds_err("invalid flags != 0\n");
+        return EINVAL;
+    }
+
+    wait_request = (gds_wait_request_s *)malloc(sizeof(gds_wait_request_s));
     if (wait_request == NULL) {
         gds_err("out of memory in gds_prepare_wait_cq\n");
         return ENOMEM;
     }
 
-    ret = gds_prepare_wait_cq_internal(cq, wait_request, flags);
-    if (ret != 0) {
+    gds_init_wait_request(wait_request, cq->curr_offset++);
+
+    retcode = ibv_exp_peer_peek_cq(cq->cq, &wait_request->peek);
+    if (retcode == -ENOSPC) {
+        // TODO: handle too few entries
+        gds_err("not enough ops in peer_peek_cq\n");
+        goto out;
+    } else if (retcode) {
+        gds_err("error %d in peer_peek_cq\n", retcode);
+        goto out;
+    }
+    //gds_dump_wait_request(wait_request, 1);
+
+out:
+    if (retcode != 0 && wait_request != NULL) {
         free(wait_request);
-        return ret;
+        return retcode;
     }
 
-    request->handle = (void *)wait_request;
+    if (retcode == 0)
+        request->handle = (void *)wait_request;
 
-    return ret;
+    return retcode;
 }
 
 //-----------------------------------------------------------------------------
@@ -386,21 +379,9 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static int gds_stream_post_wait_cq_internal(CUstream stream, gds_wait_request_s *request)
-{
-	return gds_stream_post_wait_cq_multi(stream, 1, request, NULL, 0);
-}
-
-//-----------------------------------------------------------------------------
-
 int gds_stream_post_wait_cq(CUstream stream, gds_wait_request_t *request)
 {
-    int ret = 0;
-    gds_wait_request_s *wait_request = to_gds_wait_request_s(request);
-	ret = gds_stream_post_wait_cq_internal(stream, wait_request);
-    free(wait_request);
-    request->handle = NULL;
-    return ret;
+    return gds_stream_post_wait_cq_multi(stream, 1, request, NULL, 0);
 }
 
 //-----------------------------------------------------------------------------
@@ -428,26 +409,33 @@ int gds_stream_wait_cq(CUstream stream, gds_cq_t *cq, int flags)
 {
     int retcode = 0;
     int ret;
-    gds_wait_request_s request;
+    gds_wait_request_s *wreq;
+
+    gds_wait_request_t request;
 
     assert(cq);
     assert(stream);
+
+    request.handle = NULL;
 
     if (flags) {
         retcode = EINVAL;
         goto out;
     }
 
-    ret = gds_prepare_wait_cq_internal(cq, &request, flags);
+    ret = gds_prepare_wait_cq(cq, &request, flags);
     if (ret) {
         gds_err("error %d in gds_prepare_wait_cq\n", ret);
         goto out;
     }
 
-    ret = gds_stream_post_wait_cq_internal(stream, &request);
+    wreq = to_gds_wait_request_s(&request);
+    wreq->flags = GDS_FLAG_INTERNAL_KEEP_REQUESTS;
+
+    ret = gds_stream_post_wait_cq(stream, &request);
     if (ret) {
         gds_err("error %d in gds_stream_post_wait_cq_ex\n", ret);
-        int retcode2 = gds_abort_wait_cq(cq, &request);
+        int retcode2 = gds_abort_wait_cq(cq, wreq);
         if (retcode2) {
             gds_err("nested error %d while aborting request\n", retcode2);
         }
@@ -456,6 +444,8 @@ int gds_stream_wait_cq(CUstream stream, gds_cq_t *cq, int flags)
     }
 
 out:
+    if (request.handle != NULL)
+        free(request.handle);
     return retcode;
 }
 
@@ -647,10 +637,6 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
     bool move_flush = false;
     gds_peer *peer = NULL;
     gds_op_list_t params;
-    int free_requests = !(flags & GDS_FLAG_INTERNAL_KEEP_REQUESTS);
-
-    // remove this flag before passing to other functions
-    flags &= ~GDS_FLAG_INTERNAL_KEEP_REQUESTS;
 
     ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
     if (ret) {
@@ -745,14 +731,16 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
     }
 
 out:
-    if (free_requests) {
-        for(i = 0; i < n_descs; ++i) {
-            gds_descriptor_t *desc = descs + i;
-            if (desc->tag == GDS_TAG_SEND) {
+    for(i = 0; i < n_descs; ++i) {
+        gds_descriptor_t *desc = descs + i;
+        if (desc->tag == GDS_TAG_SEND) {
+            if (!(to_gds_send_request_s(desc->send)->flags & GDS_FLAG_INTERNAL_KEEP_REQUESTS)) {
                 free(desc->send->handle);
                 desc->send->handle = NULL;
             }
-            else if (desc->tag == GDS_TAG_WAIT) {
+        }
+        else if (desc->tag == GDS_TAG_WAIT) {
+            if (!(to_gds_wait_request_s(desc->wait)->flags & GDS_FLAG_INTERNAL_KEEP_REQUESTS)) {
                 free(desc->wait->handle);
                 desc->wait->handle = NULL;
             }
@@ -902,12 +890,16 @@ out:
     for(i = 0; i < n_descs; ++i) {
         gds_descriptor_t *desc = descs + i;
         if (desc->tag == GDS_TAG_SEND) {
-            free(desc->send->handle);
-            desc->send->handle = NULL;
+            if (!(to_gds_send_request_s(desc->send)->flags & GDS_FLAG_INTERNAL_KEEP_REQUESTS)) {
+                free(desc->send->handle);
+                desc->send->handle = NULL;
+            }
         }
         else if (desc->tag == GDS_TAG_WAIT) {
-            free(desc->wait->handle);
-            desc->wait->handle = NULL;
+            if (!(to_gds_wait_request_s(desc->wait)->flags & GDS_FLAG_INTERNAL_KEEP_REQUESTS)) {
+                free(desc->wait->handle);
+                desc->wait->handle = NULL;
+            }
         }
     }
     return ret;
