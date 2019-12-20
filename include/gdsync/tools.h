@@ -36,12 +36,12 @@
 GDS_BEGIN_DECLS
 
 typedef struct gds_mem_desc {
-    CUdeviceptr d_ptr;
-    void       *h_ptr;
-    void       *bar_ptr;
-    int         flags;
-    size_t      alloc_size;
-    gdr_mh_t    mh;
+        CUdeviceptr d_ptr;
+        void       *h_ptr;
+        void       *bar_ptr;
+        int         flags;
+        size_t      alloc_size;
+        gdr_mh_t    mh;
 } gds_mem_desc_t;
 int gds_alloc_mapped_memory(gds_mem_desc_t *desc, size_t size, int flags);
 int gds_free_mapped_memory(gds_mem_desc_t *desc);
