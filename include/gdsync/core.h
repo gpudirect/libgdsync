@@ -36,22 +36,22 @@
 #define GDS_API_MINOR_VERSION    2U
 #define GDS_API_VERSION          ((GDS_API_MAJOR_VERSION << 16) | GDS_API_MINOR_VERSION)
 #define GDS_API_VERSION_COMPATIBLE(v) \
-    ( ((((v) & 0xffff0000U) >> 16) == GDS_API_MAJOR_VERSION) &&   \
-      ((((v) & 0x0000ffffU) >> 0 ) >= GDS_API_MINOR_VERSION) )
+        ( ((((v) & 0xffff0000U) >> 16) == GDS_API_MAJOR_VERSION) &&   \
+          ((((v) & 0x0000ffffU) >> 0 ) >= GDS_API_MINOR_VERSION) )
 
 typedef enum gds_param {
-    GDS_PARAM_VERSION,
-    GDS_NUM_PARAMS
+        GDS_PARAM_VERSION,
+        GDS_NUM_PARAMS
 } gds_param_t;
 
 int gds_query_param(gds_param_t param, int *value);
 
 enum gds_create_qp_flags {
-    GDS_CREATE_QP_DEFAULT      = 0,
-    GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
-    GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
-    GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
-    GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
+        GDS_CREATE_QP_DEFAULT      = 0,
+        GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
+        GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
+        GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
+        GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
 typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
@@ -76,8 +76,8 @@ typedef struct gds_qp {
  */
 
 gds_qp_t *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
-                             gds_qp_init_attr_t *qp_init_attr,
-                             int gpu_id, int flags);
+                gds_qp_init_attr_t *qp_init_attr,
+                int gpu_id, int flags);
 
 /* \brief: Destroy a peer-enabled QP
  *
@@ -116,7 +116,7 @@ typedef enum gds_memory_type {
         GDS_MEMORY_GPU  = 1, /*< use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
         GDS_MEMORY_HOST = 2,
         GDS_MEMORY_IO   = 4,
-	GDS_MEMORY_MASK = 0x7
+        GDS_MEMORY_MASK = 0x7
 } gds_memory_type_t;
 
 // Note: those flags below must not overlap with gds_memory_type_t
@@ -148,7 +148,7 @@ typedef enum gds_membar_flags {
  */
 
 typedef struct {
-    void *handle;
+        void *handle;
 } gds_send_request_t;
 
 int gds_prepare_send(gds_qp_t *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
@@ -161,7 +161,7 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
  */
 
 typedef struct {
-    void *handle;
+        void *handle;
 }gds_wait_request_t;
 
 /**
