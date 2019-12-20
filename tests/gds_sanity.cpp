@@ -29,7 +29,7 @@ int poll_dword_geq(uint32_t *ptr, uint32_t payload, gds_us_t tm)
 {
         gds_us_t start = gds_get_time_us();
         int ret = 0;
-        while(1) {
+        while (1) {
                 uint32_t value = gds_atomic_read_dword(ptr);
                 gpu_dbg("val=%x\n", value);
                 if (value >= payload) {
@@ -67,50 +67,50 @@ int main(int argc, char *argv[])
                         break;
 
                 switch(c) {
-                case 'd':
-                        gpu_id = strtol(optarg, NULL, 0);
-                        break;
-                case 'm':
-                        use_membar = !use_membar;
-                        break;
-                case 'n':
-                        num_iters = strtol(optarg, NULL, 0);
-                        break;
-                case 'f':
-                        use_flush = 1;
-                        printf("INFO enabling flush\n");
-                        break;
-                case 'g':
-                        use_gpu_buf = 1;
-                        printf("INFO polling on GPU buffer\n");
-                        break;
-                case 'N':
-                        use_nor = 1;
-                        printf("INFO polling using NOR\n");
-                        break;
-                case 'h':
-                        printf("Usage:\n"
-                               " %s [options]\n"
-                               "Options:\n"
-                               " -d id  use gpu ordinal id\n"
-                               " -n n   iterate n times\n"
-                               " -f     issue a GPU RDMA flush following each poll\n"
-                               " -g     allocate all memory on GPU\n"
-                               " -m     issue memory barrier between signal and data stores\n"
-                               " -N     poll memory using NOR condition (requires Volta)\n"
-                               " -h     this help\n", argv[0]);
-                        exit(EXIT_SUCCESS);
-                        break;
-                default:
-                        printf("ERROR: invalid option\n");
-                        exit(EXIT_FAILURE);
+                        case 'd':
+                                gpu_id = strtol(optarg, NULL, 0);
+                                break;
+                        case 'm':
+                                use_membar = !use_membar;
+                                break;
+                        case 'n':
+                                num_iters = strtol(optarg, NULL, 0);
+                                break;
+                        case 'f':
+                                use_flush = 1;
+                                printf("INFO enabling flush\n");
+                                break;
+                        case 'g':
+                                use_gpu_buf = 1;
+                                printf("INFO polling on GPU buffer\n");
+                                break;
+                        case 'N':
+                                use_nor = 1;
+                                printf("INFO polling using NOR\n");
+                                break;
+                        case 'h':
+                                printf("Usage:\n"
+                                                " %s [options]\n"
+                                                "Options:\n"
+                                                " -d id  use gpu ordinal id\n"
+                                                " -n n   iterate n times\n"
+                                                " -f     issue a GPU RDMA flush following each poll\n"
+                                                " -g     allocate all memory on GPU\n"
+                                                " -m     issue memory barrier between signal and data stores\n"
+                                                " -N     poll memory using NOR condition (requires Volta)\n"
+                                                " -h     this help\n", argv[0]);
+                                exit(EXIT_SUCCESS);
+                                break;
+                        default:
+                                printf("ERROR: invalid option\n");
+                                exit(EXIT_FAILURE);
                 }
         }
 
-	if (gpu_init(gpu_id, CU_CTX_SCHED_AUTO)) {
-		fprintf(stderr, "error in GPU init.\n");
-		exit(EXIT_FAILURE);
-	}
+        if (gpu_init(gpu_id, CU_CTX_SCHED_AUTO)) {
+                fprintf(stderr, "error in GPU init.\n");
+                exit(EXIT_FAILURE);
+        }
 
         puts("");
         printf("number iterations %d\n", num_iters);
@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
         printf("poll on %s buffer\n", use_gpu_buf?"GPU":"CPU");
         printf("write on %s buffer\n", use_gpu_buf?"GPU":"CPU");
         puts("");
-        
+
 
         int mem_type = use_gpu_buf ? GDS_MEMORY_GPU : GDS_MEMORY_HOST;
 
@@ -267,7 +267,7 @@ int main(int argc, char *argv[])
                                         ASSERT(gds_atomic_read_dword(h_signal) == (value-1));
                                 }
                                 ASSERT(gds_atomic_read_dword(h_done) == (value-1));
-                                
+
                                 gpu_dbg("%d:       dbg @%p:%08x\n", i, h_dbg, gds_atomic_read_dword(h_dbg));
                                 gpu_dbg("%d:       sig @%p:%08x\n", i, h_signal, gds_atomic_read_dword(h_signal));
                                 gpu_dbg("%d:      done @%p:%08x\n", i, h_done, gds_atomic_read_dword(h_done));
@@ -338,7 +338,7 @@ err:
                 gpu_fail("error (%d) while freeing mem\n", ret);
         }
 
-	gpu_finalize();
+        gpu_finalize();
 
         printf(">>> SUCCESS\n");
         return ret;
