@@ -125,7 +125,7 @@ static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t si
         desc->alloc_size = buf_size;
         desc->mh = mh;
         gds_dbg("d_ptr=%lx h_ptr=%p bar_ptr=%p flags=0x%08x alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
 out:
         if (ret) {
                 if (mh) {
@@ -152,7 +152,7 @@ static int gds_unmap_gdr_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         gds_dbg("d_ptr=%lx h_ptr=%p alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
         gdr_unmap(gdr, desc->mh, desc->bar_ptr, desc->alloc_size);
         gdr_unpin_buffer(gdr, desc->mh);
         return ret;
@@ -191,7 +191,7 @@ static int gds_free_gdr_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         gds_dbg("d_ptr=%lx h_ptr=%p alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
 
         ret = gds_unmap_gdr_memory(desc);
         if (ret) {
@@ -245,7 +245,7 @@ static int gds_alloc_pinned_memory(gds_mem_desc_t *desc, size_t size, int flags)
         desc->alloc_size = size;
         desc->mh = 0;        
         gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
 out:
         if (ret) {
                 if (desc->h_ptr) {
@@ -272,7 +272,7 @@ static int gds_free_pinned_memory(gds_mem_desc_t *desc)
         // BUG: TBD
 #else
         gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
         ret = gds_unregister_mem(desc->h_ptr, desc->alloc_size);
         free(desc->h_ptr);
         desc->h_ptr = NULL;
@@ -296,16 +296,16 @@ int gds_alloc_mapped_memory(gds_mem_desc_t *desc, size_t size, int flags)
                 return EINVAL;
         }
         switch(flags & GDS_MEMORY_MASK) {
-        case GDS_MEMORY_GPU:
-                ret = gds_alloc_gdr_memory(desc, size, flags);
-                break;
-        case GDS_MEMORY_HOST:
-                ret = gds_alloc_pinned_memory(desc, size, flags);
-                break;
-        default:
-                gds_err("invalid flags\n");
-                ret = EINVAL;
-                break;
+                case GDS_MEMORY_GPU:
+                        ret = gds_alloc_gdr_memory(desc, size, flags);
+                        break;
+                case GDS_MEMORY_HOST:
+                        ret = gds_alloc_pinned_memory(desc, size, flags);
+                        break;
+                default:
+                        gds_err("invalid flags\n");
+                        ret = EINVAL;
+                        break;
         }
         return ret;
 }
@@ -320,15 +320,15 @@ int gds_free_mapped_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         switch(desc->flags & GDS_MEMORY_MASK) {
-        case GDS_MEMORY_GPU:
-                ret = gds_free_gdr_memory(desc);
-                break;
-        case GDS_MEMORY_HOST:
-                ret = gds_free_pinned_memory(desc);
-                break;
-        default:
-                ret = EINVAL;
-                break;
+                case GDS_MEMORY_GPU:
+                        ret = gds_free_gdr_memory(desc);
+                        break;
+                case GDS_MEMORY_HOST:
+                        ret = gds_free_pinned_memory(desc);
+                        break;
+                default:
+                        ret = EINVAL;
+                        break;
         }
         return ret;
 }
