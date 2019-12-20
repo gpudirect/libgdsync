@@ -61,7 +61,7 @@ static void gds_cpu_relax(void)
 static void gds_wmb(void) __attribute__((unused)) ;
 static void gds_wmb(void) 
 {
-	asm volatile("sync") ; 
+        asm volatile("sync") ; 
 }
 #else
 #error "platform not supported"
