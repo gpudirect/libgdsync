@@ -121,61 +121,61 @@ static inline gds_peer *peer_from_id(uint64_t id)
 }
 
 typedef struct {
-    gds_qp_t                   gqp;
-    struct ibv_exp_res_domain  *res_domain;
+        gds_qp_t                   gqp;
+        struct ibv_exp_res_domain  *res_domain;
 } gds_qp_internal_t;
 
 enum {
-    GDS_SEND_INFO_MAX_OPS = 32,
-    GDS_WAIT_INFO_MAX_OPS = 32
+        GDS_SEND_INFO_MAX_OPS = 32,
+        GDS_WAIT_INFO_MAX_OPS = 32
 };
 
 enum gds_flag_internal {
-    GDS_FLAG_INTERNAL_KEEP_REQUESTS = 0x10
+        GDS_FLAG_INTERNAL_KEEP_REQUESTS = 0x10
 };
 
 typedef struct gds_send_request {
-    struct ibv_exp_peer_commit commit;
-    struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
-    int flags;
+        struct ibv_exp_peer_commit commit;
+        struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+        int flags;
 } gds_send_request_s;
 
 typedef struct gds_wait_request {
-    struct ibv_exp_peer_peek peek;
-    struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
-    int flags;
+        struct ibv_exp_peer_peek peek;
+        struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+        int flags;
 } gds_wait_request_s;
 
 static inline gds_send_request_s *to_gds_send_request_s(gds_send_request_t *request)
 {
-    assert(request);
-    assert(request->handle);
+        assert(request);
+        assert(request->handle);
 
-    return (gds_send_request_s *)request->handle;
+        return (gds_send_request_s *)request->handle;
 }
 
 static inline const gds_send_request_s *to_gds_send_request_s(const gds_send_request_t *request)
 {
-    assert(request);
-    assert(request->handle);
+        assert(request);
+        assert(request->handle);
 
-    return (gds_send_request_s *)request->handle;
+        return (gds_send_request_s *)request->handle;
 }
 
 static inline gds_wait_request_s *to_gds_wait_request_s(gds_wait_request_t *request)
 {
-    assert(request);
-    assert(request->handle);
+        assert(request);
+        assert(request->handle);
 
-    return (gds_wait_request_s *)request->handle;
+        return (gds_wait_request_s *)request->handle;
 }
 
 static inline const gds_wait_request_s *to_gds_wait_request_s(const gds_wait_request_t *request)
 {
-    assert(request);
-    assert(request->handle);
+        assert(request);
+        assert(request->handle);
 
-    return (gds_wait_request_s *)request->handle;
+        return (gds_wait_request_s *)request->handle;
 }
 
 /*
