@@ -71,52 +71,52 @@ int gpu_launch_void_kernel_on_stream(CUstream s);
 
 int gpu_init(int gpu_id, int sched_mode)
 {
-	int ret = 0;
+        int ret = 0;
 
-	CUCHECK(cuInit(0));
-	
-	int deviceCount = 0;
-	CUCHECK(cuDeviceGetCount(&deviceCount));
+        CUCHECK(cuInit(0));
 
-	// This function call returns 0 if there are no CUDA capable devices.
-	if (deviceCount == 0) {
-		gpu_err("There are no available device(s) that support CUDA\n");
-		ret = 1;
-		goto out;
-	} else {
-		gpu_dbg("There are %d devices supporting CUDA, picking N.%d\n", deviceCount, gpu_id);
+        int deviceCount = 0;
+        CUCHECK(cuDeviceGetCount(&deviceCount));
+
+        // This function call returns 0 if there are no CUDA capable devices.
+        if (deviceCount == 0) {
+                gpu_err("There are no available device(s) that support CUDA\n");
+                ret = 1;
+                goto out;
+        } else {
+                gpu_dbg("There are %d devices supporting CUDA, picking N.%d\n", deviceCount, gpu_id);
         }
         if (getenv("USE_GPU")) {
                 gpu_id = atoi(getenv("USE_GPU"));
                 gpu_info("overriding gpu_id with USE_GPU=%d\n", gpu_id);
         }
 
-	if (gpu_id >= deviceCount) {
-		gpu_err("ERROR: requested GPU gpu_id beyond available\n");
-		ret = 1;
-		goto out;
-	}
+        if (gpu_id >= deviceCount) {
+                gpu_err("ERROR: requested GPU gpu_id beyond available\n");
+                ret = 1;
+                goto out;
+        }
         gpu_blocking_sync_mode = (CU_CTX_SCHED_BLOCKING_SYNC == sched_mode) ? 1 : 0;
 
-	int i;
-	for (i=0; i<deviceCount; ++i) {
-		CUCHECK(cuDeviceGet(&gpu_device, i));
-		char name[128];
-		CUCHECK(cuDeviceGetName(name, sizeof(name), gpu_device));
-		int pciBusID, pciDeviceID;
-		cuDeviceGetAttribute(&pciBusID, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID, gpu_device);
-		cuDeviceGetAttribute(&pciDeviceID, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID, gpu_device);
-		//printf("  Device PCI Bus ID / PCI location ID:           %d / %d\n", pciBusID, pciDeviceID);
-		gpu_info("GPU id:%d dev:%d name:%s pci %d:%d\n", i, gpu_device, name, pciBusID, pciDeviceID);
-	}
+        int i;
+        for (i=0; i<deviceCount; ++i) {
+                CUCHECK(cuDeviceGet(&gpu_device, i));
+                char name[128];
+                CUCHECK(cuDeviceGetName(name, sizeof(name), gpu_device));
+                int pciBusID, pciDeviceID;
+                cuDeviceGetAttribute(&pciBusID, CU_DEVICE_ATTRIBUTE_PCI_BUS_ID, gpu_device);
+                cuDeviceGetAttribute(&pciDeviceID, CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID, gpu_device);
+                //printf("  Device PCI Bus ID / PCI location ID:           %d / %d\n", pciBusID, pciDeviceID);
+                gpu_info("GPU id:%d dev:%d name:%s pci %d:%d\n", i, gpu_device, name, pciBusID, pciDeviceID);
+        }
 
-	CUCHECK(cuDeviceGet(&gpu_device, gpu_id));
+        CUCHECK(cuDeviceGet(&gpu_device, gpu_id));
 
-	gpu_info("creating CUDA Primary Ctx on device:%d id:%d\n", gpu_device, gpu_id);
+        gpu_info("creating CUDA Primary Ctx on device:%d id:%d\n", gpu_device, gpu_id);
         CUCHECK(cuDevicePrimaryCtxRetain(&gpu_ctx, gpu_device));
 
-	gpu_dbg("making it the current CUDA Ctx\n");
-	CUCHECK(cuCtxSetCurrent(gpu_ctx));
+        gpu_dbg("making it the current CUDA Ctx\n");
+        CUCHECK(cuCtxSetCurrent(gpu_ctx));
 
         // TODO: add a check for canMapHost
 
@@ -126,11 +126,11 @@ int gpu_init(int gpu_id, int sched_mode)
         cuDeviceGetAttribute(&gpu_clock_rate, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, gpu_device);
         gpu_dbg("clock rate:%d\n", gpu_clock_rate);
 
-	CUCHECK(cuStreamCreate(&gpu_stream, 0));
+        CUCHECK(cuStreamCreate(&gpu_stream, 0));
         gpu_dbg("created main test CUDA stream %p\n", gpu_stream);
-	CUCHECK(cuStreamCreate(&gpu_stream_server, 0));
+        CUCHECK(cuStreamCreate(&gpu_stream_server, 0));
         gpu_dbg("created stream server CUDA stream %p\n", gpu_stream_server);
-	CUCHECK(cuStreamCreate(&gpu_stream_client, 0));
+        CUCHECK(cuStreamCreate(&gpu_stream_client, 0));
         gpu_dbg("created stream client CUDA stream %p\n", gpu_stream_client);
 
         {
@@ -156,49 +156,49 @@ out:
                         CUCHECK(cuDevicePrimaryCtxRelease(gpu_device));
         }
 
-	return ret;
+        return ret;
 }
 
 int gpu_finalize()
 {
-	gpu_dbg("destroying current CUDA Ctx\n");
+        gpu_dbg("destroying current CUDA Ctx\n");
         CUCHECK(cuCtxSynchronize());
         int n;
         for (n=0; n<num_tracking_events; ++n)
                 CUCHECK(cuEventDestroy(gpu_tracking_event[n]));
-	CUCHECK(cuStreamDestroy(gpu_stream));
-	CUCHECK(cuStreamDestroy(gpu_stream_server));
-	CUCHECK(cuStreamDestroy(gpu_stream_client));
+        CUCHECK(cuStreamDestroy(gpu_stream));
+        CUCHECK(cuStreamDestroy(gpu_stream_server));
+        CUCHECK(cuStreamDestroy(gpu_stream_client));
         CUCHECK(cuDevicePrimaryCtxRelease(gpu_device));
 
-	return 0;
+        return 0;
 }
 
 void *gpu_malloc(size_t page_size, size_t min_size)
 {
-	size_t n_pages = (min_size + page_size - 1)/page_size;
-	size_t size = n_pages * page_size;
+        size_t n_pages = (min_size + page_size - 1)/page_size;
+        size_t size = n_pages * page_size;
 
-	gpu_dbg("cuMemAlloc() of a %lu bytes GPU buffer\n", size);
-	CUdeviceptr d_A;
-	CUCHECK(cuMemAlloc(&d_A, size));
-	CUCHECK(cuMemsetD8(d_A, 0, size));
+        gpu_dbg("cuMemAlloc() of a %lu bytes GPU buffer\n", size);
+        CUdeviceptr d_A;
+        CUCHECK(cuMemAlloc(&d_A, size));
+        CUCHECK(cuMemsetD8(d_A, 0, size));
 
-	gpu_dbg("allocated GPU buffer address at %016llx\n", d_A);
-	return (void*)d_A;
+        gpu_dbg("allocated GPU buffer address at %016llx\n", d_A);
+        return (void*)d_A;
 }
 
 int gpu_free(void *ptr)
 {
-	CUCHECK(cuMemFree((CUdeviceptr)ptr));
-	return 0;
+        CUCHECK(cuMemFree((CUdeviceptr)ptr));
+        return 0;
 }
 
 int gpu_memset(void *ptr, const unsigned char c, size_t size)
 {
-	gpu_dbg("poisoning GPU buffer, filled with '0x%02x' !!!\n", c);
-	CUCHECK(cuMemsetD8((CUdeviceptr)ptr, c, size));
-	return 0;
+        gpu_dbg("poisoning GPU buffer, filled with '0x%02x' !!!\n", c);
+        CUCHECK(cuMemsetD8((CUdeviceptr)ptr, c, size));
+        return 0;
 }
 
 int gpu_register_host_mem(void *ptr, size_t size)
