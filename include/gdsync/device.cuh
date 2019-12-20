@@ -33,129 +33,129 @@
 
 namespace gdsync {
 
-    static const clock_t large_timeout = 1ULL<<32;
-    enum { 
-        ERROR_TIMEOUT = 11, // same as EAGAIN
-        ERROR_INVALID = 22, //         EINVAL
-    };
+        static const clock_t large_timeout = 1ULL<<32;
+        enum { 
+                ERROR_TIMEOUT = 11, // same as EAGAIN
+                ERROR_INVALID = 22, //         EINVAL
+        };
 
-    //typedef enum wait_cond { WAIT_GEQ, WAIT_EQ, WAIT_AND, WAIT_NOR } wait_cond_t;
-    typedef gds_wait_cond_flag_t wait_cond_t;
+        //typedef enum wait_cond { WAIT_GEQ, WAIT_EQ, WAIT_AND, WAIT_NOR } wait_cond_t;
+        typedef gds_wait_cond_flag_t wait_cond_t;
 
-    struct sem32 {
-        typedef uint32_t T;
-        T sem;
-        T value;
+        struct sem32 {
+                typedef uint32_t T;
+                T sem;
+                T value;
 
-        __host__ __device__ inline volatile T *access_once() {
-            return (volatile T *)&sem;
-        }
-    };
-    typedef struct sem32 sem32_t;
+                __host__ __device__ inline volatile T *access_once() {
+                        return (volatile T *)&sem;
+                }
+        };
+        typedef struct sem32 sem32_t;
 
-    // indirect 32-bit semaphore
-    struct isem32 {
-        typedef uint32_t T;
-        typedef  int32_t Tsigned;
-        T *ptr;
-        T value;
+        // indirect 32-bit semaphore
+        struct isem32 {
+                typedef uint32_t T;
+                typedef  int32_t Tsigned;
+                T *ptr;
+                T value;
 
-        __host__ __device__ inline volatile T *access_once() {
-            return (volatile T *)ptr;
-        }
-        __host__ __device__ isem32() : ptr(NULL), value(0) {}
-    };
-    typedef struct isem32 isem32_t;
+                __host__ __device__ inline volatile T *access_once() {
+                        return (volatile T *)ptr;
+                }
+                __host__ __device__ isem32() : ptr(NULL), value(0) {}
+        };
+        typedef struct isem32 isem32_t;
 
-    struct isem64 {
-        typedef uint64_t T;
-        T *ptr;
-        T value;
+        struct isem64 {
+                typedef uint64_t T;
+                T *ptr;
+                T value;
 
-        __host__ __device__ inline volatile T *access_once() {
-            return (volatile T *)ptr;
-        }
-        __host__ __device__ isem64() : ptr(NULL), value(0) {}
-    };
-    typedef struct isem64 isem64_t;
+                __host__ __device__ inline volatile T *access_once() {
+                        return (volatile T *)ptr;
+                }
+                __host__ __device__ isem64() : ptr(NULL), value(0) {}
+        };
+        typedef struct isem64 isem64_t;
 
 #if defined(__CUDACC__)
-    namespace device {
+        namespace device {
 
-        // NOTE: fences must be added by caller
-        template<typename S> __device__ inline void release(S &sem) {
-            //printf("[%d:%d] release %p=%08x\n", blockIdx.x, threadIdx.x, sem.access_once(), sem.value);
-            assert(0 != sem.access_once());
-            *sem.access_once() = sem.value;
-        }
-
-        template<typename S> __device__ inline int wait(S &sem, wait_cond_t cond) {
-            int ret = 0;
-            switch(cond) {
-            case GDS_WAIT_COND_EQ:  ret = wait_eq(sem);  break;
-            case GDS_WAIT_COND_GEQ: ret = wait_geq(sem); break;
-            case GDS_WAIT_COND_AND: ret = wait_and(sem); break;
-            case GDS_WAIT_COND_NOR: ret = wait_nor(sem); break;
-            default: ret = ERROR_INVALID; break;
-            }
-            return ret;
-        }
-
-        template <typename S> __device__ inline int wait_eq(S &sem) {
-            int ret = ERROR_TIMEOUT;
-            volatile clock_t tmout = clock() + large_timeout;
-            do {
-                if (*sem.access_once() == sem.value) {
-                    ret = 0;
-                    break;
+                // NOTE: fences must be added by caller
+                template<typename S> __device__ inline void release(S &sem) {
+                        //printf("[%d:%d] release %p=%08x\n", blockIdx.x, threadIdx.x, sem.access_once(), sem.value);
+                        assert(0 != sem.access_once());
+                        *sem.access_once() = sem.value;
                 }
-                __threadfence_block();
-            } while(clock() < tmout);
-            return ret;
-        }
 
-        template <typename S> __device__ inline int wait_geq(S &sem) {
-            int ret = ERROR_TIMEOUT;
-            volatile clock_t tmout = clock() + large_timeout;
-            do {
-                //printf("ptr=%p\n", sem.access_once());
-                typedef typename S::Tsigned Ts;
-                if ((Ts)*sem.access_once() - (Ts)sem.value >= 0) {
-                    ret = 0;
-                    break;
+                template<typename S> __device__ inline int wait(S &sem, wait_cond_t cond) {
+                        int ret = 0;
+                        switch(cond) {
+                                case GDS_WAIT_COND_EQ:  ret = wait_eq(sem);  break;
+                                case GDS_WAIT_COND_GEQ: ret = wait_geq(sem); break;
+                                case GDS_WAIT_COND_AND: ret = wait_and(sem); break;
+                                case GDS_WAIT_COND_NOR: ret = wait_nor(sem); break;
+                                default: ret = ERROR_INVALID; break;
+                        }
+                        return ret;
                 }
-                __threadfence_block();
-            } while(clock() < tmout);
-            return ret;
-        }
 
-        template <typename S> __device__ static inline int wait_and(S &sem) {
-            int ret = ERROR_TIMEOUT;
-            volatile clock_t tmout = clock() + large_timeout;
-            do {
-                if (*sem.access_once() & sem.value) {
-                    ret = 0;
-                    break;
+                template <typename S> __device__ inline int wait_eq(S &sem) {
+                        int ret = ERROR_TIMEOUT;
+                        volatile clock_t tmout = clock() + large_timeout;
+                        do {
+                                if (*sem.access_once() == sem.value) {
+                                        ret = 0;
+                                        break;
+                                }
+                                __threadfence_block();
+                        } while(clock() < tmout);
+                        return ret;
                 }
-                __threadfence_block();
-            } while(clock() < tmout);
-            return ret;
-        }
 
-        template <typename S> __device__ static inline int wait_nor(S &sem) {
-            int ret = ERROR_TIMEOUT;
-            volatile clock_t tmout = clock() + large_timeout;
-            do {
-                if (0 != ~(*sem.access_once() | sem.value)) {
-                    ret = 0;
-                    break;
+                template <typename S> __device__ inline int wait_geq(S &sem) {
+                        int ret = ERROR_TIMEOUT;
+                        volatile clock_t tmout = clock() + large_timeout;
+                        do {
+                                //printf("ptr=%p\n", sem.access_once());
+                                typedef typename S::Tsigned Ts;
+                                if ((Ts)*sem.access_once() - (Ts)sem.value >= 0) {
+                                        ret = 0;
+                                        break;
+                                }
+                                __threadfence_block();
+                        } while(clock() < tmout);
+                        return ret;
                 }
-                __threadfence_block();
-            } while(clock() < tmout);
-            return ret;
-        }
 
-    } // namespace device
+                template <typename S> __device__ static inline int wait_and(S &sem) {
+                        int ret = ERROR_TIMEOUT;
+                        volatile clock_t tmout = clock() + large_timeout;
+                        do {
+                                if (*sem.access_once() & sem.value) {
+                                        ret = 0;
+                                        break;
+                                }
+                                __threadfence_block();
+                        } while(clock() < tmout);
+                        return ret;
+                }
+
+                template <typename S> __device__ static inline int wait_nor(S &sem) {
+                        int ret = ERROR_TIMEOUT;
+                        volatile clock_t tmout = clock() + large_timeout;
+                        do {
+                                if (0 != ~(*sem.access_once() | sem.value)) {
+                                        ret = 0;
+                                        break;
+                                }
+                                __threadfence_block();
+                        } while(clock() < tmout);
+                        return ret;
+                }
+
+        } // namespace device
 #endif
 
 } // namespace gdsync
