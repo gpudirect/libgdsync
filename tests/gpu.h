@@ -42,18 +42,18 @@
 #ifdef USE_NVTX
 #include "nvToolsExt.h"
 #define NVTX_PUSH(name,cid) do { \
-	uint32_t colors[] = { 0x0000ff00, 0x000000ff, 0x00ffff00, 0x00ff00ff, 0x0000ffff, 0x00ff0000, 0x00ffffff }; \
-	int num_colors = sizeof(colors)/sizeof(uint32_t); \
-	int color_id = cid; \
-	color_id = color_id%num_colors;\
-	nvtxEventAttributes_t eventAttrib = {0}; \
-	eventAttrib.version = NVTX_VERSION; \
-	eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE; \
-	eventAttrib.colorType = NVTX_COLOR_ARGB; \
-	eventAttrib.color = colors[color_id]; \
-	eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII; \
-	eventAttrib.message.ascii = name; \
-	nvtxRangePushEx(&eventAttrib); \
+        uint32_t colors[] = { 0x0000ff00, 0x000000ff, 0x00ffff00, 0x00ff00ff, 0x0000ffff, 0x00ff0000, 0x00ffffff }; \
+        int num_colors = sizeof(colors)/sizeof(uint32_t); \
+        int color_id = cid; \
+        color_id = color_id%num_colors;\
+        nvtxEventAttributes_t eventAttrib = {0}; \
+        eventAttrib.version = NVTX_VERSION; \
+        eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE; \
+        eventAttrib.colorType = NVTX_COLOR_ARGB; \
+        eventAttrib.color = colors[color_id]; \
+        eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII; \
+        eventAttrib.message.ascii = name; \
+        nvtxRangePushEx(&eventAttrib); \
 } while(0)
 #define NVTX_POP() do { nvtxRangePop(); } while(0)
 #else
@@ -64,10 +64,10 @@
 //----
 
 enum gpu_msg_level {
-    GPU_MSG_DEBUG = 1,
-    GPU_MSG_INFO,
-    GPU_MSG_WARN,
-    GPU_MSG_ERROR
+        GPU_MSG_DEBUG = 1,
+        GPU_MSG_INFO,
+        GPU_MSG_WARN,
+        GPU_MSG_ERROR
 };
 
 
@@ -91,9 +91,9 @@ enum gpu_msg_level {
 #define gpu_err(FMT, ARGS...)  gpu_msg(GPU_MSG_ERROR, "ERR:  ", FMT, ##ARGS)
 
 #define gpu_fail_2(FMT, ARGS... ) do {                                  \
-                gpu_err(">>> test FAILED in %s at %s:%d\n" FMT, __FUNCTION__, __FILE__, __LINE__, ## ARGS); \
-                exit(EXIT_FAILURE);                                     \
-        } while(0)
+        gpu_err(">>> test FAILED in %s at %s:%d\n" FMT, __FUNCTION__, __FILE__, __LINE__, ## ARGS); \
+        exit(EXIT_FAILURE);                                     \
+} while(0)
 #define gpu_fail(FMT, ARGS...) gpu_fail_2(FMT, ##ARGS)
 
 //---
@@ -109,12 +109,12 @@ enum gpu_msg_level {
 
 
 #define __GDSCHECK(stmt, cond_str)					\
-	do {								\
-		int result = (stmt);                                    \
-		if (0 != result) {                                      \
-			const char *err_str = strerror(result);         \
-			gpu_fail("Assertion \"%s returned %s\" failed\n", cond_str, err_str); \
-		}							\
+        do {								\
+                int result = (stmt);                                    \
+                if (0 != result) {                                      \
+                        const char *err_str = strerror(result);         \
+                        gpu_fail("Assertion \"%s returned %s\" failed\n", cond_str, err_str); \
+                }							\
         } while (0)
 
 #define GDSCHECK(stmt) __GDSCHECK(stmt, #stmt)
@@ -122,14 +122,14 @@ enum gpu_msg_level {
 //----
 
 #define __CUCHECK(stmt, cond_str)					\
-	do {								\
-		CUresult result = (stmt);				\
-		if (CUDA_SUCCESS != result) {				\
-			const char *err_str = NULL;			\
-			cuGetErrorString(result, &err_str);		\
-			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, err_str); \
-			exit(EXIT_FAILURE);                             \
-		}							\
+        do {								\
+                CUresult result = (stmt);				\
+                if (CUDA_SUCCESS != result) {				\
+                        const char *err_str = NULL;			\
+                        cuGetErrorString(result, &err_str);		\
+                        fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, err_str); \
+                        exit(EXIT_FAILURE);                             \
+                }							\
         } while (0)
 
 #define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
@@ -137,12 +137,12 @@ enum gpu_msg_level {
 //----
 
 #define __CUDACHECK(stmt, cond_str)					\
-	do {								\
-		cudaError_t result = (stmt);				\
-		if (cudaSuccess != result) {				\
-			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, cudaGetErrorString(result)); \
-			exit(EXIT_FAILURE);				\
-		}							\
+        do {								\
+                cudaError_t result = (stmt);				\
+                if (cudaSuccess != result) {				\
+                        fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", cond_str, __FILE__, __LINE__, result, cudaGetErrorString(result)); \
+                        exit(EXIT_FAILURE);				\
+                }							\
         } while (0)
 
 #define CUDACHECK(stmt) __CUDACHECK(stmt, #stmt)
