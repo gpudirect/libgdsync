@@ -40,29 +40,29 @@
  * which do not guarantee order of copying.
  */
 #if defined(__x86_64__)
-#define COPY_64B_NT(dst, src)		\
-	__asm__ __volatile__ (		\
-	" movdqa   (%1),%%xmm0\n"	\
-	" movdqa 16(%1),%%xmm1\n"	\
-	" movdqa 32(%1),%%xmm2\n"	\
-	" movdqa 48(%1),%%xmm3\n"	\
-	" movntdq %%xmm0,   (%0)\n"	\
-	" movntdq %%xmm1, 16(%0)\n"	\
-	" movntdq %%xmm2, 32(%0)\n"	\
-	" movntdq %%xmm3, 48(%0)\n"	\
-	: : "r" (dst), "r" (src) : "memory");	\
-	dst += 8;			\
-	src += 8
+#define COPY_64B_NT(dst, src)		        \
+        __asm__ __volatile__ (		        \
+                " movdqa   (%1),%%xmm0\n"	\
+                " movdqa 16(%1),%%xmm1\n"	\
+                " movdqa 32(%1),%%xmm2\n"	\
+                " movdqa 48(%1),%%xmm3\n"	\
+                " movntdq %%xmm0,   (%0)\n"	\
+                " movntdq %%xmm1, 16(%0)\n"	\
+                " movntdq %%xmm2, 32(%0)\n"	\
+                " movntdq %%xmm3, 48(%0)\n"	\
+                : : "r" (dst), "r" (src) : "memory");	\
+        dst += 8;			\
+        src += 8
 #else
 #define COPY_64B_NT(dst, src)	\
-	*dst++ = *src++;	\
-	*dst++ = *src++;	\
-	*dst++ = *src++;	\
-	*dst++ = *src++;	\
-	*dst++ = *src++;	\
-	*dst++ = *src++;	\
-	*dst++ = *src++;	\
-	*dst++ = *src++
+        *dst++ = *src++;	\
+        *dst++ = *src++;	\
+        *dst++ = *src++;	\
+        *dst++ = *src++;	\
+        *dst++ = *src++;	\
+        *dst++ = *src++;	\
+        *dst++ = *src++;	\
+        *dst++ = *src++
 
 #endif
 // no WQ wrap-around check!!!
@@ -70,10 +70,10 @@ static inline void gds_bf_copy(uint64_t *dest, uint64_t *src, size_t n_bytes)
 {
         assert(n_bytes % sizeof(uint64_t) == 0);
         assert(n_bytes < 128);
-	while (n_bytes > 0) {
-		COPY_64B_NT(dest, src);
-		n_bytes -= 8 * sizeof(*dest);
-	}
+        while (n_bytes > 0) {
+                COPY_64B_NT(dest, src);
+                n_bytes -= 8 * sizeof(*dest);
+        }
 }
 
 
