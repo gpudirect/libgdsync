@@ -162,7 +162,7 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
 
 typedef struct {
         void *handle;
-}gds_wait_request_t;
+} gds_wait_request_t;
 
 /**
  * Initializes a wait request out of the next heading CQE, which is kept in
