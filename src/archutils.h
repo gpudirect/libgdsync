@@ -25,12 +25,12 @@ static void arch_cpu_relax(void)
 static void wmb(void) __attribute__((unused)) ;
 static void wmb(void) 
 {
-	asm volatile("sync") ; 
+        asm volatile("sync") ; 
 }
 static void rmb(void) __attribute__((unused)) ;
 static void rmb(void) 
 {
-	asm volatile("sync") ; 
+        asm volatile("sync") ; 
 }
 
 #else
