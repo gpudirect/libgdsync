@@ -38,8 +38,8 @@
 
 #if 0
 #define msg(FMT, ARGS...)   do {                           \
-                printf("%s() " FMT, __FUNCTION__ ,##ARGS); \
-        } while(0)
+        printf("%s() " FMT, __FUNCTION__ ,##ARGS); \
+} while(0)
 #else
 #define msg(FMT, ARGS...)   do { } while(0)
 #endif
@@ -81,7 +81,7 @@ struct slow_printer {
                         m_last_time = now;
                         m_store_time = false;
                 }
-        
+
                 if (now > m_last_time + std::chrono::milliseconds(1)) {
                         m_last_time = now;
                         msg("%p slow_printer i=%d\n", this, m_i);
@@ -106,7 +106,7 @@ main()
         {
                 task_queue wq;
                 int i = 0;
-                
+
                 slow_printer s;
                 wq.queue(std::bind(&slow_printer::run, &s));
 
