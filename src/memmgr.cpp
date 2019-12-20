@@ -77,11 +77,11 @@ static int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t t
 //      but this is not reflected here
 // BUG: convert CUCHECK into error checks and return an error
 
-                // loop over overlapping ranges, 
-                //     maybe even on consecutive ranges when not on page boundary
-                //   unregister range
-                //   merge with union range
-                // register union range
+// loop over overlapping ranges, 
+//     maybe even on consecutive ranges when not on page boundary
+//   unregister range
+//   merge with union range
+// register union range
 
 //-----------------------------------------------------------------------------
 
@@ -95,31 +95,31 @@ int gds_map_mem(void *ptr, size_t size, gds_memory_type_t mem_type, CUdeviceptr 
 
         range_set::find_result res = rset.find(r);
         switch(res.second) {
-        case range_set::not_found:
-                return gds_register_mem_internal(ptr, size, mem_type, dev_ptr);
-                break;
-        case range_set::partial_overlap:
-                gds_err("partial overlap, buffer already registered?\n");
-                return EINVAL;
-        case range_set::fully_contained: {
-                range r = *res.first;
-                if (dev_ptr) {
-                        pindown_cache_t::iterator found = pinned_ranges.find(r.first);
-                        if (found != pinned_ranges.end()) {
-                                CUdeviceptr page_dev_ptr = (*found).second;
-                                ptrdiff_t off = (ptrdiff_t)ptr - (ptrdiff_t)r.first;
-                                *dev_ptr = page_dev_ptr + off;
+                case range_set::not_found:
+                        return gds_register_mem_internal(ptr, size, mem_type, dev_ptr);
+                        break;
+                case range_set::partial_overlap:
+                        gds_err("partial overlap, buffer already registered?\n");
+                        return EINVAL;
+                case range_set::fully_contained: {
+                        range r = *res.first;
+                        if (dev_ptr) {
+                                pindown_cache_t::iterator found = pinned_ranges.find(r.first);
+                                if (found != pinned_ranges.end()) {
+                                        CUdeviceptr page_dev_ptr = (*found).second;
+                                        ptrdiff_t off = (ptrdiff_t)ptr - (ptrdiff_t)r.first;
+                                        *dev_ptr = page_dev_ptr + off;
+                                }
+                                else {
+                                        gds_err("can't find dev_ptr for page_addr=%lx\n", r.first);
+                                        return EINVAL;
+                                }
                         }
-                        else {
-                                gds_err("can't find dev_ptr for page_addr=%lx\n", r.first);
-                                return EINVAL;
-                        }
+                        break;
                 }
-                break;
-        }
-        default:
-                gds_err("unexpected result");
-                return EINVAL;
+                default:
+                        gds_err("unexpected result");
+                        return EINVAL;
         }
 
         return 0;
@@ -149,24 +149,24 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
         unsigned long target_page_size = 0;
 
         switch (type) {
-        case GDS_MEMORY_GPU:
-                gds_dbg("this is GPU memory, no CUDA registration required\n");
-                need_cuda_registration = false;
-                target_page_mask = GDS_GPU_PAGE_MASK;
-                target_page_off = GDS_GPU_PAGE_OFF;
-                target_page_size = GDS_GPU_PAGE_SIZE;
-                break;
-        case GDS_MEMORY_IO:
-                flags |= CU_MEMHOSTREGISTER_IOMEMORY;
-                // fall through
-        case GDS_MEMORY_HOST:
-                target_page_mask = GDS_HOST_PAGE_MASK;
-                target_page_off = GDS_HOST_PAGE_OFF;
-                target_page_size = GDS_HOST_PAGE_SIZE;
-                break;
-        default:
-                gds_err("invalid mem type %d\n", type);
-                return EINVAL;
+                case GDS_MEMORY_GPU:
+                        gds_dbg("this is GPU memory, no CUDA registration required\n");
+                        need_cuda_registration = false;
+                        target_page_mask = GDS_GPU_PAGE_MASK;
+                        target_page_off = GDS_GPU_PAGE_OFF;
+                        target_page_size = GDS_GPU_PAGE_SIZE;
+                        break;
+                case GDS_MEMORY_IO:
+                        flags |= CU_MEMHOSTREGISTER_IOMEMORY;
+                        // fall through
+                case GDS_MEMORY_HOST:
+                        target_page_mask = GDS_HOST_PAGE_MASK;
+                        target_page_off = GDS_HOST_PAGE_OFF;
+                        target_page_size = GDS_HOST_PAGE_SIZE;
+                        break;
+                default:
+                        gds_err("invalid mem type %d\n", type);
+                        return EINVAL;
         }
 
         unsigned long page_addr = addr & target_page_mask;
@@ -180,7 +180,7 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
                         // we are good here
                 }
                 else if ((res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) ||
-                         (res == CUDA_ERROR_ALREADY_MAPPED)) {
+                                (res == CUDA_ERROR_ALREADY_MAPPED)) {
                         const char *err_str = NULL;
                         cuGetErrorString(res, &err_str);
                         // older CUDA driver versions seem to return CUDA_ERROR_ALREADY_MAPPED 
@@ -196,7 +196,7 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
                         const char *err_str = NULL;
                         cuGetErrorString(res, &err_str);
                         gds_err("Error %d (%s) while register address=%p size=%zu (original size %zu) flags=%08x\n", 
-                                res, err_str, (void*)page_addr, len, size, flags);
+                                        res, err_str, (void*)page_addr, len, size, flags);
                         // TODO: handle ENOPERM
                         return EINVAL;
                 }
@@ -260,74 +260,74 @@ int gds_mem_devptr(void *va, size_t n_bytes, CUdeviceptr *pdev_ptr)
 #if 0
 
 #if 0
-        char *ptr = (char*)_ptr;
-        char *p = ptr;
-        bool new_reg = false;
-	bool first_page = true;
+char *ptr = (char*)_ptr;
+char *p = ptr;
+bool new_reg = false;
+bool first_page = true;
 
-        if (!size) {
-                gds_err("invalid 0 size buffer\n");
-                return EINVAL;
-        }
+if (!size) {
+        gds_err("invalid 0 size buffer\n");
+        return EINVAL;
+}
 
-        while (size) {
-                unsigned long addr = (unsigned long)p;
-                unsigned long page_addr = addr & GDS_HOST_PAGE_MASK;
-                unsigned long off = addr & GDS_HOST_PAGE_OFF;
-                unsigned long len = min((GDS_HOST_PAGE_SIZE - off), (unsigned long long)size);
-		CUdeviceptr page_dev_ptr = 0;
-                //gds_dbg("page_addr=%lx len=%lu\n", page_addr, len);
-                if (last_pinned.page_addr == page_addr) {
-                        gds_dbg("hit last_pinned cache\n");
-                        page_dev_ptr = last_pinned.dev_addr;
+while (size) {
+        unsigned long addr = (unsigned long)p;
+        unsigned long page_addr = addr & GDS_HOST_PAGE_MASK;
+        unsigned long off = addr & GDS_HOST_PAGE_OFF;
+        unsigned long len = min((GDS_HOST_PAGE_SIZE - off), (unsigned long long)size);
+        CUdeviceptr page_dev_ptr = 0;
+        //gds_dbg("page_addr=%lx len=%lu\n", page_addr, len);
+        if (last_pinned.page_addr == page_addr) {
+                gds_dbg("hit last_pinned cache\n");
+                page_dev_ptr = last_pinned.dev_addr;
+        } else {
+                //gds_dbg("traversing map\n");
+                pindown_cache_t::iterator found = pinned_pages.find(page_addr);
+                if (found != pinned_pages.end()) {
+                        page_dev_ptr = found->second;
                 } else {
-                        //gds_dbg("traversing map\n");
-                        pindown_cache_t::iterator found = pinned_pages.find(page_addr);
-                        if (found != pinned_pages.end()) {
-                                page_dev_ptr = found->second;
+                        unsigned int flags = CU_MEMHOSTREGISTER_DEVICEMAP | CU_MEMHOSTREGISTER_PORTABLE;
+                        if (is_iomem)
+                                flags |= CU_MEMHOSTREGISTER_IOMEMORY;
+                        gds_dbg("registering page_addr=%lx iomem=%d\n", page_addr, is_iomem);
+                        CUresult res = cuMemHostRegister((void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
+                        if (res == CUDA_SUCCESS) {
+                        } else if ((res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) ||
+                                        (res == CUDA_ERROR_ALREADY_MAPPED)) {
+                                gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
                         } else {
-                                unsigned int flags = CU_MEMHOSTREGISTER_DEVICEMAP | CU_MEMHOSTREGISTER_PORTABLE;
-                                if (is_iomem)
-                                        flags |= CU_MEMHOSTREGISTER_IOMEMORY;
-                                gds_dbg("registering page_addr=%lx iomem=%d\n", page_addr, is_iomem);
-                                CUresult res = cuMemHostRegister((void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
-                                if (res == CUDA_SUCCESS) {
-                                } else if ((res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) ||
-                                           (res == CUDA_ERROR_ALREADY_MAPPED)) {
-                                        gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
-                                } else {
-                                        //CUCHECK(res);
-                                        const char *err_str = NULL;
-                                        cuGetErrorString(res, &err_str);
-                                        gds_err("Error '%s' while register address=%p size=%llu flags=%08x\n", 
+                                //CUCHECK(res);
+                                const char *err_str = NULL;
+                                cuGetErrorString(res, &err_str);
+                                gds_err("Error '%s' while register address=%p size=%llu flags=%08x\n", 
                                                 err_str, (void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
-                                        // TODO: handle ENOPERM
-                                        return EINVAL;
-                                }
-                                CUCHECK(cuMemHostGetDevicePointer(&page_dev_ptr, (void *)page_addr, 0));
-                                gds_dbg("page_ptr=%lx page_dev_ptr=%lx\n", page_addr, (unsigned long)page_dev_ptr);
-                                pinned_pages[page_addr] = page_dev_ptr;
-                                new_reg = true;
+                                // TODO: handle ENOPERM
+                                return EINVAL;
                         }
-                        last_pinned.page_addr = page_addr;
-                        last_pinned.dev_addr = page_dev_ptr;
+                        CUCHECK(cuMemHostGetDevicePointer(&page_dev_ptr, (void *)page_addr, 0));
+                        gds_dbg("page_ptr=%lx page_dev_ptr=%lx\n", page_addr, (unsigned long)page_dev_ptr);
+                        pinned_pages[page_addr] = page_dev_ptr;
+                        new_reg = true;
                 }
-		if (first_page) {
-		    first_page = 0;
-		    *dev_ptr = (CUdeviceptr) (page_dev_ptr + off);
-		}
-                size -= min(len, size);
-                p += len;
+                last_pinned.page_addr = page_addr;
+                last_pinned.dev_addr = page_dev_ptr;
         }
+        if (first_page) {
+                first_page = 0;
+                *dev_ptr = (CUdeviceptr) (page_dev_ptr + off);
+        }
+        size -= min(len, size);
+        p += len;
+}
 #if 0
-        // consistency check
-        {
-                CUdeviceptr my_dev_ptr;
-                CUCHECK(cuMemHostGetDevicePointer(&my_dev_ptr, _ptr, 0));
-                assert(my_dev_ptr == *dev_ptr);
-        }
+// consistency check
+{
+        CUdeviceptr my_dev_ptr;
+        CUCHECK(cuMemHostGetDevicePointer(&my_dev_ptr, _ptr, 0));
+        assert(my_dev_ptr == *dev_ptr);
+}
 #endif
-        return 0;
+return 0;
 #endif
 
 int gds_lookup_devptr(void *va, CUdeviceptr *dev_ptr)
