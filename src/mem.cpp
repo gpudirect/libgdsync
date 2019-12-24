@@ -67,6 +67,7 @@ static gdr_t gdr = 0;
 static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t size, int flags)
 {
         gdr_mh_t mh;
+        int is_mh_created = 0;
         gdr_info_t info;
         void *h_buf = NULL;
         void *bar_ptr  = NULL;
@@ -97,6 +98,7 @@ static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t si
                 retcode = ret;
                 goto out;
         }
+        is_mh_created = 1;
 
         ret = gdr_map(gdr, mh, &bar_ptr, buf_size);
         if (ret) {
@@ -128,7 +130,7 @@ static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t si
                 (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
 out:
         if (ret) {
-                if (mh) {
+                if (is_mh_created) {
                         if (bar_ptr)
                                 gdr_unmap(gdr, mh, bar_ptr, buf_size);
                         gdr_unpin_buffer(gdr, mh);
@@ -142,12 +144,17 @@ out:
 static int gds_unmap_gdr_memory(gds_mem_desc_t *desc)
 {
         int ret = 0;
+        #if defined(GDR_API_MAJOR_VERSION) && (GDR_API_MAJOR_VERSION > 1)
+        int has_mh = !!(desc->mh.h);
+        #else
+        int has_mh = !!(desc->mh);
+        #endif
         assert(desc);
         if (!gdr) {
                 gds_err("GDRCopy library is not initialized\n");
                 exit(EXIT_FAILURE);
         }
-        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !desc->mh || !desc->bar_ptr) {
+        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !has_mh || !desc->bar_ptr) {
                 gds_err("invalid desc\n");
                 return EINVAL;
         }
@@ -185,8 +192,13 @@ static int gds_alloc_gdr_memory(gds_mem_desc_t *desc, size_t size, int flags)
 static int gds_free_gdr_memory(gds_mem_desc_t *desc)
 {
         int ret = 0;
+        #if defined(GDR_API_MAJOR_VERSION) && (GDR_API_MAJOR_VERSION > 1)
+        int has_mh = !!(desc->mh.h);
+        #else
+        int has_mh = !!(desc->mh);
+        #endif
         assert(desc);
-        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !desc->mh || !desc->bar_ptr) {
+        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !has_mh || !desc->bar_ptr) {
                 gds_err("invalid desc\n");
                 return EINVAL;
         }
@@ -243,7 +255,7 @@ static int gds_alloc_pinned_memory(gds_mem_desc_t *desc, size_t size, int flags)
         desc->bar_ptr = NULL;
         desc->flags = flags;
         desc->alloc_size = size;
-        desc->mh = 0;        
+        memset(&desc->mh, 0, sizeof(gdr_mh_t));
         gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
                 (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
 out:
