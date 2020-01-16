@@ -172,17 +172,7 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 static struct pingpong_dest *pp_client_exch_dest(const char *servername, int port,
 						 const struct pingpong_dest *my_dest)
 {
-	struct addrinfo *res, *t;
-	struct addrinfo hints = {
-		.ai_family   = AF_UNSPEC,
-		.ai_socktype = SOCK_STREAM
-	};
-	char *service;
-	char msg[sizeof "0000:000000:000000:00000000000000000000000000000000"];
-	int n;
-	int sockfd = -1;
 	struct pingpong_dest *rem_dest = NULL;
-	char gid[33];
 	
 	fprintf(stderr, "%04x:%06x:%06x:%s\n", my_dest->lid, my_dest->qpn,
                 my_dest->psn, (char *)&my_dest->gid);
@@ -473,7 +463,7 @@ static int unblock_server_stream(struct pingpong_context *ctx)
                 break;
         }
         gds_atomic_set_dword((uint32_t *)ctx->rx_flag, 1);
-        return 0;
+        return retcode;
 }
 
 static int pp_post_recv(struct pingpong_context *ctx, int n)
@@ -501,7 +491,6 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 // will be needed when implementing the !peersync !use_desc_apis case
 static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 {
-        int ret = 0;
 	struct ibv_sge list = {
 		.addr	= (uintptr_t) ctx->txbuf,
 		.length = ctx->size,
@@ -528,7 +517,6 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 
 static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *p_gpu_stream)
 {
-        int ret = 0;
 	struct ibv_sge list = {
 		.addr	= (uintptr_t) ctx->txbuf,
 		.length = ctx->size,
@@ -555,7 +543,6 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 
 static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
 {
-        int ret = 0;
 	struct ibv_sge list = {
 		.addr	= (uintptr_t) ctx->txbuf,
 		.length = ctx->size,
@@ -772,7 +759,7 @@ int main(int argc, char *argv[])
 	struct pingpong_context *ctx;
 	struct pingpong_dest     my_dest;
 	struct pingpong_dest    *rem_dest;
-	struct timeval           rstart, start, end;
+	struct timeval           start, end;
 	const char              *ib_devname = NULL;
 	char                    *servername = NULL;
 	int                      port = 18515;
@@ -785,7 +772,6 @@ int main(int argc, char *argv[])
 	int                      routs;
         int                      nposted;
 	int                      rcnt, scnt;
-	int                      num_cq_events = 0;
 	int                      sl = 0;
 	int			 gidx = -1;
 	char			 gid[INET6_ADDRSTRLEN];
@@ -793,7 +779,6 @@ int main(int argc, char *argv[])
         int                      peersync = 1;
         int                      peersync_gpu_cq = 0;
         int                      peersync_gpu_dbrec = 0;
-        int                      warmup = 10;
         int                      max_batch_len = 20;
         int                      consume_rx_cqe = 0;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
@@ -1331,10 +1316,9 @@ int main(int argc, char *argv[])
                 }
 
                 if (wait_key >= 0) {
-                        int c;
                         if (iter == wait_key) {
                                 puts("press any key");
-                                c = getchar();
+                                getchar();
                         }
                 }
 	}
