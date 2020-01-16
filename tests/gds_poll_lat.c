@@ -192,10 +192,9 @@ int main(int argc, char *argv[])
 
                 gpu_dbg("GEQ h_ptr=%p d_ptr=%p *h_ptr=%08x i=%d value=%d\n", h_ptr, d_ptr, *h_ptr, i, value);
                 if (!use_gpu_buf) {
-                        int c;
                         if (wait_key>=0 && i==wait_key) {
                                 puts("press any key");
-                                c = getchar();
+                                getchar();
                         }
                 }
 		PROF(&prof, prof_idx++);
@@ -252,10 +251,9 @@ int main(int argc, char *argv[])
 		PROF(&prof, prof_idx++);
 
                 if (use_gpu_buf) {
-                        int c;
                         if (wait_key>=0 && i==wait_key) {
                                 puts("press any key");
-                                c = getchar();
+                                getchar();
                         }
                 }
                 // CPU waits some time here to make sure the previous commands
@@ -306,7 +304,8 @@ int main(int argc, char *argv[])
 
         perf_stop();
         prof_dump(&prof);
-err:
+
+//err:
         if (n_bg_streams) {
                 gpu_info("signaling %d background polling stream(s)\n", n_bg_streams);
                 int s;
