@@ -42,18 +42,18 @@
 #include <infiniband/mlx5dv.h>
 
 typedef enum gds_param {
-    GDS_PARAM_VERSION,
-    GDS_NUM_PARAMS
+        GDS_PARAM_VERSION,
+        GDS_NUM_PARAMS
 } gds_param_t;
 
 int gds_query_param(gds_param_t param, int *value);
 
 enum gds_create_qp_flags {
-    GDS_CREATE_QP_DEFAULT      = 0,
-    GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
-    GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
-    GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
-    GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
+        GDS_CREATE_QP_DEFAULT      = 0,
+        GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
+        GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
+        GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
+        GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
 //typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
@@ -63,63 +63,63 @@ typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
 typedef struct ibv_send_wr gds_send_wr;
 
 struct gds_peek_entry {
-    uint32_t busy;
-    uint32_t next;
+        uint32_t busy;
+        uint32_t next;
 };
 
 typedef enum gds_cq_type {
-    GDS_CQ_TYPE_SQ,
-    GDS_CQ_TYPE_RQ
+        GDS_CQ_TYPE_SQ,
+        GDS_CQ_TYPE_RQ
 } gds_cq_type_t;
 
 struct gds_cq {
-    struct ibv_cq          *cq;
-    uint32_t                curr_offset;
-    uint32_t                cons_index;
-    gds_cq_type_t           type;
+        struct ibv_cq          *cq;
+        uint32_t                curr_offset;
+        uint32_t                cons_index;
+        gds_cq_type_t           type;
 
-    struct mlx5dv_cq        dv_cq;
+        struct mlx5dv_cq        dv_cq;
 
-    uint64_t               *wrid;
+        uint64_t               *wrid;
 
-    uint64_t                active_buf_va_id;
+        uint64_t                active_buf_va_id;
 
-    void                   *peer_attr;
+        void                   *peer_attr;
 
-    uint64_t                peer_va_id;
-    uint32_t                peer_dir;
+        uint64_t                peer_va_id;
+        uint32_t                peer_dir;
 
-    struct {
-        void   *buf;
-        size_t  length;
-    } peer_buf;
+        struct {
+                void           *buf;
+                size_t          length;
+        } peer_buf;
 
-    struct gds_peek_entry **peer_peek_table;
-    struct gds_peek_entry  *peer_peek_free;
+        struct gds_peek_entry **peer_peek_table;
+        struct gds_peek_entry  *peer_peek_free;
 };
 
 #define GDS_LAST_PEEK_ENTRY (-1U)
 #define GDS_PEEK_ENTRY(cq, n) \
-    (n == GDS_LAST_PEEK_ENTRY ? NULL : \
-    ((struct gds_peek_entry *)cq->peer_buf.buf) + n)
+        (n == GDS_LAST_PEEK_ENTRY ? NULL : \
+         ((struct gds_peek_entry *)cq->peer_buf.buf) + n)
 #define GDS_PEEK_ENTRY_N(cq, pe) \
-    (pe == NULL ? GDS_LAST_PEEK_ENTRY : \
-    ((pe - (struct gds_peek_entry *)cq->peer_buf.buf)))
+        (pe == NULL ? GDS_LAST_PEEK_ENTRY : \
+         ((pe - (struct gds_peek_entry *)cq->peer_buf.buf)))
 
 struct gds_qp {
-    struct ibv_qp *qp;
-    struct gds_cq send_cq;
-    struct gds_cq recv_cq;
-    //struct ibv_exp_res_domain * res_domain;
-    struct ibv_context *dev_context;
-    struct mlx5dv_qp dv_qp;
+        struct ibv_qp *qp;
+        struct gds_cq send_cq;
+        struct gds_cq recv_cq;
+        //struct ibv_exp_res_domain * res_domain;
+        struct ibv_context *dev_context;
+        struct mlx5dv_qp dv_qp;
 
-    unsigned int sq_cur_post;
-    unsigned int bf_offset;
+        unsigned int sq_cur_post;
+        unsigned int bf_offset;
 
-    uint32_t peer_scur_post;
-    uint64_t peer_va_id_dbr;
-    uint64_t peer_va_id_bf;
+        uint32_t peer_scur_post;
+        uint64_t peer_va_id_dbr;
+        uint64_t peer_va_id_bf;
 };
 
 int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc);
@@ -169,25 +169,38 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
 
 // Note: those flags below must not overlap with gds_memory_type_t
 typedef enum gds_wait_flags {
-        GDS_WAIT_POST_FLUSH_REMOTE = 1<<3, /*< add a trailing flush of the ingress GPUDirect RDMA data path on the GPU owning the stream */
-        GDS_WAIT_POST_FLUSH = GDS_WAIT_POST_FLUSH_REMOTE /*< alias for backward compatibility */
+        /** 
+         * add a trailing flush of the ingress GPUDirect RDMA data path on the
+         * GPU owning the stream 
+         */
+        GDS_WAIT_POST_FLUSH_REMOTE = 1<<3, 
+        /* alias for backward compatibility */
+        GDS_WAIT_POST_FLUSH = GDS_WAIT_POST_FLUSH_REMOTE 
 } gds_wait_flags_t;
 
 typedef enum gds_write_flags {
-        GDS_WRITE_PRE_BARRIER_SYS = 1<<4, /*< add a heading memory barrier to the write value operation */
-        GDS_WRITE_PRE_BARRIER = GDS_WRITE_PRE_BARRIER_SYS /*< alias for backward compatibility */
+        /* add a heading memory barrier to the write value operation */
+        GDS_WRITE_PRE_BARRIER_SYS = 1<<4, 
+        /* alias for backward compatibility */
+        GDS_WRITE_PRE_BARRIER = GDS_WRITE_PRE_BARRIER_SYS 
 } gds_write_flags_t;
 
 typedef enum gds_write_memory_flags {
-        GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, /*< add a trailing memory barrier to the memory write operation */
-        GDS_WRITE_MEMORY_PRE_BARRIER_SYS  = 1<<5 /*< add a heading memory barrier to the memory write operation, for convenience only as not a native capability */
+        /* add a trailing memory barrier to the memory write operation */
+        GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, 
+        /**
+         * add a heading memory barrier to the memory write operation, for
+         * convenience only as not a native capability 
+         */
+        GDS_WRITE_MEMORY_PRE_BARRIER_SYS  = 1<<5 
 } gds_write_memory_flags_t;
 
 typedef enum gds_membar_flags {
         GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
         GDS_MEMBAR_DEFAULT      = 1<<5,
         GDS_MEMBAR_SYS          = 1<<6,
-        GDS_MEMBAR_MLX5         = 1<<7 /*< modify the scope of the barrier, for internal use only */
+        /* modify the scope of the barrier, for internal use only */
+        GDS_MEMBAR_MLX5         = 1<<7 
 } gds_membar_flags_t;
 
 enum {
@@ -196,68 +209,69 @@ enum {
 };
 
 typedef enum gds_memory_type {
-        GDS_MEMORY_GPU  = 1, /*< use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
+        /* use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
+        GDS_MEMORY_GPU  = 1, 
         GDS_MEMORY_HOST = 2,
         GDS_MEMORY_IO   = 4,
-	GDS_MEMORY_MASK = 0x7
+        GDS_MEMORY_MASK = 0x7
 } gds_memory_type_t;
 
 enum ibv_exp_peer_direct_attr_mask {
-    GDS_PEER_DIRECT_VERSION = (1 << 0) /* Must be set */
+        GDS_PEER_DIRECT_VERSION = (1 << 0) /* Must be set */
 };
 
 enum gds_peer_op {
-    GDS_PEER_OP_RESERVED1   = 1,
+        GDS_PEER_OP_RESERVED1   = 1,
 
-    GDS_PEER_OP_FENCE       = 0,
+        GDS_PEER_OP_FENCE       = 0,
 
-    GDS_PEER_OP_STORE_DWORD = 4,
-    GDS_PEER_OP_STORE_QWORD = 2,
-    GDS_PEER_OP_COPY_BLOCK  = 3,
+        GDS_PEER_OP_STORE_DWORD = 4,
+        GDS_PEER_OP_STORE_QWORD = 2,
+        GDS_PEER_OP_COPY_BLOCK  = 3,
 
-    GDS_PEER_OP_POLL_AND_DWORD  = 12, 
-    GDS_PEER_OP_POLL_NOR_DWORD  = 13, 
-    GDS_PEER_OP_POLL_GEQ_DWORD  = 14, 
+        GDS_PEER_OP_POLL_AND_DWORD  = 12, 
+        GDS_PEER_OP_POLL_NOR_DWORD  = 13, 
+        GDS_PEER_OP_POLL_GEQ_DWORD  = 14, 
 };
 
 struct gds_peer_op_wr {
-    struct gds_peer_op_wr *next;
-    enum gds_peer_op type;
-    union {
-        struct {
-            uint64_t fence_flags; /* from gds_peer_fence */
-        } fence;
+        struct gds_peer_op_wr *next;
+        enum gds_peer_op type;
+        union {
+                struct {
+                        uint64_t fence_flags; /* from gds_peer_fence */
+                } fence;
 
-        struct {
-            uint32_t  data;
-            uint64_t  target_id;
-            size_t    offset;
-        } dword_va; /* Use for all operations targeting dword */
+                struct {
+                        uint32_t  data;
+                        uint64_t  target_id;
+                        size_t    offset;
+                } dword_va; /* Use for all operations targeting dword */
 
-        struct {
-            uint64_t  data;
-            uint64_t  target_id;
-            size_t    offset;
-        } qword_va; /* Use for all operations targeting qword */
+                struct {
+                        uint64_t  data;
+                        uint64_t  target_id;
+                        size_t    offset;
+                } qword_va; /* Use for all operations targeting qword */
 
-        struct {
-            void     *src;
-            uint64_t  target_id;
-            size_t    offset;
-            size_t    len;
-        } copy_op;
-    } wr;
-    uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
+                struct {
+                        void     *src;
+                        uint64_t  target_id;
+                        size_t    offset;
+                        size_t    len;
+                } copy_op;
+        } wr;
+        uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
 };
 
 struct gds_peer_commit {
-    /* IN/OUT - linked list of empty/filled descriptors */
-    struct gds_peer_op_wr *storage;
-    /* IN/OUT - number of allocated/filled descriptors */
-    uint32_t entries;
-    /* OUT - identifier used in gds_rollback_qp to rollback WQEs set */
-    uint64_t rollback_id;
-    uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
+        /* IN/OUT - linked list of empty/filled descriptors */
+        struct gds_peer_op_wr *storage;
+        /* IN/OUT - number of allocated/filled descriptors */
+        uint32_t entries;
+        /* OUT - identifier used in gds_rollback_qp to rollback WQEs set */
+        uint64_t rollback_id;
+        uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
 };
 
 
@@ -275,28 +289,28 @@ int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
 int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
 
 enum {
-    GDS_PEER_PEEK_ABSOLUTE,
-    GDS_PEER_PEEK_RELATIVE
+        GDS_PEER_PEEK_ABSOLUTE,
+        GDS_PEER_PEEK_RELATIVE
 };
 
 struct gds_peer_peek {
-    /* IN/OUT - linked list of empty/filled descriptors */
-    struct gds_peer_op_wr *storage;
-    /* IN/OUT - number of allocated/filled descriptors */
-    uint32_t entries;
-    /* IN - Which CQ entry does the peer want to peek for
-     * completion. According to "whence" directive entry
-     * chosen as follows:
-     * IBV_EXP_PEER_PEEK_ABSOLUTE -
-     *  "offset" is absolute index of entry wrapped to 32-bit
-     * IBV_EXP_PEER_PEEK_RELATIVE -
-     *      "offset" is relative to current poll_cq location.
-     */
-    uint32_t whence;
-    uint32_t offset;
-    /* OUT - identifier used in ibv_exp_peer_ack_peek_cq to advance CQ */
-    uint64_t peek_id;
-    uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
+        /* IN/OUT - linked list of empty/filled descriptors */
+        struct gds_peer_op_wr *storage;
+        /* IN/OUT - number of allocated/filled descriptors */
+        uint32_t entries;
+        /* IN - Which CQ entry does the peer want to peek for
+         * completion. According to "whence" directive entry
+         * chosen as follows:
+         * IBV_EXP_PEER_PEEK_ABSOLUTE -
+         *  "offset" is absolute index of entry wrapped to 32-bit
+         * IBV_EXP_PEER_PEEK_RELATIVE -
+         *      "offset" is relative to current poll_cq location.
+         */
+        uint32_t whence;
+        uint32_t offset;
+        /* OUT - identifier used in ibv_exp_peer_ack_peek_cq to advance CQ */
+        uint64_t peek_id;
+        uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
 };
 
 /**
@@ -304,8 +318,8 @@ struct gds_peer_peek {
  */
 
 typedef struct gds_wait_request {
-    struct gds_peer_peek peek;
-    struct gds_peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+        struct gds_peer_peek peek;
+        struct gds_peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
 } gds_wait_request_t;
 
 /**
