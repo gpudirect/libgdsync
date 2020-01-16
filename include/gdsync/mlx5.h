@@ -52,7 +52,7 @@ typedef struct gds_mlx5_send_info {
 int gds_mlx5_get_send_info(int count, const gds_send_request_t *requests, gds_mlx5_send_info_t *mlx5_infos);
 
 typedef struct gds_mlx5_wait_info {
-	gds_wait_cond_flag_t cond;
+        gds_wait_cond_flag_t cond;
         uint32_t *cqe_ptr;
         uint32_t  cqe_value;
         uint32_t *flag_ptr;
