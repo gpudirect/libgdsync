@@ -125,7 +125,7 @@ static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t si
         desc->alloc_size = buf_size;
         desc->mh = mh;
         gds_dbg("d_ptr=%lx h_ptr=%p bar_ptr=%p flags=0x%08x alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
 out:
         if (ret) {
                 if (mh) {
@@ -152,7 +152,7 @@ static int gds_unmap_gdr_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         gds_dbg("d_ptr=%lx h_ptr=%p alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
         gdr_unmap(gdr, desc->mh, desc->bar_ptr, desc->alloc_size);
         gdr_unpin_buffer(gdr, desc->mh);
         return ret;
@@ -191,7 +191,7 @@ static int gds_free_gdr_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         gds_dbg("d_ptr=%lx h_ptr=%p alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
 
         ret = gds_unmap_gdr_memory(desc);
         if (ret) {
@@ -213,49 +213,49 @@ static unsigned s_buf_i = 0;
 
 static int gds_alloc_pinned_memory(gds_mem_desc_t *desc, size_t size, int flags)
 {
-    int ret;
+        int ret;
 #ifdef USE_STATIC_MEM
-    unsigned long s_addr = (unsigned long)(s_buf + s_buf_i);
-    unsigned long s_off  = s_addr & (PAGE_SIZE-1);
-    if (s_off)
-        s_addr += PAGE_SIZE - s_off;
-    *memptr = (void *)s_addr;
-    gpu_info("s_buf_i=%d off=%lu memptr=%p\n", s_buf_i, s_off, *memptr);
+        unsigned long s_addr = (unsigned long)(s_buf + s_buf_i);
+        unsigned long s_off  = s_addr & (PAGE_SIZE-1);
+        if (s_off)
+                s_addr += PAGE_SIZE - s_off;
+        *memptr = (void *)s_addr;
+        gpu_info("s_buf_i=%d off=%lu memptr=%p\n", s_buf_i, s_off, *memptr);
 
-    s_buf_i += s_off + size;
+        s_buf_i += s_off + size;
 
-    if (s_buf_i >= s_size) {
-        gds_err("can't alloc static memory\n");
-        return ENOMEM;
-    }
-#else
-    assert(desc);
-    desc->h_ptr = NULL;
-    ret = posix_memalign(&desc->h_ptr, GDS_HOST_PAGE_SIZE, size);
-    if (ret) {
-        goto out;
-    }
-    desc->d_ptr = 0;
-    ret = gds_register_mem(desc->h_ptr, size, GDS_MEMORY_HOST, &desc->d_ptr);
-    if (ret) {
-        goto out;
-    }
-    desc->bar_ptr = NULL;
-    desc->flags = flags;
-    desc->alloc_size = size;
-    desc->mh = 0;        
-    gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
-            (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
-out:
-    if (ret) {
-        if (desc->h_ptr) {
-            if (desc->d_ptr)
-                gds_unregister_mem(desc->h_ptr, desc->alloc_size);
-            free(desc->h_ptr);
+        if (s_buf_i >= s_size) {
+                gds_err("can't alloc static memory\n");
+                return ENOMEM;
         }
-    }
+#else
+        assert(desc);
+        desc->h_ptr = NULL;
+        ret = posix_memalign(&desc->h_ptr, GDS_HOST_PAGE_SIZE, size);
+        if (ret) {
+                goto out;
+        }
+        desc->d_ptr = 0;
+        ret = gds_register_mem(desc->h_ptr, size, GDS_MEMORY_HOST, &desc->d_ptr);
+        if (ret) {
+                goto out;
+        }
+        desc->bar_ptr = NULL;
+        desc->flags = flags;
+        desc->alloc_size = size;
+        desc->mh = 0;        
+        gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
+out:
+        if (ret) {
+                if (desc->h_ptr) {
+                        if (desc->d_ptr)
+                                gds_unregister_mem(desc->h_ptr, desc->alloc_size);
+                        free(desc->h_ptr);
+                }
+        }
 #endif
-    return ret;
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -272,7 +272,7 @@ static int gds_free_pinned_memory(gds_mem_desc_t *desc)
         // BUG: TBD
 #else
         gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
         ret = gds_unregister_mem(desc->h_ptr, desc->alloc_size);
         free(desc->h_ptr);
         desc->h_ptr = NULL;
@@ -286,28 +286,28 @@ static int gds_free_pinned_memory(gds_mem_desc_t *desc)
 
 int gds_alloc_mapped_memory(gds_mem_desc_t *desc, size_t size, int flags)
 {
-    int ret = 0;
-    if (!size) {
-        gds_warn("silently ignoring zero size alloc!\n");
-        return 0;
-    }
-    if (!desc) {
-        gds_err("NULL desc!\n");
-        return EINVAL;
-    }
-    switch(flags & GDS_MEMORY_MASK) {
-        case GDS_MEMORY_GPU:
-            ret = gds_alloc_gdr_memory(desc, size, flags);
-            break;
-        case GDS_MEMORY_HOST:
-            ret = gds_alloc_pinned_memory(desc, size, flags);
-            break;
-        default:
-            gds_err("invalid flags\n");
-            ret = EINVAL;
-            break;
-    }
-    return ret;
+        int ret = 0;
+        if (!size) {
+                gds_warn("silently ignoring zero size alloc!\n");
+                return 0;
+        }
+        if (!desc) {
+                gds_err("NULL desc!\n");
+                return EINVAL;
+        }
+        switch(flags & GDS_MEMORY_MASK) {
+                case GDS_MEMORY_GPU:
+                        ret = gds_alloc_gdr_memory(desc, size, flags);
+                        break;
+                case GDS_MEMORY_HOST:
+                        ret = gds_alloc_pinned_memory(desc, size, flags);
+                        break;
+                default:
+                        gds_err("invalid flags\n");
+                        ret = EINVAL;
+                        break;
+        }
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -320,15 +320,15 @@ int gds_free_mapped_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         switch(desc->flags & GDS_MEMORY_MASK) {
-        case GDS_MEMORY_GPU:
-                ret = gds_free_gdr_memory(desc);
-                break;
-        case GDS_MEMORY_HOST:
-                ret = gds_free_pinned_memory(desc);
-                break;
-        default:
-                ret = EINVAL;
-                break;
+                case GDS_MEMORY_GPU:
+                        ret = gds_free_gdr_memory(desc);
+                        break;
+                case GDS_MEMORY_HOST:
+                        ret = gds_free_pinned_memory(desc);
+                        break;
+                default:
+                        ret = EINVAL;
+                        break;
         }
         return ret;
 }
@@ -341,83 +341,83 @@ int gds_free_mapped_memory(gds_mem_desc_t *desc)
 // allocate GPU memory with a GDR mapping (CPU can dereference it)
 int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle, gds_memory_type_t mem_type, bool has_cpu_mapping)
 {
-    int ret = 0;
-    // assume GPUs are the only peers!!!
-    int gpu_id = peer_id;
-    CUcontext gpu_ctx;
-    CUdevice gpu_device;
-    size_t size = ROUND_TO(req_size, GDS_GPU_PAGE_SIZE);
+        int ret = 0;
+        // assume GPUs are the only peers!!!
+        int gpu_id = peer_id;
+        CUcontext gpu_ctx;
+        CUdevice gpu_device;
+        size_t size = ROUND_TO(req_size, GDS_GPU_PAGE_SIZE);
 
-    gds_dbg("GPU%u: malloc req_size=%zu size=%zu\n", gpu_id, req_size, size);
+        gds_dbg("GPU%u: malloc req_size=%zu size=%zu\n", gpu_id, req_size, size);
 
-    if (!phandle || !host_addr || !peer_addr) {
-        gds_err("invalid params\n");
-        return EINVAL;
-    }
-
-    // NOTE: gpu_id's primary context is assumed to be the right one
-    // breaks horribly with multiple contexts
-    int num_gpus;
-    do {
-        CUresult err = cuDeviceGetCount(&num_gpus);
-        if (CUDA_SUCCESS == err) {
-            break;
-        } else if (CUDA_ERROR_NOT_INITIALIZED == err) {
-            gds_err("CUDA error %d in cuDeviceGetCount, calling cuInit\n", err);
-            CUCHECK(cuInit(0));
-            // try again
-            continue;
-        } else {
-            gds_err("CUDA error %d in cuDeviceGetCount, returning EIO\n", err);
-            return EIO;
+        if (!phandle || !host_addr || !peer_addr) {
+                gds_err("invalid params\n");
+                return EINVAL;
         }
-    } while(0);
-    gds_dbg("num_gpus=%d\n", num_gpus);
-    if (gpu_id >= num_gpus) {
-        gds_err("invalid num_GPUs=%d while requesting GPU id %d\n", num_gpus, gpu_id);
-        return EINVAL;
-    }
 
-    CUCHECK(cuDeviceGet(&gpu_device, gpu_id));
-    gds_dbg("gpu_id=%d gpu_device=%d\n", gpu_id, gpu_device);
-    // TODO: check for existing context before switching to the interop one
-    CUCHECK(cuDevicePrimaryCtxRetain(&gpu_ctx, gpu_device));
-    CUCHECK(cuCtxPushCurrent(gpu_ctx));
-    assert(gpu_ctx != NULL);
+        // NOTE: gpu_id's primary context is assumed to be the right one
+        // breaks horribly with multiple contexts
+        int num_gpus;
+        do {
+                CUresult err = cuDeviceGetCount(&num_gpus);
+                if (CUDA_SUCCESS == err) {
+                        break;
+                } else if (CUDA_ERROR_NOT_INITIALIZED == err) {
+                        gds_err("CUDA error %d in cuDeviceGetCount, calling cuInit\n", err);
+                        CUCHECK(cuInit(0));
+                        // try again
+                        continue;
+                } else {
+                        gds_err("CUDA error %d in cuDeviceGetCount, returning EIO\n", err);
+                        return EIO;
+                }
+        } while(0);
+        gds_dbg("num_gpus=%d\n", num_gpus);
+        if (gpu_id >= num_gpus) {
+                gds_err("invalid num_GPUs=%d while requesting GPU id %d\n", num_gpus, gpu_id);
+                return EINVAL;
+        }
 
-    gds_mem_desc_t *desc = (gds_mem_desc_t *)calloc(1, sizeof(gds_mem_desc_t));
-    if (!desc) {
-        gds_err("error while allocating mem desc\n");
-        ret = ENOMEM;
-        goto out;
-    }
+        CUCHECK(cuDeviceGet(&gpu_device, gpu_id));
+        gds_dbg("gpu_id=%d gpu_device=%d\n", gpu_id, gpu_device);
+        // TODO: check for existing context before switching to the interop one
+        CUCHECK(cuDevicePrimaryCtxRetain(&gpu_ctx, gpu_device));
+        CUCHECK(cuCtxPushCurrent(gpu_ctx));
+        assert(gpu_ctx != NULL);
 
-    //ret = gds_alloc_mapped_memory(desc, size, GDS_MEMORY_GPU);
-    ret = gds_alloc_mapped_memory(desc, size, mem_type);
-    if (ret) {
-        gds_err("error %d while allocating mapped GPU buffers\n", ret);
-        goto out;
-    }
+        gds_mem_desc_t *desc = (gds_mem_desc_t *)calloc(1, sizeof(gds_mem_desc_t));
+        if (!desc) {
+                gds_err("error while allocating mem desc\n");
+                ret = ENOMEM;
+                goto out;
+        }
 
-    *host_addr = desc->h_ptr;
-    *peer_addr = desc->d_ptr;
-    *phandle = desc;
+        //ret = gds_alloc_mapped_memory(desc, size, GDS_MEMORY_GPU);
+        ret = gds_alloc_mapped_memory(desc, size, mem_type);
+        if (ret) {
+                gds_err("error %d while allocating mapped GPU buffers\n", ret);
+                goto out;
+        }
+
+        *host_addr = desc->h_ptr;
+        *peer_addr = desc->d_ptr;
+        *phandle = desc;
 
 out:
-    if (ret)
-        free(desc); // desc can be NULL
+        if (ret)
+                free(desc); // desc can be NULL
 
-    CUCHECK(cuCtxPopCurrent(NULL));
-    CUCHECK(cuDevicePrimaryCtxRelease(gpu_device));
+        CUCHECK(cuCtxPopCurrent(NULL));
+        CUCHECK(cuDevicePrimaryCtxRelease(gpu_device));
 
-    return ret;
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_peer_malloc(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle, gds_memory_type_t mem_type)
 {
-    return gds_peer_malloc_ex(peer_id, peer_data, host_addr, peer_addr, req_size, phandle, mem_type, true);
+        return gds_peer_malloc_ex(peer_id, peer_data, host_addr, peer_addr, req_size, phandle, mem_type, true);
 }
 
 //-----------------------------------------------------------------------------
