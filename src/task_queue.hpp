@@ -41,94 +41,94 @@
 
 // single threaded task queue
 struct task_queue {
-    task_queue() {
-        TQDBG("CTOR");
-        m_state = idle;
-    }
-
-    ~task_queue() {
-        TQDBG("DTOR");
-        kill_worker();
-    }
-
-    typedef std::function<bool()> task_t;
-    typedef std::list<task_t> task_list_t;
-    typedef task_list_t::iterator task_handle_t;
-
-    template <typename Task>
-    task_handle_t queue(Task t) {
-        lock_t lock(m_mtx);
-        task_handle_t handle = m_tasks.insert(m_tasks.end(), t);
-        if (m_state == idle) {
-            m_worker = std::thread(std::bind(&task_queue::worker_thread, this));
-            while (m_state == idle) {
-                m_cond.wait(lock);
-            }
+        task_queue() {
+                TQDBG("CTOR");
+                m_state = idle;
         }
-        m_cond.notify_one();
-        return handle;
-    }
 
-    // WARNING: dequeuing can race with self-dequeing task
-    void dequeue(task_handle_t handle) {
-        TQDBG("dequing task");
-        std::lock_guard<std::mutex> g(m_mtx);
-        m_tasks.erase(handle);
-    }
-
-private:
-    void kill_worker() {
-        TQDBG("killing worker thread");
-        {
-            lock_t g(m_mtx);
-            if (m_state == running) {
-                TQDBG("setting queue state to draining");
-                m_state = draining;
-                m_cond.notify_one();
-            }
+        ~task_queue() {
+                TQDBG("DTOR");
+                kill_worker();
         }
-        TQDBG("joining worker thread");
-        m_worker.join();
-    }
 
-    void worker_thread() {
-        lock_t lock(m_mtx);
-        TQDBG("state<-running");
-        m_state = running;
-        m_cond.notify_all();
-        while(true) {
-            if (m_state == draining) {
-                TQDBG("state<-done");
-                m_state = done;
-                break;
-            }
-            if (m_tasks.empty())
-                m_cond.wait(lock);
-            auto f = m_tasks.begin();
-            while (f != m_tasks.end()) {
-                auto fnext = std::next(f);
-                task_t t = *f;
-                lock.unlock();
-                bool keep = t();
-                lock.lock();
-                if (!keep) {
-                    TQDBG("removing task");
-                    m_tasks.erase(f);
-                    TQDBG("done");
+        typedef std::function<bool()> task_t;
+        typedef std::list<task_t> task_list_t;
+        typedef task_list_t::iterator task_handle_t;
+
+        template <typename Task>
+                task_handle_t queue(Task t) {
+                        lock_t lock(m_mtx);
+                        task_handle_t handle = m_tasks.insert(m_tasks.end(), t);
+                        if (m_state == idle) {
+                                m_worker = std::thread(std::bind(&task_queue::worker_thread, this));
+                                while (m_state == idle) {
+                                        m_cond.wait(lock);
+                                }
+                        }
+                        m_cond.notify_one();
+                        return handle;
                 }
-                f = fnext;
-            }
+
+        // WARNING: dequeuing can race with self-dequeing task
+        void dequeue(task_handle_t handle) {
+                TQDBG("dequing task");
+                std::lock_guard<std::mutex> g(m_mtx);
+                m_tasks.erase(handle);
         }
-    }
 
-    enum { idle, running, draining, done } m_state;
+        private:
+        void kill_worker() {
+                TQDBG("killing worker thread");
+                {
+                        lock_t g(m_mtx);
+                        if (m_state == running) {
+                                TQDBG("setting queue state to draining");
+                                m_state = draining;
+                                m_cond.notify_one();
+                        }
+                }
+                TQDBG("joining worker thread");
+                m_worker.join();
+        }
 
-    // single threaded queue
-    std::thread m_worker;
-    std::mutex m_mtx;
-    typedef std::unique_lock<std::mutex> lock_t;
-    task_list_t m_tasks;
-    std::condition_variable m_cond;
+        void worker_thread() {
+                lock_t lock(m_mtx);
+                TQDBG("state<-running");
+                m_state = running;
+                m_cond.notify_all();
+                while(true) {
+                        if (m_state == draining) {
+                                TQDBG("state<-done");
+                                m_state = done;
+                                break;
+                        }
+                        if (m_tasks.empty())
+                                m_cond.wait(lock);
+                        auto f = m_tasks.begin();
+                        while (f != m_tasks.end()) {
+                                auto fnext = std::next(f);
+                                task_t t = *f;
+                                lock.unlock();
+                                bool keep = t();
+                                lock.lock();
+                                if (!keep) {
+                                        TQDBG("removing task");
+                                        m_tasks.erase(f);
+                                        TQDBG("done");
+                                }
+                                f = fnext;
+                        }
+                }
+        }
+
+        enum { idle, running, draining, done } m_state;
+
+        // single threaded queue
+        std::thread m_worker;
+        std::mutex m_mtx;
+        typedef std::unique_lock<std::mutex> lock_t;
+        task_list_t m_tasks;
+        std::condition_variable m_cond;
 };
 
 #undef TQDBG
