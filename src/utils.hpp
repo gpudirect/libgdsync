@@ -40,9 +40,9 @@ void gds_assert(const char *cond, const char *file, unsigned line, const char *f
 #define GDS_ASSERT2(COND)                                               \
         do {                                                            \
                 if (!(COND))                                            \
-                        gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__); \
+                gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__);    \
         }                                                               \
-        while(0)
+while(0)
 
 #define GDS_ASSERT(COND) GDS_ASSERT2(COND)
 
@@ -50,26 +50,26 @@ void gds_assert(const char *cond, const char *file, unsigned line, const char *f
 // CUDA error checking
 
 #define __CUCHECK(stmt, cond_str)					\
-	do {								\
-		CUresult result = (stmt);				\
-		if (CUDA_SUCCESS != result) {				\
-			const char *err_str = NULL;			\
-			cuGetErrorString(result, &err_str);		\
-			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", \
-                                cond_str, __FILE__, __LINE__, result, err_str); \
-			exit(EXIT_FAILURE);                             \
-		}							\
+        do {								\
+                CUresult result = (stmt);				\
+                if (CUDA_SUCCESS != result) {				\
+                        const char *err_str = NULL;			\
+                        cuGetErrorString(result, &err_str);		\
+                        fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", \
+                                        cond_str, __FILE__, __LINE__, result, err_str); \
+                        exit(EXIT_FAILURE);                             \
+                }							\
         } while (0)
 
 #define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
 
-template <typename T>
+        template <typename T>
 static inline void gds_atomic_set(T *ptr, T value)
 {
         *(volatile T*)ptr = value;
 }
 
-template <typename T>
+        template <typename T>
 static inline T gds_atomic_get(T *ptr)
 {
         return *(volatile T*)ptr;
@@ -95,10 +95,10 @@ static inline T gds_atomic_get(T *ptr)
 // tracing support
 
 enum gds_msg_level {
-    GDS_MSG_DEBUG = 1,
-    GDS_MSG_INFO,
-    GDS_MSG_WARN,
-    GDS_MSG_ERROR
+        GDS_MSG_DEBUG = 1,
+        GDS_MSG_INFO,
+        GDS_MSG_WARN,
+        GDS_MSG_ERROR
 };
 
 #define gds_stream stderr
@@ -106,9 +106,9 @@ enum gds_msg_level {
 
 int gds_dbg_enabled();
 #define gds_msg(LVL, LVLSTR, FMT, ARGS...)   do {			\
-		fprintf(gds_stream, "[%d] GDS " LVLSTR " %s() " FMT, getpid(), __FUNCTION__ ,##ARGS); \
-		fflush(gds_stream);                                     \
-	} while(0)
+        fprintf(gds_stream, "[%d] GDS " LVLSTR " %s() " FMT, getpid(), __FUNCTION__ ,##ARGS); \
+        fflush(gds_stream);                                             \
+} while(0)
 
 #define gds_dbg(FMT, ARGS...)  do { if (gds_dbg_enabled()) gds_msg(GDS_MSG_DEBUG, "DBG  ", FMT, ## ARGS); } while(0)
 #define gds_dbgc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gds_dbg(FMT, ## ARGS); } while(0)
@@ -129,12 +129,12 @@ static inline int gds_curesult_to_errno(CUresult result)
 {
         int retcode = 0;
         switch (result) {
-        case CUDA_SUCCESS:             retcode = 0; break;
-        case CUDA_ERROR_NOT_SUPPORTED: retcode = EPERM; break;
-        case CUDA_ERROR_INVALID_VALUE: retcode = EINVAL; break;
-        case CUDA_ERROR_OUT_OF_MEMORY: retcode = ENOMEM; break;
-        // TODO: add missing cases
-        default: retcode = EIO; break;
+                case CUDA_SUCCESS:             retcode = 0; break;
+                case CUDA_ERROR_NOT_SUPPORTED: retcode = EPERM; break;
+                case CUDA_ERROR_INVALID_VALUE: retcode = EINVAL; break;
+                case CUDA_ERROR_OUT_OF_MEMORY: retcode = ENOMEM; break;
+                                               // TODO: add missing cases
+                default: retcode = EIO; break;
         }
         return retcode;
 }
