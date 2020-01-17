@@ -19,7 +19,7 @@ int gpu_launch_void_kernel_on_stream(CUstream s)
 {
         const int nblocks = 1;
         const int nthreads = 1;
-	void_kernel<<<nblocks, nthreads, 0, s>>>();
+        void_kernel<<<nblocks, nthreads, 0, s>>>();
         CUDACHECK(cudaGetLastError());
         return 0;
 }
@@ -44,7 +44,7 @@ int gpu_launch_dummy_kernel(void)
         int p0 = 100;
         float p1 = 1.1f;
         float *p2 = NULL;
-	dummy_kernel<<<nblocks, nthreads, 0, gpu_stream>>>(p0, p1, p2);
+        dummy_kernel<<<nblocks, nthreads, 0, gpu_stream>>>(p0, p1, p2);
         CUDACHECK(cudaGetLastError());
         return 0;
 }
@@ -78,7 +78,7 @@ int gpu_launch_calc_kernel_on_stream(size_t size, CUstream s)
         // at least 1 thr block
         int nb = std::min(((n + nthreads - 1) / nthreads), nblocks);
         assert(nb >= 1);
-	calc_kernel<<<nb, nthreads, 0, s>>>(n, 1.0f, in, out);
+        calc_kernel<<<nb, nthreads, 0, s>>>(n, 1.0f, in, out);
         CUDACHECK(cudaGetLastError());
         return 0;
 }
