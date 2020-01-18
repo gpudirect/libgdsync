@@ -167,6 +167,27 @@ out:
 
 //-----------------------------------------------------------------------------
 
+static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_wr *wr)
+{
+        int ret = 0;
+        mlx5dv_obj dv_obj;
+        mlx5dv_ah dv_ah;
+
+        dv_obj.ah.in = wr->wr.ud.ah;
+        dv_obj.ah.out = &dv_ah;
+
+        ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_AH);
+        if (ret) {
+                gds_err("Error %d in mlx5dv_init_obj(..., MLX5DV_OBJ_AH)\n", ret);
+                return ret;
+        }
+
+        memcpy(&seg->av, dv_ah.av, sizeof(struct mlx5_wqe_av));
+        seg->av.dqp_dct = htobe32(wr->wr.ud.remote_qpn | MLX5_EXTENDED_UD_AV);
+        seg->av.key.qkey.qkey = htobe32(wr->wr.ud.remote_qkey);
+        return ret;
+}
+
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, 
                 gds_send_wr **bad_ewr, 
                 gds_send_request_t *request)
@@ -179,8 +200,8 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         int i;
         int nreq;
 
-        struct mlx5_wqe_ctrl_seg *ctrl;
-        struct mlx5_wqe_data_seg *dpseg;
+        struct mlx5_wqe_ctrl_seg *ctrl_seg;
+        struct mlx5_wqe_data_seg *data_seg;
 
         struct gds_peer_op_wr *wr;
 
@@ -205,31 +226,45 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         #endif
 
         // Emulating ibv_exp_post_send
+        qend = (void *)((char *)qp->dv_qp.sq.buf + (qp->dv_qp.sq.wqe_cnt * qp->dv_qp.sq.stride));
         for (nreq = 0; p_ewr; ++nreq, p_ewr = p_ewr->next) {
-                qend = (void *)((char *)qp->dv_qp.sq.buf + (qp->dv_qp.sq.wqe_cnt * qp->dv_qp.sq.stride));
-
                 idx = qp->sq_cur_post & (qp->dv_qp.sq.wqe_cnt - 1);
                 seg = (void *)((char *)qp->dv_qp.sq.buf + (idx * qp->dv_qp.sq.stride));
 
-                ctrl = (struct mlx5_wqe_ctrl_seg *)seg;
-
-                seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_ctrl_seg));
+                ctrl_seg = (struct mlx5_wqe_ctrl_seg *)seg;
                 size = sizeof(struct mlx5_wqe_ctrl_seg) / 16;
+                seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_ctrl_seg));
 
-                dpseg = (struct mlx5_wqe_data_seg *)seg;
+                switch (qp->qp->qp_type) {
+                        case IBV_QPT_UD:
+                                ret = set_datagram_seg((struct mlx5_wqe_datagram_seg *)seg, p_ewr);
+                                if (ret)
+                                        goto out;
+                                size = sizeof(struct mlx5_wqe_datagram_seg) / 16;
+                                seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_datagram_seg));
+                                if (seg == qend)
+                                        seg = qp->dv_qp.sq.buf;
+                                break;
+                        default:
+                                gds_err("Encountered unsupported qp_type. We currently support only IBV_QPT_UD\n");
+                                ret = -1;
+                                goto out;
+                }
+
+                data_seg = (struct mlx5_wqe_data_seg *)seg;
                 for (i = 0; i < p_ewr->num_sge; ++i) {
-                        if (dpseg == qend) {
+                        if (data_seg == qend) {
                                 seg = qp->dv_qp.sq.buf;
-                                dpseg = (struct mlx5_wqe_data_seg *)seg;
+                                data_seg = (struct mlx5_wqe_data_seg *)seg;
                         }
                         if (p_ewr->sg_list[i].length) {
-                                mlx5dv_set_data_seg(dpseg, p_ewr->sg_list[i].length, p_ewr->sg_list[i].lkey, p_ewr->sg_list[i].addr);
-                                ++dpseg;
+                                mlx5dv_set_data_seg(data_seg, p_ewr->sg_list[i].length, p_ewr->sg_list[i].lkey, p_ewr->sg_list[i].addr);
+                                ++data_seg;
                                 size += sizeof(struct mlx5_wqe_data_seg) / 16;
                         }
                 }
 
-                mlx5dv_set_ctrl_seg(ctrl, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, qp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
+                mlx5dv_set_ctrl_seg(ctrl_seg, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, qp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
 
                 qp->send_cq.wrid[idx] = p_ewr->wr_id;
                 qp->sq_cur_post += (size * 16 + qp->dv_qp.sq.stride - 1) / qp->dv_qp.sq.stride;
@@ -257,7 +292,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         wr = wr->next;
 
         wr->type = GDS_PEER_OP_STORE_QWORD;
-        wr->wr.qword_va.data = *(__be64 *)ctrl;
+        wr->wr.qword_va.data = *(__be64 *)ctrl_seg;
         wr->wr.qword_va.target_id = qp->peer_va_id_bf;
         wr->wr.qword_va.offset = qp->bf_offset;
 

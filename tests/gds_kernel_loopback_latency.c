@@ -1207,7 +1207,8 @@ int main(int argc, char *argv[])
                         struct ibv_wc wc[max_batch_len];
                         int ne = 0, i;
 
-                        ne = ibv_poll_cq(ctx->rx_cq, max_batch_len, wc);
+                        //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len, wc);
+                        ne = gds_poll_cq(&ctx->gds_qp->recv_cq, max_batch_len, wc);
                         if (ne < 0) {
                                 fprintf(stderr, "poll RX CQ failed %d\n", ne);
                                 return 1;
@@ -1243,7 +1244,8 @@ int main(int argc, char *argv[])
                         struct ibv_wc wc[max_batch_len];
                         int ne, i;
 
-                        ne = ibv_poll_cq(ctx->tx_cq, max_batch_len, wc);
+                        //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len, wc);
+                        ne = gds_poll_cq(&ctx->gds_qp->send_cq, max_batch_len, wc);
                         if (ne < 0) {
                                 fprintf(stderr, "poll TX CQ failed %d\n", ne);
                                 return 1;
