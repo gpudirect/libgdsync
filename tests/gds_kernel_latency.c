@@ -1158,11 +1158,6 @@ int main(int argc, char *argv[])
         }
 
 
-        /*int trigger = 0;
-          while (trigger == 0)
-          sleep(5);*/
-
-
         const char *tags = NULL;
         if (peersync) {
                 tags = "wait trk|pollrxcq|polltxcq|postrecv|postwork| poketrk";
