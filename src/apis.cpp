@@ -173,11 +173,12 @@ static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_w
         mlx5dv_obj dv_obj;
         mlx5dv_ah dv_ah;
 
+        memset(&dv_ah, 0, sizeof(mlx5dv_ah));
         dv_obj.ah.in = wr->wr.ud.ah;
         dv_obj.ah.out = &dv_ah;
 
         ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_AH);
-        if (ret) {
+        if (ret || dv_ah.av == NULL) {
                 gds_err("Error %d in mlx5dv_init_obj(..., MLX5DV_OBJ_AH)\n", ret);
                 return ret;
         }
