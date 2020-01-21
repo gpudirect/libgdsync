@@ -1959,7 +1959,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
         gds_buf *buf = NULL;
         void *ptr = NULL;
 
-        printf("pd_mem_alloc: pd=%p, pd_context=%p, size=%zu, alignment=%zu, resource_type=0x%lx\n",
+        gds_dbg("pd_mem_alloc: pd=%p, pd_context=%p, size=%zu, alignment=%zu, resource_type=0x%lx\n",
                 pd, pd_context, size, alignment, resource_type);
 
         switch (resource_type) {
@@ -1975,14 +1975,14 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
 
         if (!buf) {
                 int err;
-                printf("alloc on host\n");
+                gds_dbg("alloc on host\n");
                 if ((err = posix_memalign(&ptr, alignment, size)) != 0) {
                         gds_err("error %d in posix_memalign\n", err);
                         return NULL;
                 }
         }
         else {
-                printf("alloc on GPU\n");
+                gds_dbg("alloc on GPU\n");
                 ptr = buf->addr;
         }
 
@@ -2002,7 +2002,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
 static void pd_mem_free(struct ibv_pd *pd, void *pd_context, void *ptr,
                         uint64_t resource_type)
 {
-        printf("pd_mem_free: pd=%p, pd_context=%p, ptr=%p, resource_type=0x%lx\n",
+        gds_dbg("pd_mem_free: pd=%p, pd_context=%p, ptr=%p, resource_type=0x%lx\n",
                 pd, pd_context, ptr, resource_type);
 }
 
