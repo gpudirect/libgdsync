@@ -39,7 +39,6 @@ namespace gdsync {
                 ERROR_INVALID = 22, //         EINVAL
         };
 
-        //typedef enum wait_cond { WAIT_GEQ, WAIT_EQ, WAIT_AND, WAIT_NOR } wait_cond_t;
         typedef gds_wait_cond_flag_t wait_cond_t;
 
         struct sem32 {
@@ -84,7 +83,6 @@ namespace gdsync {
 
                 // NOTE: fences must be added by caller
                 template<typename S> __device__ inline void release(S &sem) {
-                        //printf("[%d:%d] release %p=%08x\n", blockIdx.x, threadIdx.x, sem.access_once(), sem.value);
                         assert(0 != sem.access_once());
                         *sem.access_once() = sem.value;
                 }
@@ -118,7 +116,6 @@ namespace gdsync {
                         int ret = ERROR_TIMEOUT;
                         volatile clock_t tmout = clock() + large_timeout;
                         do {
-                                //printf("ptr=%p\n", sem.access_once());
                                 typedef typename S::Tsigned Ts;
                                 if ((Ts)*sem.access_once() - (Ts)sem.value >= 0) {
                                         ret = 0;
