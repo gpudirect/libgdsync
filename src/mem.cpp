@@ -163,20 +163,32 @@ static int gds_unmap_gdr_memory(gds_mem_desc_t *desc)
 static int gds_alloc_gdr_memory(gds_mem_desc_t *desc, size_t size, int flags)
 {
         CUdeviceptr d_buf = 0;
-        size_t buf_size = size;
+        CUdeviceptr d_buf_aligned = 0;
+        off_t offset = 0;
+        size_t buf_size = size + GDS_GPU_PAGE_SIZE;
         int ret = 0;
 
         assert(desc);
 
         CUCHECK(cuMemAlloc(&d_buf, buf_size));
-        gds_dbg("allocated GPU polling buffer d_buf=%p\n", (void*)d_buf);
+
+        offset = d_buf & GDS_GPU_PAGE_OFF;
+        if (offset == 0)
+                d_buf_aligned = d_buf;
+        else
+                d_buf_aligned = (d_buf + GDS_GPU_PAGE_SIZE - 1) & GDS_GPU_PAGE_MASK;
+
+        gds_dbg("allocated GPU polling buffer d_buf=0x%llx req_size=%zu d_buf_aligned=0x%llx buf_size=%zu\n", d_buf, size, d_buf_aligned, buf_size);
         //CUCHECK(cuMemsetD8(d_buf, 0, buf_size));
 
-        ret = gds_map_gdr_memory(desc, d_buf, buf_size, flags);
+        ret = gds_map_gdr_memory(desc, d_buf_aligned, size, flags);
         if (ret) {
                 gds_err("error %d while mapping gdr memory\n", ret);
                 CUCHECK(cuMemFree(d_buf));
+                return ret;
         }
+
+        desc->original_d_ptr = d_buf;
         return ret;
 }
 
@@ -198,7 +210,7 @@ static int gds_free_gdr_memory(gds_mem_desc_t *desc)
                 gds_err("error %d while unmapping gdr, going on anyway\n", ret);
         }
 
-        CUCHECK(cuMemFree(desc->d_ptr));
+        CUCHECK(cuMemFree(desc->original_d_ptr));
         return ret;
 }
 

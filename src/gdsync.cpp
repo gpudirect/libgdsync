@@ -1939,6 +1939,8 @@ int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc)
 static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
                         size_t alignment, uint64_t resource_type)
 {
+        assert(pd_context);
+
         gds_peer_attr *peer_attr = (gds_peer_attr *)pd_context;
         gds_buf_alloc_attr buf_attr = {
                 .length         = size,
@@ -1947,10 +1949,11 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
                 .alignment      = (uint32_t)alignment,
                 .comp_mask      = peer_attr->comp_mask
         };
+        gds_peer *peer = peer_from_id(peer_attr->peer_id);
+        gds_qp *gqp; 
+        uint64_t range_id;
         gds_buf *buf = NULL;
         void *ptr = NULL;
-
-        assert(pd_context);
 
         printf("pd_mem_alloc: pd=%p, pd_context=%p, size=%zu, alignment=%zu, resource_type=0x%lx\n",
                 pd, pd_context, size, alignment, resource_type);
@@ -1979,10 +1982,15 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
                 ptr = buf->addr;
         }
 
-        if (peer_attr->register_va(ptr, size, peer_attr->peer_id, buf) == 0) {
+        assert(peer->obj);
+        gqp = (gds_qp *)peer->obj;
+
+        if ((range_id = peer_attr->register_va(ptr, size, peer_attr->peer_id, buf)) == 0) {
                 gds_err("error in register_va\n");
                 return NULL;
         }
+        else if (resource_type == MLX5DV_RES_TYPE_DBR)
+                gqp->peer_va_id_dbr = range_id;
         
         return ptr;
 }
@@ -2092,6 +2100,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         //qp_attr->comp_mask |= GDS_QP_INIT_ATTR_PD;
         //qp_attr->comp_mask |= IBV_QP_INIT_ATTR_PD;
 
+        peer->obj = gqp;
         peer->alloc_type = gds_peer::WQ;
         peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
         if (flags & GDS_CREATE_QP_WQ_ON_GPU) {
@@ -2143,17 +2152,6 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         gqp->send_cq.wrid = (uint64_t *)malloc(gqp->dv_qp.sq.wqe_cnt * sizeof(uint64_t));
         if (!gqp->send_cq.wrid) {
                 gds_err("error in malloc gqp->send_cq.wrid\n");
-                goto err;
-        }
-
-        gqp->peer_va_id_dbr = peer_attr->register_va(
-                (uint32_t *)gqp->dv_qp.dbrec,
-                sizeof(__be32) * (MLX5_SND_DBR + 1),
-                peer_attr->peer_id,
-                NULL
-        );
-        if (!gqp->peer_va_id_dbr) {
-                gds_err("error in gqp->peer_va_id_dbr = peer_attr->register_va\n");
                 goto err;
         }
 

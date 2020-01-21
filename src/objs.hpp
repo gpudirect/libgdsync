@@ -140,6 +140,7 @@ struct gds_peer {
         gds_peer_attr attr;
         task_queue *tq;
 
+        void *obj;
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
         // This field works as a ugly run-time parameters passing
         // mechanism, as it carries tracking info during the QP creation

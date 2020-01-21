@@ -36,6 +36,7 @@
 GDS_BEGIN_DECLS
 
 typedef struct gds_mem_desc {
+        CUdeviceptr original_d_ptr;
         CUdeviceptr d_ptr;
         void       *h_ptr;
         void       *bar_ptr;
