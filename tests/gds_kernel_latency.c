@@ -550,6 +550,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
                 .wr_id	    = PINGPONG_SEND_WRID,
                 .sg_list    = &list,
                 .num_sge    = 1,
+                .opcode     = IBV_WR_SEND,
                 //.exp_opcode = IBV_EXP_WR_SEND,
                 //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
@@ -561,17 +562,18 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
                 }//,
                 //.comp_mask = 0
         };
-#if 0
+
         if (IBV_QPT_UD != gds_qpt) {
                 memset(&ewr, 0, sizeof(ewr));
                 ewr.num_sge = 1;
-                ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-                ewr.exp_opcode = IBV_EXP_WR_SEND;
+                ewr.opcode = IBV_WR_SEND;
+                //ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
+                //ewr.exp_opcode = IBV_EXP_WR_SEND;
                 ewr.wr_id = PINGPONG_SEND_WRID;
                 ewr.sg_list = &list;
                 ewr.next = NULL;
         }
-#endif
+
         gds_send_wr *bad_ewr;
         return gds_stream_queue_send(*p_gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
 }
@@ -588,6 +590,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
                 .wr_id      = PINGPONG_SEND_WRID,
                 .sg_list    = &list,
                 .num_sge    = 1,
+                .opcode     = IBV_WR_SEND,
                 //.exp_opcode = IBV_EXP_WR_SEND,
                 //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
@@ -603,6 +606,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
         if (IBV_QPT_UD != gds_qpt) {
                 memset(&ewr, 0, sizeof(ewr));
                 ewr.num_sge = 1;
+                ewr.opcode = IBV_WR_SEND;
                 //ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
                 //ewr.exp_opcode = IBV_EXP_WR_SEND;
                 ewr.wr_id = PINGPONG_SEND_WRID;

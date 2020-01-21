@@ -189,6 +189,8 @@ static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_w
         return ret;
 }
 
+//-----------------------------------------------------------------------------
+
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, 
                 gds_send_wr **bad_ewr, 
                 gds_send_request_t *request)
@@ -205,6 +207,12 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         struct mlx5_wqe_data_seg *data_seg;
 
         struct gds_peer_op_wr *wr;
+
+        if (p_ewr->opcode != IBV_WR_SEND) {
+                gds_err("Unsupported opcode. Currently we support only IBV_WR_SEND\n");
+                ret = -1;
+                goto out;
+        }
 
         gds_init_send_info(request);
         assert(qp);
@@ -246,9 +254,11 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
                                 if (seg == qend)
                                         seg = qp->dv_qp.sq.buf;
                                 break;
+                        case IBV_QPT_RC:
+                                break;
                         default:
                                 gds_err("Encountered unsupported qp_type. We currently support only IBV_QPT_UD\n");
-                                ret = -1;
+                                ret = -2;
                                 goto out;
                 }
 

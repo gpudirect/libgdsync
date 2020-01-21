@@ -500,6 +500,7 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
                 .wr_id	    = PINGPONG_SEND_WRID,
                 .sg_list    = &list,
                 .num_sge    = 1,
+                .opcode     = IBV_WR_SEND,
                 //.exp_opcode = IBV_EXP_WR_SEND,
                 //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
@@ -526,6 +527,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
                 .wr_id	    = PINGPONG_SEND_WRID,
                 .sg_list    = &list,
                 .num_sge    = 1,
+                .opcode     = IBV_WR_SEND,
                 //.exp_opcode = IBV_EXP_WR_SEND,
                 //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
@@ -552,6 +554,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
                 .wr_id	    = PINGPONG_SEND_WRID,
                 .sg_list    = &list,
                 .num_sge    = 1,
+                .opcode     = IBV_WR_SEND,
                 //.exp_opcode = IBV_EXP_WR_SEND,
                 //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
