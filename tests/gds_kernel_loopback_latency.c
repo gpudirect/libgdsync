@@ -180,7 +180,6 @@ static struct pingpong_dest *pp_client_exch_dest(const char *servername, int por
         if (!rem_dest)
                 goto out;
         memcpy(rem_dest, my_dest, sizeof(struct pingpong_dest));
-        //rem_dest->gid = my_dest->gid;
         fprintf(stderr, "%04x:%06x:%06x\n", rem_dest->lid, rem_dest->qpn,
                         rem_dest->psn);
 
@@ -242,7 +241,6 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
         printf("ctx buf=%p\n", ctx->buf);
         ctx->rxbuf = (char*)ctx->buf;
         ctx->txbuf = (char*)ctx->buf + align_to(size + 40, page_size);
-        //ctx->rx_flag = (char*)ctx->buf + 2 * align_to(size + 40, page_size);
 
         ctx->rx_flag =  memalign(page_size, alloc_size);
         if (!ctx->rx_flag) {
@@ -262,7 +260,6 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 memset(ctx->buf, 0, alloc_size);
 
         memset(ctx->rx_flag, 0, alloc_size);
-        //gpu_register_host_mem(ctx->rx_flag, alloc_size);
 
         if (!ctx->skip_kernel_launch) {
                 // pipe-cleaner
@@ -298,13 +295,11 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 goto clean_comp_channel;
         }
 
-        //printf("BEFORE reg_mr(), sleeping 2s\n"); sleep(2);
         ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, alloc_size, IBV_ACCESS_LOCAL_WRITE);
         if (!ctx->mr) {
                 fprintf(stderr, "Couldn't register MR\n");
                 goto clean_pd;
         }
-        //printf("AFTER reg_mr(), sleeping 2s\n"); sleep(2);
 
         int gds_flags = 0;
         if (peersync_gpu_cq)
@@ -501,16 +496,13 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
                 .sg_list    = &list,
                 .num_sge    = 1,
                 .opcode     = IBV_WR_SEND,
-                //.exp_opcode = IBV_EXP_WR_SEND,
-                //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
                         .ud = {
                                 .ah          = ctx->ah,
                                 .remote_qpn  = qpn,
                                 .remote_qkey = 0x11111111
                         }
-                }//,
-                //.comp_mask = 0
+                }
         };
         gds_send_wr *bad_ewr;
         return gds_post_send(ctx->gds_qp, &ewr, &bad_ewr);
@@ -528,16 +520,13 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
                 .sg_list    = &list,
                 .num_sge    = 1,
                 .opcode     = IBV_WR_SEND,
-                //.exp_opcode = IBV_EXP_WR_SEND,
-                //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
                         .ud = {
                                 .ah          = ctx->ah,
                                 .remote_qpn  = qpn,
                                 .remote_qkey = 0x11111111
                         }
-                }//,
-                //.comp_mask = 0
+                }
         };
         gds_send_wr *bad_ewr;
         return gds_stream_queue_send(*p_gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
@@ -555,19 +544,15 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
                 .sg_list    = &list,
                 .num_sge    = 1,
                 .opcode     = IBV_WR_SEND,
-                //.exp_opcode = IBV_EXP_WR_SEND,
-                //.exp_send_flags = IBV_EXP_SEND_SIGNALED,
                 .wr         = {
                         .ud = {
                                 .ah          = ctx->ah,
                                 .remote_qpn  = qpn,
                                 .remote_qkey = 0x11111111
                         }
-                }//,
-                //.comp_mask = 0
+                }
         };
         gds_send_wr *bad_ewr;
-        //printf("gpu_post_send_on_stream\n");
         return gds_prepare_send(ctx->gds_qp, &ewr, &bad_ewr, req);
 }
 
@@ -699,7 +684,6 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         if (ret) {
                                 // TODO: rollback gpu send and wait send_cq
                                 gpu_err("error %d in gds_stream_wait_cq\n", ret);
-                                //exit(EXIT_FAILURE);
                                 retcode = -ret;
                                 break;
                         }
@@ -719,7 +703,6 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
         if (!retcode) {
                 retcode = i;
                 gpu_post_release_tracking_event(&gpu_stream_server);
-                //sleep(1);
         }
         NVTX_POP();
 
@@ -852,7 +835,6 @@ int main(int argc, char *argv[])
                                 break;
 
                         case 'd':
-                                //ib_devname = strdupa(optarg);
                                 ib_devname = strdup(optarg);
                                 break;
 
@@ -990,7 +972,6 @@ int main(int argc, char *argv[])
         const char *tags = NULL;
         tags = "wait trk|pollrxcq|polltxcq|postrecv|postwork| poketrk";
         prof_init(&prof, 100000, 100000, "100us", 60, 2, tags);
-        //prof_init(&prof, 100, 100, "100ns", 25*4, 2, tags);
         prof_disable(&prof);
 
         page_size = sysconf(_SC_PAGESIZE);
@@ -1100,15 +1081,11 @@ int main(int argc, char *argv[])
                 goto out;
         }
 
-        //printf("sleeping 10s\n");
-        //sleep(10);
-
         // for performance reasons, multiple batches back-to-back are posted here
         rcnt = scnt = 0;
         nposted = 0;
         routs = 0;
         const int n_batches = 3;
-        //int prev_batch_len = 0;
         int last_batch_len = 0;
         int n_post = 0;
         int n_posted;
@@ -1136,7 +1113,6 @@ int main(int argc, char *argv[])
                 }
                 routs += n_posted;
                 nposted += n_posted;
-                //prev_batch_len = last_batch_len;
                 last_batch_len = n_posted;
                 printf("[%d] batch %d: posted %d sequences\n", my_rank, batch, n_posted);
         }
@@ -1188,7 +1164,6 @@ int main(int argc, char *argv[])
                 ++iter;
                 PROF(&prof, prof_idx++);
 
-                //printf("before tracking\n"); fflush(stdout);
                 int ret = gpu_wait_tracking_event(1000*1000);
                 if (ret == ENOMEM) {
                         gpu_dbg("gpu_wait_tracking_event nothing to do (%d)\n", ret);
@@ -1200,7 +1175,6 @@ int main(int argc, char *argv[])
                         gpu_err("gpu_wait_tracking_event failed (%d)\n", ret);
                         got_error = ret;
                 }
-                //gpu_infoc(20, "after tracking\n");
 
                 PROF(&prof, prof_idx++);
 
@@ -1210,14 +1184,12 @@ int main(int argc, char *argv[])
                         struct ibv_wc wc[max_batch_len];
                         int ne = 0, i;
 
-                        //ne = ibv_poll_cq(ctx->rx_cq, max_batch_len, wc);
                         ne = gds_poll_cq(&ctx->gds_qp->recv_cq, max_batch_len, wc);
                         if (ne < 0) {
                                 fprintf(stderr, "poll RX CQ failed %d\n", ne);
                                 return 1;
                         }
                         n_rx_ev += ne;
-                        //if (ne) printf("ne=%d\n", ne);
                         for (i = 0; i < ne; ++i) {
                                 if (wc[i].status != IBV_WC_SUCCESS) {
                                         fprintf(stderr, "Failed status %s (%d) for wr_id %d\n",
@@ -1247,7 +1219,6 @@ int main(int argc, char *argv[])
                         struct ibv_wc wc[max_batch_len];
                         int ne, i;
 
-                        //ne = ibv_poll_cq(ctx->tx_cq, max_batch_len, wc);
                         ne = gds_poll_cq(&ctx->gds_qp->send_cq, max_batch_len, wc);
                         if (ne < 0) {
                                 fprintf(stderr, "poll TX CQ failed %d\n", ne);
@@ -1282,13 +1253,11 @@ int main(int argc, char *argv[])
                 if (n_tx_ev || n_rx_ev) {
                         // update counters
                         routs -= last_batch_len;
-                        //prev_batch_len = last_batch_len;
                         if (n_tx_ev != last_batch_len)
                                 gpu_dbg("[%d] partially completed batch, got tx ev %d, batch len %d\n", iter, n_tx_ev, last_batch_len);
                         if (n_rx_ev != last_batch_len)
                                 gpu_dbg("[%d] partially completed batch, got rx ev %d, batch len %d\n", iter, n_rx_ev, last_batch_len);
                         if (nposted < iters) {
-                                //fprintf(stdout, "rcnt=%d scnt=%d routs=%d nposted=%d\n", rcnt, scnt, routs, nposted); fflush(stdout);
                                 // potentially submit new work
                                 n_post = min(min(ctx->rx_depth/2, iters-nposted), max_batch_len);
                                 int n = pp_post_work(ctx, n_post, nposted, rem_dest->qpn, servername?1:0);
@@ -1299,23 +1268,17 @@ int main(int argc, char *argv[])
                                 last_batch_len = n;
                                 routs += n;
                                 nposted += n;
-                                //fprintf(stdout, "n_post=%d n=%d\n", n_post, n);
                         }
                 } else {
                         PROF(&prof, prof_idx++);
                         PROF(&prof, prof_idx++);
                 }
-                //usleep(10);
                 PROF(&prof, prof_idx++);
                 prof_update(&prof);
                 prof_idx = 0;
 
-                //fprintf(stdout, "%d %d\n", rcnt, scnt); fflush(stdout);
-
 
                 if (got_error || stream_cb_error) {
-                        //fprintf(stderr, "sleeping 10s then exiting for error\n");
-                        //sleep(10);
                         gpu_err("[%d] exiting due to error(s)\n", my_rank);
                         return 1;
                 }
@@ -1349,9 +1312,6 @@ int main(int argc, char *argv[])
                 prof_dump(&prof);
         }
         prof_destroy(&prof);
-
-        //ibv_ack_cq_events(ctx->cq, num_cq_events);
-
 
         return 0;
 
