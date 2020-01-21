@@ -33,13 +33,11 @@
 #include <string.h>
 #include <assert.h>
 
-//#include <map>
 #include <algorithm>
 #include <string>
 using namespace std;
 
 #include <cuda.h>
-//#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"

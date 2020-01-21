@@ -40,7 +40,6 @@
 using namespace std;
 
 #include <cuda.h>
-//#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"
@@ -192,7 +191,6 @@ int gds_register_mem_internal(void *ptr, size_t size, gds_memory_type_t type, CU
                         return EAGAIN;
                 }
                 else {
-                        //CUCHECK(res);
                         const char *err_str = NULL;
                         cuGetErrorString(res, &err_str);
                         gds_err("Error %d (%s) while register address=%p size=%zu (original size %zu) flags=%08x\n", 
@@ -246,127 +244,6 @@ int gds_unregister_mem(void *ptr, size_t size)
         return 0;
 }
 
-//-----------------------------------------------------------------------------
-
-#if 0
-int gds_mem_devptr(void *va, size_t n_bytes, CUdeviceptr *pdev_ptr)
-{
-        gds_err("not supported anymore\n");
-        return EINVAL;
-}
-#endif
-
-//-----------------------------------------------------------------------------
-#if 0
-
-#if 0
-        char *ptr = (char*)_ptr;
-        char *p = ptr;
-        bool new_reg = false;
-	bool first_page = true;
-
-        if (!size) {
-                gds_err("invalid 0 size buffer\n");
-                return EINVAL;
-        }
-
-        while (size) {
-                unsigned long addr = (unsigned long)p;
-                unsigned long page_addr = addr & GDS_HOST_PAGE_MASK;
-                unsigned long off = addr & GDS_HOST_PAGE_OFF;
-                unsigned long len = min((GDS_HOST_PAGE_SIZE - off), (unsigned long long)size);
-		CUdeviceptr page_dev_ptr = 0;
-                //gds_dbg("page_addr=%lx len=%lu\n", page_addr, len);
-                if (last_pinned.page_addr == page_addr) {
-                        gds_dbg("hit last_pinned cache\n");
-                        page_dev_ptr = last_pinned.dev_addr;
-                } else {
-                        //gds_dbg("traversing map\n");
-                        pindown_cache_t::iterator found = pinned_pages.find(page_addr);
-                        if (found != pinned_pages.end()) {
-                                page_dev_ptr = found->second;
-                        } else {
-                                unsigned int flags = CU_MEMHOSTREGISTER_DEVICEMAP | CU_MEMHOSTREGISTER_PORTABLE;
-                                if (is_iomem)
-                                        flags |= CU_MEMHOSTREGISTER_IOMEMORY;
-                                gds_dbg("registering page_addr=%lx iomem=%d\n", page_addr, is_iomem);
-                                CUresult res = cuMemHostRegister((void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
-                                if (res == CUDA_SUCCESS) {
-                                } else if ((res == CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED) ||
-                                           (res == CUDA_ERROR_ALREADY_MAPPED)) {
-                                        gds_warn("page=%p size=%llu is already registered with CUDA\n", (void*)page_addr, GDS_HOST_PAGE_SIZE);
-                                } else {
-                                        //CUCHECK(res);
-                                        const char *err_str = NULL;
-                                        cuGetErrorString(res, &err_str);
-                                        gds_err("Error '%s' while register address=%p size=%llu flags=%08x\n", 
-                                                err_str, (void*)page_addr, GDS_HOST_PAGE_SIZE, flags);
-                                        // TODO: handle ENOPERM
-                                        return EINVAL;
-                                }
-                                CUCHECK(cuMemHostGetDevicePointer(&page_dev_ptr, (void *)page_addr, 0));
-                                gds_dbg("page_ptr=%lx page_dev_ptr=%lx\n", page_addr, (unsigned long)page_dev_ptr);
-                                pinned_pages[page_addr] = page_dev_ptr;
-                                new_reg = true;
-                        }
-                        last_pinned.page_addr = page_addr;
-                        last_pinned.dev_addr = page_dev_ptr;
-                }
-		if (first_page) {
-		    first_page = 0;
-		    *dev_ptr = (CUdeviceptr) (page_dev_ptr + off);
-		}
-                size -= min(len, size);
-                p += len;
-        }
-#if 0
-        // consistency check
-        {
-                CUdeviceptr my_dev_ptr;
-                CUCHECK(cuMemHostGetDevicePointer(&my_dev_ptr, _ptr, 0));
-                assert(my_dev_ptr == *dev_ptr);
-        }
-#endif
-        return 0;
-#endif
-
-int gds_lookup_devptr(void *va, CUdeviceptr *dev_ptr)
-{
-        int retcode = EINVAL;
-        assert(dev_ptr);
-
-        unsigned long addr = (unsigned long)va;
-        unsigned long page_addr = addr & GDS_HOST_PAGE_MASK;
-        unsigned long off = addr & GDS_HOST_PAGE_OFF;
-        CUdeviceptr page_dev_ptr = 0;
-
-        //gds_dbg("page_addr=%lx len=%lu\n", page_addr, len);
-
-        if (last_pinned.page_addr == page_addr) {
-                gds_dbg("hit last_pinned cache\n");
-                page_dev_ptr = last_pinned.dev_addr;
-        } else {
-                //gds_dbg("traversing map\n");
-                pindown_cache_t::iterator found = pinned_pages.find(page_addr);
-                if (found != pinned_pages.end()) {
-                        page_dev_ptr = found->second;
-                }
-        }
-        if (page_dev_ptr) {
-                *dev_ptr = (CUdeviceptr) (page_dev_ptr + off);
-                retcode = 0;
-        }
-
-        return retcode;
-
-}
-
-int gds_unmap_mem(void *_ptr, size_t size)
-{
-        gds_err("not supported anymore\n");
-        return EINVAL;
-}
-#endif
 //-----------------------------------------------------------------------------
 /*
  * Local variables:

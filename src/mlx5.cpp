@@ -37,17 +37,8 @@
 #include "gdsync/mlx5.h"
 #include "utils.hpp"
 #include "memmgr.hpp"
-//#include "mem.hpp"
 #include "objs.hpp"
 #include "utils.hpp"
-
-#if 0
-                union { uint64_t qw; uint32_t dw[2]; } db_val;
-                db_val.qw = 0;
-                db_val.dw[0] = desc->data32;
-                db_val.dw[1] = desc->data32;
-                mlx5_i->db_value = db_val.qw;
-#endif
 
 //-----------------------------------------------------------------------------
 
@@ -292,13 +283,6 @@ int gds_mlx5_get_wait_info(int count, const gds_wait_request_t *requests, gds_ml
         for (int j=0; j<count; j++) {
                 gds_mlx5_wait_info *mlx5_i = mlx5_infos + j;
                 const gds_wait_request_t *request = requests + j;
-                #if 0
-                retcode = gds_mlx5_get_wait_descs(mlx5_i, request);
-                if (retcode) {
-                        gds_err("error %d while retrieving descriptors for %dth request\n", retcode, j);
-                        break;
-                }
-                #endif
                 gds_dbg("wait[%d] cqe_ptr=%p cqe_value=0x%08x flag_ptr=%p flag_value=0x%08x\n", 
                                 j, mlx5_i->cqe_ptr, mlx5_i->cqe_value, mlx5_i->flag_ptr, mlx5_i->flag_value);
         }
@@ -314,7 +298,6 @@ int gds_mlx5_get_dword_wait_info(uint32_t *ptr, uint32_t value, int flags, gds_m
         CUdeviceptr dev_ptr = 0;
 
         assert(NULL != ptr);
-        //assert((((unsigned long)ptr) & 0x3) == 0);
         memset(mlx5_info, 0, sizeof(&mlx5_info));
 
         retcode = gds_map_mem(ptr, sizeof(*ptr), memtype_from_flags(flags), &dev_ptr);

@@ -40,7 +40,6 @@
 using namespace std;
 
 #include <cuda.h>
-//#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"
@@ -179,7 +178,6 @@ static int gds_alloc_gdr_memory(gds_mem_desc_t *desc, size_t size, int flags)
                 d_buf_aligned = (d_buf + GDS_GPU_PAGE_SIZE - 1) & GDS_GPU_PAGE_MASK;
 
         gds_dbg("allocated GPU polling buffer d_buf=0x%llx req_size=%zu d_buf_aligned=0x%llx buf_size=%zu\n", d_buf, size, d_buf_aligned, buf_size);
-        //CUCHECK(cuMemsetD8(d_buf, 0, buf_size));
 
         ret = gds_map_gdr_memory(desc, d_buf_aligned, size, flags);
         if (ret) {
@@ -348,7 +346,6 @@ int gds_free_mapped_memory(gds_mem_desc_t *desc)
 //-----------------------------------------------------------------------------
 
 #define ROUND_TO(V,PS) ((((V) + (PS) - 1)/(PS)) * (PS))
-//#define ROUND_TO_GDR_GPU_PAGE(V) ROUND_TO(V, GDR_GPU_PAGE_SIZE)
 
 // allocate GPU memory with a GDR mapping (CPU can dereference it)
 int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle, gds_memory_type_t mem_type, bool has_cpu_mapping)
@@ -404,7 +401,6 @@ int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdevi
                 goto out;
         }
 
-        //ret = gds_alloc_mapped_memory(desc, size, GDS_MEMORY_GPU);
         ret = gds_alloc_mapped_memory(desc, size, mem_type);
         if (ret) {
                 gds_err("error %d while allocating mapped GPU buffers\n", ret);

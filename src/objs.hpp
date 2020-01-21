@@ -89,7 +89,6 @@ struct gds_buf {
         }
 };
 
-//typedef struct ibv_exp_peer_direct_attr gds_peer_attr;
 typedef struct {
         uint64_t        peer_id;
         struct gds_buf *(*buf_alloc)(struct gds_buf_alloc_attr *attr);
