@@ -1736,9 +1736,13 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         //memset(&attr, 0, sizeof(ibv_cq_init_attr_ex));
         //memset(&dv_attr, 0, sizeof(mlx5dv_cq_init_attr));
 
-        if(!context)
-        {
+        if (!context) {
                 gds_dbg("Invalid input context\n");
+                return NULL;
+        }
+
+        if (flags & GDS_ALLOC_CQ_ON_GPU) {
+                gds_err("Allocating CQ on GPU is currently not supported\n");
                 return NULL;
         }
 
