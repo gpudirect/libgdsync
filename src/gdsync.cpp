@@ -1936,10 +1936,72 @@ int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc)
 
 //-----------------------------------------------------------------------------
 
-struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
+static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
+                        size_t alignment, uint64_t resource_type)
+{
+        gds_peer_attr *peer_attr = (gds_peer_attr *)pd_context;
+        gds_buf_alloc_attr buf_attr = {
+                .length         = size,
+                .dir            = GDS_PEER_DIRECTION_FROM_PEER | GDS_PEER_DIRECTION_TO_HCA,
+                .peer_id        = peer_attr->peer_id,
+                .alignment      = (uint32_t)alignment,
+                .comp_mask      = peer_attr->comp_mask
+        };
+        gds_buf *buf = NULL;
+        void *ptr = NULL;
+
+        assert(pd_context);
+
+        printf("pd_mem_alloc: pd=%p, pd_context=%p, size=%zu, alignment=%zu, resource_type=0x%lx\n",
+                pd, pd_context, size, alignment, resource_type);
+
+        switch (resource_type) {
+                case MLX5DV_RES_TYPE_QP:
+                        break;
+                case MLX5DV_RES_TYPE_DBR:
+                        buf = peer_attr->buf_alloc(&buf_attr);
+                        break;
+                default:
+                        gds_err("request allocation with unsupported resource_type\n");
+                        return NULL;
+        }
+
+        if (!buf) {
+                int err;
+                printf("alloc on host\n");
+                if ((err = posix_memalign(&ptr, alignment, size)) != 0) {
+                        gds_err("error %d in posix_memalign\n", err);
+                        return NULL;
+                }
+        }
+        else {
+                printf("alloc on GPU\n");
+                ptr = buf->addr;
+        }
+
+        if (peer_attr->register_va(ptr, size, peer_attr->peer_id, buf) == 0) {
+                gds_err("error in register_va\n");
+                return NULL;
+        }
+        
+        return ptr;
+}
+
+static void pd_mem_free(struct ibv_pd *pd, void *pd_context, void *ptr,
+                        uint64_t resource_type)
+{
+        printf("pd_mem_free: pd=%p, pd_context=%p, ptr=%p, resource_type=0x%lx\n",
+                pd, pd_context, ptr, resource_type);
+}
+
+//-----------------------------------------------------------------------------
+
+struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
 {
         int ret = 0;
+        struct ibv_pd *pd = NULL;
+        struct ibv_parent_domain_init_attr pd_init_attr;
         struct gds_qp *gqp = NULL;
         struct ibv_qp *qp = NULL;
         struct gds_cq *rx_gcq = NULL, *tx_gcq = NULL;
@@ -1952,8 +2014,8 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
 
         int old_errno = errno;
 
-        gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", pd, context, gpu_id, flags, errno);
-        assert(pd);
+        gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", p_pd, context, gpu_id, flags, errno);
+        assert(p_pd);
         assert(context);
         assert(qp_attr);
 
@@ -1968,13 +2030,26 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                 return NULL;
         }
 
-        gqp->dev_context=context;
+        gqp->dev_context = context;
 
         // peer registration
-        gds_dbg("before gds_register_peer_ex\n");
+        gds_dbg("before gds_register_peer_by_ordinal\n");
         ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
-                gds_err("error %d in gds_register_peer_ex\n", ret);
+                gds_err("error %d in gds_register_peer_by_ordinal\n", ret);
+                goto err;
+        }
+
+        memset(&pd_init_attr, 0, sizeof(ibv_parent_domain_init_attr));
+        pd_init_attr.pd = p_pd;
+        pd_init_attr.comp_mask = IBV_PARENT_DOMAIN_INIT_ATTR_ALLOCATORS | IBV_PARENT_DOMAIN_INIT_ATTR_PD_CONTEXT;
+        pd_init_attr.alloc = pd_mem_alloc;
+        pd_init_attr.free = pd_mem_free;
+        pd_init_attr.pd_context = peer_attr;
+
+        pd = ibv_alloc_parent_domain(context, &pd_init_attr);
+        if (!pd) {
+                gds_err("error in ibv_alloc_parent_domain\n");
                 goto err;
         }
 
@@ -2072,22 +2147,22 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         }
 
         gqp->peer_va_id_dbr = peer_attr->register_va(
-                        (uint32_t *)gqp->dv_qp.dbrec,
-                        sizeof(__be32) * (MLX5_SND_DBR + 1),
-                        peer_attr->peer_id,
-                        NULL
-                        );
+                (uint32_t *)gqp->dv_qp.dbrec,
+                sizeof(__be32) * (MLX5_SND_DBR + 1),
+                peer_attr->peer_id,
+                NULL
+        );
         if (!gqp->peer_va_id_dbr) {
                 gds_err("error in gqp->peer_va_id_dbr = peer_attr->register_va\n");
                 goto err;
         }
 
         gqp->peer_va_id_bf = peer_attr->register_va(
-                        (uint32_t *)gqp->dv_qp.bf.reg,
-                        gqp->dv_qp.bf.size,
-                        peer_attr->peer_id,
-                        GDS_PEER_IOMEMORY
-                        );
+                (uint32_t *)gqp->dv_qp.bf.reg,
+                gqp->dv_qp.bf.size,
+                peer_attr->peer_id,
+                GDS_PEER_IOMEMORY
+        );
         if (!gqp->peer_va_id_bf) {
                 gds_err("error in gqp->peer_va_id_bf = peer_attr->register_va\n");
                 goto err;
