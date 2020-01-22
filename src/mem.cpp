@@ -64,6 +64,36 @@ static gdr_t gdr = 0;
 
 //-----------------------------------------------------------------------------
 
+static inline int is_gdr_mh_valid(gdr_mh_t mh)
+{
+        #if defined(GDR_API_MAJOR_VERSION) && (GDR_API_MAJOR_VERSION > 1)
+        return !!(mh.h);
+        #else
+        return !!(mh);
+        #endif
+}
+
+//-----------------------------------------------------------------------------
+
+/**
+ * Check that the version of libgdrapi.so (linked at runtime) and that of
+ * gdrapi.h (used during compilation) are compatible.
+ * @return 0 if they are compatible; -1 otherwise
+ */
+static int check_gdr_compatibility()
+{
+        #if defined(GDR_API_MAJOR_VERSION) && (GDR_API_MAJOR_VERSION > 1)
+        int major, minor;
+        gdr_runtime_get_version(&major, &minor);
+        return major == GDR_API_MAJOR_VERSION ? 0 : -1;
+        #else
+        // gdrapi v1 does not provide a way to check the runtime version.
+        return 0;
+        #endif
+}
+
+//-----------------------------------------------------------------------------
+
 static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t size, int flags)
 {
         gdr_mh_t mh;
@@ -80,6 +110,10 @@ static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t si
         assert(size);
 
         if (!gdr) {
+                if (check_gdr_compatibility()) {
+                        gds_err("incompatible gdrapi versions used during compile time and runtime.\n");
+                        exit(EXIT_FAILURE);
+                }
                 gdr = gdr_open();
                 if (!gdr) {
                         gds_err("can't initialize GDRCopy library\n");
@@ -128,7 +162,7 @@ static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t si
                 (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
 out:
         if (ret) {
-                if (mh) {
+                if (is_gdr_mh_valid(mh)) {
                         if (bar_ptr)
                                 gdr_unmap(gdr, mh, bar_ptr, buf_size);
                         gdr_unpin_buffer(gdr, mh);
@@ -147,7 +181,7 @@ static int gds_unmap_gdr_memory(gds_mem_desc_t *desc)
                 gds_err("GDRCopy library is not initialized\n");
                 exit(EXIT_FAILURE);
         }
-        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !desc->mh || !desc->bar_ptr) {
+        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !is_gdr_mh_valid(desc->mh) || !desc->bar_ptr) {
                 gds_err("invalid desc\n");
                 return EINVAL;
         }
@@ -186,7 +220,7 @@ static int gds_free_gdr_memory(gds_mem_desc_t *desc)
 {
         int ret = 0;
         assert(desc);
-        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !desc->mh || !desc->bar_ptr) {
+        if (!desc->d_ptr || !desc->h_ptr || !desc->alloc_size || !is_gdr_mh_valid(desc->mh) || !desc->bar_ptr) {
                 gds_err("invalid desc\n");
                 return EINVAL;
         }
@@ -243,7 +277,7 @@ static int gds_alloc_pinned_memory(gds_mem_desc_t *desc, size_t size, int flags)
         desc->bar_ptr = NULL;
         desc->flags = flags;
         desc->alloc_size = size;
-        desc->mh = 0;        
+        memset(&desc->mh, 0, sizeof(gdr_mh_t));
         gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
                 (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
 out:
