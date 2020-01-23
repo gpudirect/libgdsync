@@ -32,7 +32,6 @@ LT_INIT
 
 AC_SUBST(VERSION_INFO, [version_info] )
 
-m4_include([m4/ax_check_compile_flag.m4])
 AX_CHECK_COMPILE_FLAG([-std=c++0x], [CXXFLAGS="$CXXFLAGS -std=c++0x"])
 AX_PTHREAD
 
