@@ -74,23 +74,16 @@ struct gds_cq {
         uint32_t                curr_offset;
         uint32_t                cons_index;
         gds_cq_type_t           type;
-
         struct mlx5dv_cq        dv_cq;
-
         uint64_t               *wrid;
-
         uint64_t                active_buf_va_id;
-
         void                   *peer_attr;
-
         uint64_t                peer_va_id;
         uint32_t                peer_dir;
-
         struct {
                 void           *buf;
                 size_t          length;
         } peer_buf;
-
         struct gds_peek_entry **peer_peek_table;
         struct gds_peek_entry  *peer_peek_free;
 };
@@ -163,47 +156,6 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
 
 // batched submission APIs
 
-// Note: those flags below must not overlap with gds_memory_type_t
-typedef enum gds_wait_flags {
-        /** 
-         * add a trailing flush of the ingress GPUDirect RDMA data path on the
-         * GPU owning the stream 
-         */
-        GDS_WAIT_POST_FLUSH_REMOTE = 1<<3, 
-        /* alias for backward compatibility */
-        GDS_WAIT_POST_FLUSH = GDS_WAIT_POST_FLUSH_REMOTE 
-} gds_wait_flags_t;
-
-typedef enum gds_write_flags {
-        /* add a heading memory barrier to the write value operation */
-        GDS_WRITE_PRE_BARRIER_SYS = 1<<4, 
-        /* alias for backward compatibility */
-        GDS_WRITE_PRE_BARRIER = GDS_WRITE_PRE_BARRIER_SYS 
-} gds_write_flags_t;
-
-typedef enum gds_write_memory_flags {
-        /* add a trailing memory barrier to the memory write operation */
-        GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, 
-        /**
-         * add a heading memory barrier to the memory write operation, for
-         * convenience only as not a native capability 
-         */
-        GDS_WRITE_MEMORY_PRE_BARRIER_SYS  = 1<<5 
-} gds_write_memory_flags_t;
-
-typedef enum gds_membar_flags {
-        GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
-        GDS_MEMBAR_DEFAULT      = 1<<5,
-        GDS_MEMBAR_SYS          = 1<<6,
-        /* modify the scope of the barrier, for internal use only */
-        GDS_MEMBAR_MLX5         = 1<<7 
-} gds_membar_flags_t;
-
-enum {
-        GDS_SEND_INFO_MAX_OPS = 32,
-        GDS_WAIT_INFO_MAX_OPS = 32
-};
-
 typedef enum gds_memory_type {
         /* use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
         GDS_MEMORY_GPU  = 1, 
@@ -212,8 +164,32 @@ typedef enum gds_memory_type {
         GDS_MEMORY_MASK = 0x7
 } gds_memory_type_t;
 
-enum ibv_exp_peer_direct_attr_mask {
-        GDS_PEER_DIRECT_VERSION = (1 << 0) /* Must be set */
+// Note: those flags below must not overlap with gds_memory_type_t
+typedef enum gds_wait_flags {
+        GDS_WAIT_POST_FLUSH_REMOTE = 1<<3, /*< add a trailing flush of the ingress GPUDirect RDMA data path on the GPU owning the stream */
+        GDS_WAIT_POST_FLUSH = GDS_WAIT_POST_FLUSH_REMOTE /*< alias for backward compatibility */
+} gds_wait_flags_t;
+
+typedef enum gds_write_flags {
+        GDS_WRITE_PRE_BARRIER_SYS = 1<<4, /*< add a heading memory barrier to the write value operation */
+        GDS_WRITE_PRE_BARRIER = GDS_WRITE_PRE_BARRIER_SYS /*< alias for backward compatibility */
+} gds_write_flags_t;
+
+typedef enum gds_write_memory_flags {
+        GDS_WRITE_MEMORY_POST_BARRIER_SYS = 1<<4, /*< add a trailing memory barrier to the memory write operation */
+        GDS_WRITE_MEMORY_PRE_BARRIER_SYS  = 1<<5 /*< add a heading memory barrier to the memory write operation, for convenience only as not a native capability */
+} gds_write_memory_flags_t;
+
+typedef enum gds_membar_flags {
+        GDS_MEMBAR_FLUSH_REMOTE = 1<<4,
+        GDS_MEMBAR_DEFAULT      = 1<<5,
+        GDS_MEMBAR_SYS          = 1<<6,
+        GDS_MEMBAR_MLX5         = 1<<7 /*< modify the scope of the barrier, for internal use only */
+} gds_membar_flags_t;
+
+enum {
+        GDS_SEND_INFO_MAX_OPS = 32,
+        GDS_WAIT_INFO_MAX_OPS = 32
 };
 
 enum gds_peer_op {

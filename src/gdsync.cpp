@@ -1463,7 +1463,6 @@ static void gds_init_peer(gds_peer *peer, CUdevice dev, int gpu_id)
         }
         gds_dbg("caps=%016lx\n", peer->attr.caps);
         peer->attr.peer_dma_op_map_len = GDS_GPU_MAX_INLINE_SIZE;
-        peer->attr.comp_mask = GDS_PEER_DIRECT_VERSION;
         peer->attr.version = 1;
 
         peer->tq = new task_queue;
