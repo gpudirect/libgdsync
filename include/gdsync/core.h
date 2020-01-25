@@ -111,6 +111,12 @@ struct gds_qp {
         uint64_t peer_va_id_bf;
 };
 
+/* \brief: Poll a peer-enabled CQ.
+ *
+ * It works similar to ibv_poll_cq but may return EBUSY if a peek entry
+ * associated with the CQE is still busy.
+ */
+
 int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc);
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
