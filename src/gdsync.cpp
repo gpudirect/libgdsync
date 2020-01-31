@@ -731,7 +731,7 @@ out:
    INLCPY 128B
  */
 
-int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op_list_t &ops, int post_flags)
+int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_mlx5_peer_op_wr *op, gds_op_list_t &ops, int post_flags)
 {
         int retcode = 0;
         size_t n = 0;
@@ -763,7 +763,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op
         for (; op && n < n_ops; op = op->next, ++n) {
                 gds_dbg("op[%zu] type:%08x\n", n, op->type);
                 switch(op->type) {
-                        case GDS_PEER_OP_FENCE: {
+                        case GDS_MLX5_PEER_OP_FENCE: {
                                 gds_dbg("OP_FENCE: fence_flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                                 uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
                                 uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
@@ -810,7 +810,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op
                                 }
                                 break;
                         }
-                        case GDS_PEER_OP_STORE_DWORD: {
+                        case GDS_MLX5_PEER_OP_STORE_DWORD: {
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                         op->wr.dword_va.offset;
                                 uint32_t data = op->wr.dword_va.data;
@@ -845,7 +845,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op
                                 }
                                 break;
                         }
-                        case GDS_PEER_OP_STORE_QWORD: {
+                        case GDS_MLX5_PEER_OP_STORE_QWORD: {
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                         op->wr.qword_va.offset;
                                 uint64_t data = op->wr.qword_va.data;
@@ -888,7 +888,7 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op
 
                                 break;
                         }
-                        case GDS_PEER_OP_COPY_BLOCK: {
+                        case GDS_MLX5_PEER_OP_COPY_BLOCK: {
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
                                         op->wr.copy_op.offset;
                                 size_t len = op->wr.copy_op.len;
@@ -909,9 +909,9 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op
                                 retcode = gds_fill_inlcpy(peer, ops, dev_ptr, src, len, flags);
                                 break;
                         }
-                        case GDS_PEER_OP_POLL_AND_DWORD:
-                        case GDS_PEER_OP_POLL_GEQ_DWORD:
-                        case GDS_PEER_OP_POLL_NOR_DWORD: {
+                        case GDS_MLX5_PEER_OP_POLL_AND_DWORD:
+                        case GDS_MLX5_PEER_OP_POLL_GEQ_DWORD:
+                        case GDS_MLX5_PEER_OP_POLL_NOR_DWORD: {
                                 int poll_cond;
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                         op->wr.dword_va.offset;
@@ -924,13 +924,13 @@ int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op
                                 gds_dbg("OP_WAIT_DWORD dev_ptr=%llx data=%" PRIx32 " type=%" PRIx32 "\n", dev_ptr, data, (uint32_t)op->type);
 
                                 switch(op->type) {
-                                        case GDS_PEER_OP_POLL_NOR_DWORD:
+                                        case GDS_MLX5_PEER_OP_POLL_NOR_DWORD:
                                                 poll_cond = GDS_WAIT_COND_NOR;
                                                 break;
-                                        case GDS_PEER_OP_POLL_GEQ_DWORD:
+                                        case GDS_MLX5_PEER_OP_POLL_GEQ_DWORD:
                                                 poll_cond = GDS_WAIT_COND_GEQ;
                                                 break;
-                                        case GDS_PEER_OP_POLL_AND_DWORD:
+                                        case GDS_MLX5_PEER_OP_POLL_AND_DWORD:
                                                 poll_cond = GDS_WAIT_COND_AND;
                                                 break;
                                         default:
@@ -960,7 +960,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags)
+int gds_post_ops_on_cpu(size_t n_ops, struct gds_mlx5_peer_op_wr *op, int post_flags)
 {
         int retcode = 0;
         size_t n = 0;
@@ -968,7 +968,7 @@ int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags)
         for (; op && n < n_ops; op = op->next, ++n) {
                 gds_dbg("op[%zu]=%p\n", n, op);
                 switch(op->type) {
-                        case GDS_PEER_OP_FENCE: {
+                        case GDS_MLX5_PEER_OP_FENCE: {
                                 gds_dbg("FENCE flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                                 uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
                                 uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
@@ -1000,7 +1000,7 @@ int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags)
                                 }
                                 break;
                         }
-                        case GDS_PEER_OP_STORE_DWORD: {
+                        case GDS_MLX5_PEER_OP_STORE_DWORD: {
                                 uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
                                 uint32_t data = op->wr.dword_va.data;
                                 // A || B || C || E
@@ -1008,14 +1008,14 @@ int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags)
                                 gds_atomic_set(ptr, data);
                                 break;
                         }
-                        case GDS_PEER_OP_STORE_QWORD: {
+                        case GDS_MLX5_PEER_OP_STORE_QWORD: {
                                 uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.qword_va.target_id)->va + op->wr.qword_va.offset);
                                 uint64_t data = op->wr.qword_va.data;
                                 gds_dbg("STORE_QWORD ptr=%p data=%016" PRIx64 "\n", ptr, data);
                                 gds_atomic_set(ptr, data);
                                 break;
                         }
-                        case GDS_PEER_OP_COPY_BLOCK: {
+                        case GDS_MLX5_PEER_OP_COPY_BLOCK: {
                                 uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.copy_op.target_id)->va + op->wr.copy_op.offset);
                                 uint64_t *src = (uint64_t*)op->wr.copy_op.src;
                                 size_t n_bytes = op->wr.copy_op.len;
@@ -1023,9 +1023,9 @@ int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags)
                                 gds_bf_copy(ptr, src, n_bytes);
                                 break;
                         }
-                        case GDS_PEER_OP_POLL_AND_DWORD:
-                        case GDS_PEER_OP_POLL_GEQ_DWORD:
-                        case GDS_PEER_OP_POLL_NOR_DWORD: {
+                        case GDS_MLX5_PEER_OP_POLL_AND_DWORD:
+                        case GDS_MLX5_PEER_OP_POLL_GEQ_DWORD:
+                        case GDS_MLX5_PEER_OP_POLL_NOR_DWORD: {
                                 int poll_cond;
                                 uint32_t *ptr = (uint32_t*)((ptrdiff_t)range_from_id(op->wr.dword_va.target_id)->va + op->wr.dword_va.offset);
                                 uint32_t value = op->wr.dword_va.data;
@@ -1037,13 +1037,13 @@ int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags)
                                 do {
                                         uint32_t data = gds_atomic_get(ptr);
                                         switch(op->type) {
-                                                case GDS_PEER_OP_POLL_NOR_DWORD:
+                                                case GDS_MLX5_PEER_OP_POLL_NOR_DWORD:
                                                         done = (0 != ~(data | value));
                                                         break;
-                                                case GDS_PEER_OP_POLL_GEQ_DWORD:
+                                                case GDS_MLX5_PEER_OP_POLL_GEQ_DWORD:
                                                         done = ((int32_t)data - (int32_t)value >= 0);
                                                         break;
-                                                case GDS_PEER_OP_POLL_AND_DWORD:
+                                                case GDS_MLX5_PEER_OP_POLL_AND_DWORD:
                                                         done = (0 != (data & value));
                                                         break;
                                                 default:
@@ -1101,17 +1101,17 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static void gds_dump_ops(struct gds_peer_op_wr *op, size_t count)
+static void gds_dump_ops(struct gds_mlx5_peer_op_wr *op, size_t count)
 {
         size_t n = 0;
         for (; op; op = op->next, ++n) {
                 gds_dbg("op[%zu] type:%d\n", n, op->type);
                 switch(op->type) {
-                        case GDS_PEER_OP_FENCE: {
+                        case GDS_MLX5_PEER_OP_FENCE: {
                                 gds_dbg("FENCE flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
                                 break;
                         }
-                        case GDS_PEER_OP_STORE_DWORD: {
+                        case GDS_MLX5_PEER_OP_STORE_DWORD: {
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                         op->wr.dword_va.offset;
                                 gds_dbg("STORE_QWORD data:%x target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
@@ -1119,7 +1119,7 @@ static void gds_dump_ops(struct gds_peer_op_wr *op, size_t count)
                                                 op->wr.dword_va.offset, dev_ptr);
                                 break;
                         }
-                        case GDS_PEER_OP_STORE_QWORD: {
+                        case GDS_MLX5_PEER_OP_STORE_QWORD: {
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                         op->wr.qword_va.offset;
                                 gds_dbg("STORE_QWORD data:%" PRIx64 " target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
@@ -1127,7 +1127,7 @@ static void gds_dump_ops(struct gds_peer_op_wr *op, size_t count)
                                                 op->wr.qword_va.offset, dev_ptr);
                                 break;
                         }
-                        case GDS_PEER_OP_COPY_BLOCK: {
+                        case GDS_MLX5_PEER_OP_COPY_BLOCK: {
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
                                         op->wr.copy_op.offset;
                                 gds_dbg("COPY_BLOCK src:%p len:%zu target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
@@ -1136,12 +1136,12 @@ static void gds_dump_ops(struct gds_peer_op_wr *op, size_t count)
                                                 dev_ptr);
                                 break;
                         }
-                        case GDS_PEER_OP_POLL_AND_DWORD:
-                        case GDS_PEER_OP_POLL_NOR_DWORD: {
+                        case GDS_MLX5_PEER_OP_POLL_AND_DWORD:
+                        case GDS_MLX5_PEER_OP_POLL_NOR_DWORD: {
                                 CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                         op->wr.dword_va.offset;
                                 gds_dbg("%s data:%08x target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n", 
-                                                (op->type==GDS_PEER_OP_POLL_AND_DWORD) ? "POLL_AND_DW" : "POLL_NOR_SDW",
+                                                (op->type==GDS_MLX5_PEER_OP_POLL_AND_DWORD) ? "POLL_AND_DW" : "POLL_NOR_SDW",
                                                 op->wr.dword_va.data, 
                                                 op->wr.dword_va.target_id, 
                                                 op->wr.dword_va.offset, 
@@ -1162,7 +1162,7 @@ static void gds_dump_ops(struct gds_peer_op_wr *op, size_t count)
 void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
 {
         for (size_t j=0; j<count; ++j) {
-                struct gds_peer_peek *peek = &request[j].peek;
+                struct gds_mlx5_peer_peek *peek = &request[j].peek;
                 gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%" PRIx64 " comp_mask:%08x\n", 
                                 j, peek->entries, peek->whence, peek->offset, 
                                 peek->peek_id, peek->comp_mask);
@@ -1684,7 +1684,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         }
 
         old_errno = errno;
-        gcq->peer_peek_table = (struct gds_peek_entry **)malloc(sizeof(struct gds_peek_entry *) * gcq->dv_cq.cqe_cnt);
+        gcq->peer_peek_table = (struct gds_mlx5_peek_entry **)malloc(sizeof(struct gds_mlx5_peek_entry *) * gcq->dv_cq.cqe_cnt);
         if (!gcq->peer_peek_table) {
                 gds_err("error %d in malloc peer_peek_table, old_errno %d\n", errno, old_errno);
                 return NULL;
@@ -1694,7 +1694,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 
         old_errno = errno;
         ba_attr = {
-                .length         = sizeof(struct gds_peek_entry) * gcq->dv_cq.cqe_cnt,
+                .length         = sizeof(struct gds_mlx5_peek_entry) * gcq->dv_cq.cqe_cnt,
                 .dir            = gcq->peer_dir,
                 .peer_id        = peer_attr->peer_id,
                 .alignment      = (uint32_t)sysconf(_SC_PAGESIZE),
@@ -1718,10 +1718,10 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
 
         memset(gcq->peer_buf.buf, 0, gcq->peer_buf.length);
 
-        gcq->peer_peek_free = (struct gds_peek_entry *)gcq->peer_buf.buf;
+        gcq->peer_peek_free = (struct gds_mlx5_peek_entry *)gcq->peer_buf.buf;
         for (i = 0; i < gcq->dv_cq.cqe_cnt - 1; ++i)
                 gcq->peer_peek_free[i].next = i + 1;
-        gcq->peer_peek_free[gcq->dv_cq.cqe_size - 1].next = GDS_LAST_PEEK_ENTRY;
+        gcq->peer_peek_free[gcq->dv_cq.cqe_size - 1].next = GDS_MLX5_LAST_PEEK_ENTRY;
 
         return gcq;
 }
@@ -1755,13 +1755,13 @@ int gds_poll_cq(struct gds_cq *gcq, int ne, struct ibv_wc *wc)
         for (cnt = 0; cnt < ne; ++cnt) {
                 idx = gcq->cons_index & (gcq->dv_cq.cqe_cnt - 1);
                 while (gcq->peer_peek_table[idx]) {
-                        struct gds_peek_entry *tmp;
+                        struct gds_mlx5_peek_entry *tmp;
                         if (*(volatile uint32_t *)&gcq->peer_peek_table[idx]->busy) {
                                 return cnt;
                         }
                         tmp = gcq->peer_peek_table[idx];
-                        gcq->peer_peek_table[idx] = GDS_PEEK_ENTRY(gcq, tmp->next);
-                        tmp->next = GDS_PEEK_ENTRY_N(gcq, gcq->peer_peek_free);
+                        gcq->peer_peek_table[idx] = GDS_MLX5_PEEK_ENTRY(gcq, tmp->next);
+                        tmp->next = GDS_MLX5_PEEK_ENTRY_N(gcq, gcq->peer_peek_free);
                         gcq->peer_peek_free = tmp;
                 }
                 p_ne = ibv_poll_cq(gcq->cq, 1, wc + cnt);

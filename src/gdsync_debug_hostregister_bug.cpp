@@ -1019,7 +1019,7 @@ static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
                 gds_dbg("%p <- %016"PRIx64"\n", ptr, data);
                 break;
             }
-            case IBV_PEE_OP_COPY_BLOCK: {
+            case IBV_PEER_OP_COPY_BLOCK: {
                 uint64_t *ptr = (uint64_t*)((ptrdiff_t)range_from_id(op->wr.copy_op.target_id)->va + op->wr.copy_op.offset);
                 uint64_t *src = (uint64_t*)op->wr.copy_op.src;
                 size_t n_bytes = op->wr.copy_op.len;
