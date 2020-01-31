@@ -1746,38 +1746,32 @@ gds_create_cq(struct ibv_context *context, int cqe,
         return gcq;
 }
 
-int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc)
+int gds_poll_cq(struct gds_cq *gcq, int ne, struct ibv_wc *wc)
 {
-        int p_ne;
         unsigned int idx;
-        int i = 0;
         int cnt;
+        int p_ne;
 
-        p_ne = ibv_poll_cq(cq->cq, ne, wc);
-        if (p_ne < 0)
-                return p_ne;
-
-        for (cnt = 0; cnt < p_ne; ++cnt) {
-                idx = cq->cons_index & (cq->dv_cq.cqe_cnt - 1);
-                while (cq->peer_peek_table[idx]) {
+        for (cnt = 0; cnt < ne; ++cnt) {
+                idx = gcq->cons_index & (gcq->dv_cq.cqe_cnt - 1);
+                while (gcq->peer_peek_table[idx]) {
                         struct gds_peek_entry *tmp;
-                        while (cq->peer_peek_table[idx]->busy) {
-                                ++i;
-                                if (i >= 16) {
-                                        asm volatile("pause\n": : :"memory");
-                                        i = 0;
-                                }
+                        if (*(volatile uint32_t *)&gcq->peer_peek_table[idx]->busy) {
+                                return cnt;
                         }
-                        tmp = cq->peer_peek_table[idx];
-                        cq->peer_peek_table[idx] = GDS_PEEK_ENTRY(cq, tmp->next);
-                        tmp->next = GDS_PEEK_ENTRY_N(cq, cq->peer_peek_free);
-                        cq->peer_peek_free = tmp;
+                        tmp = gcq->peer_peek_table[idx];
+                        gcq->peer_peek_table[idx] = GDS_PEEK_ENTRY(gcq, tmp->next);
+                        tmp->next = GDS_PEEK_ENTRY_N(gcq, gcq->peer_peek_free);
+                        gcq->peer_peek_free = tmp;
                 }
-                if (cq->type == GDS_CQ_TYPE_SQ)
-                        wc[cnt].wr_id = cq->wrid[idx];
-                ++cq->cons_index;
+                p_ne = ibv_poll_cq(gcq->cq, 1, wc + cnt);
+                if (p_ne <= 0)
+                        return p_ne;
+                if (gcq->type == GDS_CQ_TYPE_SQ)
+                        wc[cnt].wr_id = gcq->wrid[idx];
+                ++gcq->cons_index;
         }
-        return p_ne;
+        return cnt;
 }
 
 //-----------------------------------------------------------------------------

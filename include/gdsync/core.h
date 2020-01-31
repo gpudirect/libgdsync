@@ -113,8 +113,7 @@ struct gds_qp {
 
 /* \brief: Poll a peer-enabled CQ.
  *
- * It works similar to ibv_poll_cq but may return EBUSY if a peek entry
- * associated with the CQE is still busy.
+ * It works similar to ibv_poll_cq while taking peer peek entry into account.
  */
 
 int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc);

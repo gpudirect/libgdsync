@@ -377,8 +377,12 @@ int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flag
         wr = wr->next;
 
         peek = cq->peer_peek_free;
+        if (!peek) {
+                return ENOMEM;
+        }
         cq->peer_peek_free = GDS_PEEK_ENTRY(cq, peek->next);
         peek->busy = 1;
+        mb();
         peek->next = GDS_PEEK_ENTRY_N(cq, cq->peer_peek_table[n & (cq->dv_cq.cqe_cnt - 1)]);
         cq->peer_peek_table[n & (cq->dv_cq.cqe_cnt - 1)] = peek;
 
