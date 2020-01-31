@@ -163,19 +163,14 @@ static int gds_alloc_gdr_memory(gds_mem_desc_t *desc, size_t size, int flags)
 {
         CUdeviceptr d_buf = 0;
         CUdeviceptr d_buf_aligned = 0;
-        off_t offset = 0;
-        size_t buf_size = size + GDS_GPU_PAGE_SIZE;
+        size_t buf_size = size + GDS_GPU_PAGE_SIZE - 1;
         int ret = 0;
 
         assert(desc);
 
         CUCHECK(cuMemAlloc(&d_buf, buf_size));
 
-        offset = d_buf & GDS_GPU_PAGE_OFF;
-        if (offset == 0)
-                d_buf_aligned = d_buf;
-        else
-                d_buf_aligned = (d_buf + GDS_GPU_PAGE_SIZE - 1) & GDS_GPU_PAGE_MASK;
+        d_buf_aligned = (d_buf + GDS_GPU_PAGE_SIZE - 1) & GDS_GPU_PAGE_MASK;
 
         gds_dbg("allocated GPU polling buffer d_buf=0x%llx req_size=%zu d_buf_aligned=0x%llx buf_size=%zu\n", d_buf, size, d_buf_aligned, buf_size);
 
