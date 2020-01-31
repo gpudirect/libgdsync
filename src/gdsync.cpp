@@ -1812,6 +1812,12 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
         if (!buf) {
                 int err;
                 gds_dbg("alloc on host\n");
+                // We should return IBV_ALLOCATOR_USE_DEFAULT so that libmlx5
+                // can do further optimization. However, we need to later query
+                // this mlx5-allocated ptr to do register_va later.
+
+                // TODO: Return IBV_ALLOCATOR_USE_DEFAULT and implement a
+                // tracking mechanism to register_va libmlx5-allocated ptr.
                 if ((err = posix_memalign(&ptr, alignment, size)) != 0) {
                         gds_err("error %d in posix_memalign\n", err);
                         return NULL;
