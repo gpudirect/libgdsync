@@ -322,6 +322,9 @@ int gds_stream_wait_cq(CUstream stream, struct gds_cq *cq, int flags)
         ret = gds_stream_post_wait_cq(stream, &request);
         if (ret) {
                 gds_err("error %d in gds_stream_post_wait_cq_ex\n", ret);
+                int retcode2 = gds_abort_wait_cq(cq, &request);
+                if (retcode2)
+                        gds_err("nested error %d while aborting request\n", retcode2);
                 retcode = ret;
                 goto out;
         }
