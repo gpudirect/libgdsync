@@ -57,6 +57,40 @@ static void gds_init_ops(struct gds_mlx5_peer_op_wr *op, int count)
 
 //-----------------------------------------------------------------------------
 
+static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t *send_info, enum gds_mlx5_rollback_flags flag)
+{
+        struct gds_mlx5_rollback_ctx rollback;
+        int ret = 0;
+
+        assert(qp);
+        assert(qp->qp);
+        assert(send_info);
+        if (
+                        flag != GDS_MLX5_ROLLBACK_ABORT_UNCOMMITED && 
+                        flag != GDS_MLX5_ROLLBACK_ABORT_LATE
+        ) {
+                gds_err("erroneous gds_mlx5_rollback_flags flag input value\n");
+                ret = EINVAL;
+                goto out;
+        } 
+
+        /* from ibv_exp_peer_commit call */
+        rollback.rollback_id = send_info->commit.rollback_id;
+        /* from ibv_exp_rollback_flag */
+        rollback.flags = flag;
+        /* Reserved for future expensions, must be 0 */
+        rollback.comp_mask = 0;
+        gds_warn("Need to rollback WQE %lx\n", rollback.rollback_id);
+        ret = gds_mlx5_rollback_send(qp, &rollback);
+        if(ret)
+                gds_err("error %d in ibv_exp_rollback_qp\n", ret);
+
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 static void gds_init_send_info(gds_send_request_t *info)
 {
         gds_dbg("send_request=%p\n", info);
@@ -95,6 +129,9 @@ int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
         ret = gds_post_pokes_on_cpu(1, &send_info, NULL, 0);
         if (ret) {
                 gds_err("error %d in gds_post_pokes_on_cpu\n", ret);
+                ret_roll = gds_rollback_qp(qp, &send_info, GDS_MLX5_ROLLBACK_ABORT_LATE);
+                if (ret_roll)
+                        gds_err("error %d in gds_rollback_qp\n", ret_roll);
                 goto out;
         }
 

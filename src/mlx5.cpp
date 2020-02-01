@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <arpa/inet.h>
 
 #include "gdsync.h"
 #include "gdsync/mlx5.h"
@@ -311,6 +312,32 @@ int gds_mlx5_get_dword_wait_info(uint32_t *ptr, uint32_t value, int flags, gds_m
         mlx5_info->value = value;
 out:
         return retcode;
+}
+
+int gds_mlx5_rollback_send(struct gds_qp *qp,
+		       struct gds_mlx5_rollback_ctx *rollback)
+{
+	int diff;
+
+	qp->bf_offset = (rollback->rollback_id & GDS_MLX5_ROLLBACK_ID_PARITY_MASK) ?
+					qp->dv_qp.bf.size : 0;
+	rollback->rollback_id &= GDS_MLX5_ROLLBACK_ID_PARITY_MASK - 1;
+
+	if (rollback->flags & GDS_MLX5_ROLLBACK_ABORT_UNCOMMITED) {
+		diff = (qp->sq_cur_post & 0xffff)
+		     - ntohl(qp->dv_qp.dbrec[MLX5_SND_DBR]);
+		if (diff < 0)
+			diff += 0x10000;
+		qp->sq_cur_post -= diff;
+	} else {
+		if (!(rollback->flags & GDS_MLX5_ROLLBACK_ABORT_LATE)) {
+			if (qp->sq_cur_post !=
+			    (rollback->rollback_id >> 32))
+				return -ERANGE;
+		}
+		qp->sq_cur_post = rollback->rollback_id & 0xffffffff;
+	}
+	return 0;
 }
 
 //-----------------------------------------------------------------------------

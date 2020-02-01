@@ -125,6 +125,10 @@ int gds_dbg_enabled();
 
 //-----------------------------------------------------------------------------
 
+#define GDS_MLX5_ROLLBACK_ID_PARITY_MASK (1ULL << 63)
+
+//-----------------------------------------------------------------------------
+
 static inline int gds_curesult_to_errno(CUresult result)
 {
         int retcode = 0;
@@ -220,6 +224,8 @@ struct gds_peer;
 int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_mlx5_peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
 int gds_post_ops_on_cpu(size_t n_descs, struct gds_mlx5_peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
+
+int gds_mlx5_rollback_send(struct gds_qp *qp, struct gds_mlx5_rollback_ctx *rollback);
 
 //-----------------------------------------------------------------------------
 

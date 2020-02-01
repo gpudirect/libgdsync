@@ -126,7 +126,20 @@ struct gds_mlx5_peer_commit {
         uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
 };
 
+enum gds_mlx5_rollback_flags {
+        /* Abort all WQEs which were not committed to HW yet.
+         * rollback_id is ignored. **/
+        GDS_MLX5_ROLLBACK_ABORT_UNCOMMITED = (1 << 0),
+        /* Abort the request even if there are following requests
+         * being aborted as well. **/
+        GDS_MLX5_ROLLBACK_ABORT_LATE = (1 << 1),
+};
 
+struct gds_mlx5_rollback_ctx {
+        uint64_t rollback_id; /* from ibv_exp_peer_commit call */
+        uint32_t flags; /* from ibv_exp_rollback_flags */
+        uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
+};
 
 GDS_END_DECLS
 
