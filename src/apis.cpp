@@ -629,11 +629,24 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         case GDS_TAG_SEND: {
                                 gds_dbg("desc[%zu] SEND\n", i);
                                 gds_send_request_t *sreq = desc->send;
+                                retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
+                                if (retcode) {
+                                        gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                        ret = retcode;
+                                        goto out;
+                                }
+                        break;
                                 break;
                         }
                         case GDS_TAG_WAIT: {
                                 gds_dbg("desc[%zu] WAIT\n", i);
                                 gds_wait_request_t *wreq = desc->wait;
+                                retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
+                                if (retcode) {
+                                        gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                        ret = retcode;
+                                        goto out;
+                                }
                                 break;
                         }
                         case GDS_TAG_WAIT_VALUE32: {
