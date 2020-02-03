@@ -27,9 +27,35 @@
 
 #pragma once
 
+#include "objs.hpp"
+
 //-----------------------------------------------------------------------------
 
 #define GDS_MLX5_ROLLBACK_ID_PARITY_MASK (1ULL << 63)
+
+typedef struct gds_mlx5_cq {
+        struct ibv_cq          *cq;
+        uint32_t                curr_offset;
+        uint32_t                cons_index;
+        gds_cq_type_t           type;
+        struct mlx5dv_cq        dv_cq;
+        uint64_t               *wrid;
+        uint64_t                active_buf_va_id;
+        gds_peer_attr          *peer_attr;
+        uint64_t                peer_va_id;
+        uint32_t                peer_dir;
+        struct gds_buf         *peer_buf;
+        struct gds_mlx5_peek_entry **peer_peek_table;
+        struct gds_mlx5_peek_entry  *peer_peek_free;
+} gds_mlx5_cq;
+
+static inline gds_mlx5_cq *to_gds_mcq(struct gds_cq *cq) {
+        return (gds_mlx5_cq *)cq;
+}
+
+static inline struct gds_cq *to_gds_cq(gds_mlx5_cq *mcq) {
+        return (struct gds_cq *)mcq;
+}
 
 int gds_mlx5_rollback_send(struct gds_qp *qp, struct gds_mlx5_rollback_ctx *rollback);
 

@@ -36,10 +36,10 @@ GDS_BEGIN_DECLS
 #define GDS_MLX5_LAST_PEEK_ENTRY (-1U)
 #define GDS_MLX5_PEEK_ENTRY(cq, n) \
         (n == GDS_MLX5_LAST_PEEK_ENTRY ? NULL : \
-         ((struct gds_mlx5_peek_entry *)cq->peer_buf.buf) + n)
+         ((struct gds_mlx5_peek_entry *)cq->peer_buf->addr) + n)
 #define GDS_MLX5_PEEK_ENTRY_N(cq, pe) \
         (pe == NULL ? GDS_MLX5_LAST_PEEK_ENTRY : \
-         ((pe - (struct gds_mlx5_peek_entry *)cq->peer_buf.buf)))
+         ((pe - (struct gds_mlx5_peek_entry *)cq->peer_buf->addr)))
 
 
 struct gds_mlx5_peek_entry {

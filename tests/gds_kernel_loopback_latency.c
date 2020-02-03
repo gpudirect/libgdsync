@@ -630,7 +630,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         wdesc->descs[k].send = &wdesc->send_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
+                        ret = gds_prepare_wait_cq(ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
@@ -640,7 +640,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         wdesc->descs[k].wait = &wdesc->wait_tx_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
+                        ret = gds_prepare_wait_cq(ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
@@ -672,7 +672,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 break;
                         }
 
-                        ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->send_cq, 0);
+                        ret = gds_stream_wait_cq(gpu_stream_server, ctx->gds_qp->send_cq, 0);
                         if (ret) {
                                 // TODO: rollback gpu send
                                 gpu_err("error %d in gds_stream_wait_cq\n", ret);
@@ -680,7 +680,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 break;
                         }
 
-                        ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                        ret = gds_stream_wait_cq(gpu_stream_server, ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
                         if (ret) {
                                 // TODO: rollback gpu send and wait send_cq
                                 gpu_err("error %d in gds_stream_wait_cq\n", ret);
@@ -1184,7 +1184,7 @@ int main(int argc, char *argv[])
                         struct ibv_wc wc[max_batch_len];
                         int ne = 0, i;
 
-                        ne = gds_poll_cq(&ctx->gds_qp->recv_cq, max_batch_len, wc);
+                        ne = gds_poll_cq(ctx->gds_qp->recv_cq, max_batch_len, wc);
                         if (ne < 0) {
                                 fprintf(stderr, "poll RX CQ failed %d\n", ne);
                                 return 1;
@@ -1219,7 +1219,7 @@ int main(int argc, char *argv[])
                         struct ibv_wc wc[max_batch_len];
                         int ne, i;
 
-                        ne = gds_poll_cq(&ctx->gds_qp->send_cq, max_batch_len, wc);
+                        ne = gds_poll_cq(ctx->gds_qp->send_cq, max_batch_len, wc);
                         if (ne < 0) {
                                 fprintf(stderr, "poll TX CQ failed %d\n", ne);
                                 return 1;

@@ -41,6 +41,7 @@
 #include "utils.hpp"
 #include "memmgr.hpp"
 #include "mem.hpp"
+#include "mlx5.hpp"
 #include "objs.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
@@ -1610,19 +1611,18 @@ gds_peer *peer_from_stream(CUstream stream)
 
 //-----------------------------------------------------------------------------
 
-static struct gds_cq *
+static struct gds_mlx5_cq *
 gds_create_cq_internal(struct ibv_context *context, int cqe,
                 void *cq_context, struct ibv_comp_channel *channel,
                 int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
-        struct gds_cq *gcq = NULL;
+        struct gds_mlx5_cq *gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         int ret=0;
 
         mlx5dv_obj dv_obj;
         struct gds_buf_alloc_attr ba_attr;
-        gds_buf *peer_buf;
         int i;
 
         if (!context) {
@@ -1635,7 +1635,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
                 return NULL;
         }
 
-        gcq = (struct gds_cq *)calloc(1, sizeof(struct gds_cq));
+        gcq = (gds_mlx5_cq *)calloc(1, sizeof(gds_mlx5_cq));
         if (!gcq) {
                 gds_err("cannot allocate memory\n");
                 return NULL;
@@ -1673,11 +1673,11 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         gcq->peer_attr = peer_attr;
 
         gcq->active_buf_va_id = peer_attr->register_va(
-                        gcq->dv_cq.buf,
-                        (uint64_t)gcq->dv_cq.cqe_cnt * (uint64_t)gcq->dv_cq.cqe_size,
-                        peer_attr->peer_id,
-                        NULL
-                        );
+                gcq->dv_cq.buf,
+                (uint64_t)gcq->dv_cq.cqe_cnt * (uint64_t)gcq->dv_cq.cqe_size,
+                peer_attr->peer_id,
+                NULL
+        );
         if (!gcq->active_buf_va_id) {
                 gds_err("error in gcq->active_buf_va_id = peer_attr->register_va\n");
                 return NULL;
@@ -1700,25 +1700,22 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
                 .alignment      = (uint32_t)sysconf(_SC_PAGESIZE),
                 .comp_mask      = 0
         };
-        peer_buf = peer_attr->buf_alloc(&ba_attr);
-        if (!peer_buf) {
+        gcq->peer_buf = peer_attr->buf_alloc(&ba_attr);
+        if (!gcq->peer_buf) {
                 gds_err("error %d in buf_alloc, old_errno %d\n", errno, old_errno);
                 return NULL;
         }
 
-        gcq->peer_buf.buf = peer_buf->addr;
-        gcq->peer_buf.length = peer_buf->length;
-
         old_errno = errno;
-        gcq->peer_va_id = peer_attr->register_va(gcq->peer_buf.buf, gcq->peer_buf.length, peer_attr->peer_id, peer_buf);
+        gcq->peer_va_id = peer_attr->register_va(gcq->peer_buf->addr, gcq->peer_buf->length, peer_attr->peer_id, gcq->peer_buf);
         if (!gcq->peer_va_id) {
                 gds_err("error %d in register_va, old_errno %d\n", errno, old_errno);
                 return NULL;
         }
 
-        memset(gcq->peer_buf.buf, 0, gcq->peer_buf.length);
+        memset(gcq->peer_buf->addr, 0, gcq->peer_buf->length);
 
-        gcq->peer_peek_free = (struct gds_mlx5_peek_entry *)gcq->peer_buf.buf;
+        gcq->peer_peek_free = (struct gds_mlx5_peek_entry *)gcq->peer_buf->addr;
         for (i = 0; i < gcq->dv_cq.cqe_cnt - 1; ++i)
                 gcq->peer_peek_free[i].next = i + 1;
         gcq->peer_peek_free[gcq->dv_cq.cqe_size - 1].next = GDS_MLX5_LAST_PEEK_ENTRY;
@@ -1733,7 +1730,7 @@ gds_create_cq(struct ibv_context *context, int cqe,
                 int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
         int ret = 0;
-        struct gds_cq *gcq = NULL;
+        gds_mlx5_cq *gcq = NULL;
         gds_dbg("cqe=%d gpu_id=%d cq_flags=%08x\n", cqe, gpu_id, flags);
 
         gcq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id, flags);
@@ -1743,14 +1740,16 @@ gds_create_cq(struct ibv_context *context, int cqe,
                 return NULL;
         }
 
-        return gcq;
+        return to_gds_cq(gcq);
 }
 
-int gds_poll_cq(struct gds_cq *gcq, int ne, struct ibv_wc *wc)
+int gds_poll_cq(struct gds_cq *p_gcq, int ne, struct ibv_wc *wc)
 {
         unsigned int idx;
         int cnt;
         int p_ne;
+
+        gds_mlx5_cq *gcq = to_gds_mcq(p_gcq);
 
         for (cnt = 0; cnt < ne; ++cnt) {
                 idx = gcq->cons_index & (gcq->dv_cq.cqe_cnt - 1);
@@ -1858,7 +1857,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         struct ibv_parent_domain_init_attr pd_init_attr;
         struct gds_qp *gqp = NULL;
         struct ibv_qp *qp = NULL;
-        struct gds_cq *rx_gcq = NULL, *tx_gcq = NULL;
+        struct gds_mlx5_cq *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
 
@@ -1946,15 +1945,15 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
 
         gqp->qp = qp;
 
-        memcpy(&gqp->send_cq, tx_gcq, sizeof(struct gds_cq));
-        gqp->send_cq.cq = qp->send_cq;
-        gqp->send_cq.curr_offset = 0;
-        gqp->send_cq.type = GDS_CQ_TYPE_SQ;
+        tx_gcq->cq = qp->send_cq;
+        tx_gcq->curr_offset = 0;
+        tx_gcq->type = GDS_CQ_TYPE_SQ;
+        gqp->send_cq = to_gds_cq(tx_gcq);
 
-        memcpy(&gqp->recv_cq, rx_gcq, sizeof(struct gds_cq));
-        gqp->recv_cq.cq = qp->recv_cq;
-        gqp->recv_cq.curr_offset = 0;
-        gqp->recv_cq.type = GDS_CQ_TYPE_RQ;
+        rx_gcq->cq = qp->recv_cq;
+        rx_gcq->curr_offset = 0;
+        rx_gcq->type = GDS_CQ_TYPE_RQ;
+        gqp->recv_cq = to_gds_cq(rx_gcq);
 
         dv_obj = {
                 .qp = {
@@ -1968,9 +1967,9 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 goto err;
         }
 
-        gqp->send_cq.wrid = (uint64_t *)malloc(gqp->dv_qp.sq.wqe_cnt * sizeof(uint64_t));
-        if (!gqp->send_cq.wrid) {
-                gds_err("error in malloc gqp->send_cq.wrid\n");
+        tx_gcq->wrid = (uint64_t *)malloc(gqp->dv_qp.sq.wqe_cnt * sizeof(uint64_t));
+        if (!tx_gcq->wrid) {
+                gds_err("error in malloc tx_gcq->wrid\n");
                 goto err;
         }
 
@@ -1998,14 +1997,66 @@ err:
 
 //-----------------------------------------------------------------------------
 
+int gds_destroy_cq(struct gds_cq *p_gcq)
+{
+        int ret = 0;
+        gds_mlx5_cq *gcq;
+
+        if (!p_gcq)
+                goto out;
+
+        gcq = to_gds_mcq(p_gcq);
+
+        if (gcq->peer_peek_table) {
+                free(gcq->peer_peek_table);
+                gcq->peer_peek_table = NULL;
+        }
+
+        if (gcq->wrid) {
+                free(gcq->wrid);
+                gcq->wrid = NULL;
+        }
+
+        if (gcq->peer_attr) {
+                gds_peer_attr *peer_attr = gcq->peer_attr;
+                if (gcq->active_buf_va_id) {
+                        peer_attr->unregister_va(gcq->active_buf_va_id, peer_attr->peer_id);
+                        gcq->active_buf_va_id = 0;
+                }
+                if (gcq->peer_va_id) {
+                        peer_attr->unregister_va(gcq->peer_va_id, peer_attr->peer_id);
+                        gcq->peer_va_id = 0;
+                }
+                if (gcq->peer_buf) {
+                        gcq->peer_attr->buf_release(gcq->peer_buf);
+                        gcq->peer_buf = NULL;
+                }
+        }
+
+        if (gcq->cq) {
+                ret = ibv_destroy_cq(gcq->cq);
+                if (ret) {
+                        gds_err("error %d in ibv_destroy\n", ret);
+                        goto out;
+                }
+                gcq->cq = NULL;
+        }
+
+        free(gcq);
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_destroy_qp(struct gds_qp *gqp)
 {
         int retcode = 0;
         int ret;
 
-        if(!gqp) return retcode;
+        if (!gqp) return retcode;
 
-        if(gqp->qp)
+        if (gqp->qp)
         {
                 ret = ibv_destroy_qp(gqp->qp);
                 if (ret) {
@@ -2014,22 +2065,24 @@ int gds_destroy_qp(struct gds_qp *gqp)
                 }            
         }
 
-        if(gqp->send_cq.cq)
+        if (gqp->send_cq)
         {
-                ret = ibv_destroy_cq(gqp->send_cq.cq);
+                ret = gds_destroy_cq(gqp->send_cq);
                 if (ret) {
-                        gds_err("error %d in destroy_cq send_cq\n", ret);
+                        gds_err("error %d in gds_destroy_cq send_cq\n", ret);
                         retcode = ret;
                 }
+                gqp->send_cq = NULL;
         }
 
-        if(gqp->recv_cq.cq)
+        if (gqp->recv_cq)
         {
-                ret = ibv_destroy_cq(gqp->recv_cq.cq);
+                ret = gds_destroy_cq(gqp->recv_cq);
                 if (ret) {
-                        gds_err("error %d in destroy_cq recv_cq\n", ret);
+                        gds_err("error %d in gds_destroy_cq recv_cq\n", ret);
                         retcode = ret;
                 }
+                gqp->recv_cq = NULL;
         }
 
         free(gqp);

@@ -385,6 +385,8 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
 
         struct gds_mlx5_peer_op_wr *wr;
 
+        gds_mlx5_cq *tx_cq = to_gds_mcq(qp->send_cq);
+
         if (commit->entries < 3) {
                 gds_err("not enough entries in gds_mlx5_peer_commit.\n");
                 ret = EINVAL;
@@ -439,7 +441,7 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
 
                 mlx5dv_set_ctrl_seg(ctrl_seg, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, qp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
 
-                qp->send_cq.wrid[idx] = p_ewr->wr_id;
+                tx_cq->wrid[idx] = p_ewr->wr_id;
                 qp->sq_cur_post += (size * 16 + qp->dv_qp.sq.stride - 1) / qp->dv_qp.sq.stride;
         }
 
@@ -476,7 +478,9 @@ int gds_mlx5_peer_peek_cq(struct gds_cq *cq, struct gds_mlx5_peer_peek *peek)
 {
         int ret = 0;
 
-        gds_peer_attr *peer_attr = (gds_peer_attr *)cq->peer_attr;
+        gds_mlx5_cq *gcq = to_gds_mcq(cq);
+
+        gds_peer_attr *peer_attr = (gds_peer_attr *)gcq->peer_attr;
         struct gds_mlx5_peer_op_wr *wr;
         int n, cur_own;
         void *cqe;
@@ -492,9 +496,9 @@ int gds_mlx5_peer_peek_cq(struct gds_cq *cq, struct gds_mlx5_peer_peek *peek)
         wr = peek->storage;
         n = peek->offset;
 
-        cqe = (char *)cq->dv_cq.buf + (n & (cq->dv_cq.cqe_cnt - 1)) * cq->dv_cq.cqe_size;
-        cur_own = n & cq->dv_cq.cqe_cnt;
-        cqe64 = (gds_cqe64 *)((cq->dv_cq.cqe_size == 64) ? cqe : (char *)cqe + 64);
+        cqe = (char *)gcq->dv_cq.buf + (n & (gcq->dv_cq.cqe_cnt - 1)) * gcq->dv_cq.cqe_size;
+        cur_own = n & gcq->dv_cq.cqe_cnt;
+        cqe64 = (gds_cqe64 *)((gcq->dv_cq.cqe_size == 64) ? cqe : (char *)cqe + 64);
 
         if (cur_own) {
                 wr->type = GDS_MLX5_PEER_OP_POLL_AND_DWORD;
@@ -508,25 +512,25 @@ int gds_mlx5_peer_peek_cq(struct gds_cq *cq, struct gds_mlx5_peer_peek *peek)
                 wr->type = GDS_MLX5_PEER_OP_POLL_GEQ_DWORD;
                 wr->wr.dword_va.data = 0;
         }
-        wr->wr.dword_va.target_id = cq->active_buf_va_id;
-        wr->wr.dword_va.offset = (uintptr_t)&cqe64->wqe_counter - (uintptr_t)cq->dv_cq.buf;
+        wr->wr.dword_va.target_id = gcq->active_buf_va_id;
+        wr->wr.dword_va.offset = (uintptr_t)&cqe64->wqe_counter - (uintptr_t)gcq->dv_cq.buf;
         wr = wr->next;
 
-        tmp = cq->peer_peek_free;
+        tmp = gcq->peer_peek_free;
         if (!tmp) {
                 ret = ENOMEM;
                 goto out;
         }
-        cq->peer_peek_free = GDS_MLX5_PEEK_ENTRY(cq, tmp->next);
+        gcq->peer_peek_free = GDS_MLX5_PEEK_ENTRY(gcq, tmp->next);
         tmp->busy = 1;
         wmb();
-        tmp->next = GDS_MLX5_PEEK_ENTRY_N(cq, cq->peer_peek_table[n & (cq->dv_cq.cqe_cnt - 1)]);
-        cq->peer_peek_table[n & (cq->dv_cq.cqe_cnt - 1)] = tmp;
+        tmp->next = GDS_MLX5_PEEK_ENTRY_N(gcq, gcq->peer_peek_table[n & (gcq->dv_cq.cqe_cnt - 1)]);
+        gcq->peer_peek_table[n & (gcq->dv_cq.cqe_cnt - 1)] = tmp;
 
         wr->type = GDS_MLX5_PEER_OP_STORE_DWORD;
         wr->wr.dword_va.data = 0;
-        wr->wr.dword_va.target_id = cq->peer_va_id;
-        wr->wr.dword_va.offset = (uintptr_t)&tmp->busy - (uintptr_t)cq->peer_buf.buf;
+        wr->wr.dword_va.target_id = gcq->peer_va_id;
+        wr->wr.dword_va.offset = (uintptr_t)&tmp->busy - (uintptr_t)gcq->peer_buf->addr;
 
         peek->entries = 2;
         peek->peek_id = (uintptr_t)tmp;

@@ -69,7 +69,7 @@ typedef enum gds_cq_type {
 struct gds_cq {
         struct ibv_cq          *cq;
         uint32_t                curr_offset;
-        uint32_t                cons_index;
+        /*uint32_t                cons_index;
         gds_cq_type_t           type;
         struct mlx5dv_cq        dv_cq;
         uint64_t               *wrid;
@@ -82,13 +82,13 @@ struct gds_cq {
                 size_t          length;
         } peer_buf;
         struct gds_mlx5_peek_entry **peer_peek_table;
-        struct gds_mlx5_peek_entry  *peer_peek_free;
+        struct gds_mlx5_peek_entry  *peer_peek_free;*/
 };
 
 struct gds_qp {
         struct ibv_qp *qp;
-        struct gds_cq send_cq;
-        struct gds_cq recv_cq;
+        struct gds_cq *send_cq;
+        struct gds_cq *recv_cq;
         struct ibv_context *dev_context;
         struct mlx5dv_qp dv_qp;
 
