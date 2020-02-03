@@ -135,8 +135,7 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
 // batched submission APIs
 
 typedef enum gds_memory_type {
-        /* use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
-        GDS_MEMORY_GPU  = 1, 
+        GDS_MEMORY_GPU  = 1,  /*< use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
         GDS_MEMORY_HOST = 2,
         GDS_MEMORY_IO   = 4,
         GDS_MEMORY_MASK = 0x7
