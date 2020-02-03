@@ -1619,26 +1619,27 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         struct gds_mlx5_cq *gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
-        int ret=0;
+        int ret = 0;
 
         mlx5dv_obj dv_obj;
         struct gds_buf_alloc_attr ba_attr;
         int i;
+        int old_errno = 0;
 
         if (!context) {
                 gds_dbg("Invalid input context\n");
-                return NULL;
+                goto err;
         }
 
         if (flags & GDS_ALLOC_CQ_ON_GPU) {
                 gds_err("Allocating CQ on GPU is currently not supported\n");
-                return NULL;
+                goto err;
         }
 
         gcq = (gds_mlx5_cq *)calloc(1, sizeof(gds_mlx5_cq));
         if (!gcq) {
                 gds_err("cannot allocate memory\n");
-                return NULL;
+                goto err;
         }
 
         //Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags
@@ -1646,7 +1647,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
                 gds_err("error %d while registering GPU peer\n", ret);
-                return NULL;
+                goto err;
         }
         assert(peer);
         assert(peer_attr);
@@ -1654,11 +1655,11 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         peer->alloc_type = gds_peer::CQ;
         peer->alloc_flags = flags;
 
-        int old_errno = errno;
+        old_errno = errno;
         gcq->cq = ibv_create_cq(context, cqe, cq_context, channel, comp_vector);
         if (!gcq->cq) {
                 gds_err("error %d in mlx5dv_create_cq, old errno %d\n", errno, old_errno);
-                return NULL;
+                goto err;
         }
 
         old_errno = errno;
@@ -1667,7 +1668,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_CQ);
         if (ret != 0) {
                 gds_err("error %d in mlx5dv_init_obj MLX5DV_OBJ_CQ, old errno %d\n", errno, old_errno);
-                return NULL;
+                goto err;
         }
 
         gcq->peer_attr = peer_attr;
@@ -1680,14 +1681,14 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         );
         if (!gcq->active_buf_va_id) {
                 gds_err("error in gcq->active_buf_va_id = peer_attr->register_va\n");
-                return NULL;
+                goto err;
         }
 
         old_errno = errno;
         gcq->peer_peek_table = (struct gds_mlx5_peek_entry **)malloc(sizeof(struct gds_mlx5_peek_entry *) * gcq->dv_cq.cqe_cnt);
         if (!gcq->peer_peek_table) {
                 gds_err("error %d in malloc peer_peek_table, old_errno %d\n", errno, old_errno);
-                return NULL;
+                goto err;
         }
         memset(gcq->peer_peek_table, 0, sizeof(struct gds_peek_entry *) * gcq->dv_cq.cqe_cnt);
         gcq->peer_dir = GDS_PEER_DIRECTION_FROM_PEER | GDS_PEER_DIRECTION_TO_CPU;
@@ -1703,14 +1704,14 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         gcq->peer_buf = peer_attr->buf_alloc(&ba_attr);
         if (!gcq->peer_buf) {
                 gds_err("error %d in buf_alloc, old_errno %d\n", errno, old_errno);
-                return NULL;
+                goto err;
         }
 
         old_errno = errno;
         gcq->peer_va_id = peer_attr->register_va(gcq->peer_buf->addr, gcq->peer_buf->length, peer_attr->peer_id, gcq->peer_buf);
         if (!gcq->peer_va_id) {
                 gds_err("error %d in register_va, old_errno %d\n", errno, old_errno);
-                return NULL;
+                goto err;
         }
 
         memset(gcq->peer_buf->addr, 0, gcq->peer_buf->length);
@@ -1721,6 +1722,11 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         gcq->peer_peek_free[gcq->dv_cq.cqe_size - 1].next = GDS_MLX5_LAST_PEEK_ENTRY;
 
         return gcq;
+
+err:
+        if (gcq)
+                gds_destroy_cq(to_gds_cq(gcq));
+        return NULL;
 }
 
 //Note: general create cq function, not really used for now!
@@ -1789,7 +1795,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
                 .comp_mask      = peer_attr->comp_mask
         };
         gds_peer *peer = peer_from_id(peer_attr->peer_id);
-        gds_qp *gqp; 
+        gds_mlx5_qp *gqp; 
         uint64_t range_id;
         gds_buf *buf = NULL;
         void *ptr = NULL;
@@ -1828,7 +1834,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
         }
 
         assert(peer->obj);
-        gqp = (gds_qp *)peer->obj;
+        gqp = (gds_mlx5_qp *)peer->obj;
 
         if ((range_id = peer_attr->register_va(ptr, size, peer_attr->peer_id, buf)) == 0) {
                 gds_err("error in register_va\n");
@@ -1855,7 +1861,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         int ret = 0;
         struct ibv_pd *pd = NULL;
         struct ibv_parent_domain_init_attr pd_init_attr;
-        struct gds_qp *gqp = NULL;
+        gds_mlx5_qp *gqp = NULL;
         struct ibv_qp *qp = NULL;
         struct gds_mlx5_cq *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
@@ -1875,7 +1881,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 return NULL;
         }
 
-        gqp = (struct gds_qp*)calloc(1, sizeof(struct gds_qp));
+        gqp = (gds_mlx5_qp*)calloc(1, sizeof(gds_mlx5_qp));
         if (!gqp) {
                 gds_err("cannot allocate memory\n");
                 return NULL;
@@ -1986,11 +1992,11 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
 
         gds_dbg("created gds_qp=%p\n", gqp);
 
-        return gqp;
+        return to_gds_qp(gqp);
 
 err:
         gds_dbg("destroying QP\n");
-        gds_destroy_qp(gqp);
+        gds_destroy_qp(to_gds_qp(gqp));
 
         return NULL;
 }

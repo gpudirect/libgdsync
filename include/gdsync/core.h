@@ -69,20 +69,6 @@ typedef enum gds_cq_type {
 struct gds_cq {
         struct ibv_cq          *cq;
         uint32_t                curr_offset;
-        /*uint32_t                cons_index;
-        gds_cq_type_t           type;
-        struct mlx5dv_cq        dv_cq;
-        uint64_t               *wrid;
-        uint64_t                active_buf_va_id;
-        void                   *peer_attr;
-        uint64_t                peer_va_id;
-        uint32_t                peer_dir;
-        struct {
-                void           *buf;
-                size_t          length;
-        } peer_buf;
-        struct gds_mlx5_peek_entry **peer_peek_table;
-        struct gds_mlx5_peek_entry  *peer_peek_free;*/
 };
 
 struct gds_qp {
@@ -90,14 +76,6 @@ struct gds_qp {
         struct gds_cq *send_cq;
         struct gds_cq *recv_cq;
         struct ibv_context *dev_context;
-        struct mlx5dv_qp dv_qp;
-
-        unsigned int sq_cur_post;
-        unsigned int bf_offset;
-
-        uint32_t peer_scur_post;
-        uint64_t peer_va_id_dbr;
-        uint64_t peer_va_id_bf;
 };
 
 /* \brief: Poll a peer-enabled CQ.
@@ -117,6 +95,11 @@ int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc);
 struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                              gds_qp_init_attr_t *qp_init_attr,
                              int gpu_id, int flags);
+
+/* \brief: Destroy a peer-enabled CQ
+ *
+ */
+int gds_destroy_cq(struct gds_cq *cq);
 
 /* \brief: Destroy a peer-enabled QP
  *

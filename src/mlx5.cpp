@@ -318,28 +318,28 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_rollback_send(struct gds_qp *qp,
+int gds_mlx5_rollback_send(gds_mlx5_qp *gqp,
 		       struct gds_mlx5_rollback_ctx *rollback)
 {
 	int diff;
 
-	qp->bf_offset = (rollback->rollback_id & GDS_MLX5_ROLLBACK_ID_PARITY_MASK) ?
-					qp->dv_qp.bf.size : 0;
+	gqp->bf_offset = (rollback->rollback_id & GDS_MLX5_ROLLBACK_ID_PARITY_MASK) ?
+					gqp->dv_qp.bf.size : 0;
 	rollback->rollback_id &= GDS_MLX5_ROLLBACK_ID_PARITY_MASK - 1;
 
 	if (rollback->flags & GDS_MLX5_ROLLBACK_ABORT_UNCOMMITED) {
-		diff = (qp->sq_cur_post & 0xffff)
-		     - ntohl(qp->dv_qp.dbrec[MLX5_SND_DBR]);
+		diff = (gqp->sq_cur_post & 0xffff)
+		     - ntohl(gqp->dv_qp.dbrec[MLX5_SND_DBR]);
 		if (diff < 0)
 			diff += 0x10000;
-		qp->sq_cur_post -= diff;
+		gqp->sq_cur_post -= diff;
 	} else {
 		if (!(rollback->flags & GDS_MLX5_ROLLBACK_ABORT_LATE)) {
-			if (qp->sq_cur_post !=
+			if (gqp->sq_cur_post !=
 			    (rollback->rollback_id >> 32))
 				return -ERANGE;
 		}
-		qp->sq_cur_post = rollback->rollback_id & 0xffffffff;
+		gqp->sq_cur_post = rollback->rollback_id & 0xffffffff;
 	}
 	return 0;
 }
@@ -370,7 +370,7 @@ static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_w
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_mlx5_peer_commit *commit)
+int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_mlx5_peer_commit *commit)
 {
         int ret = 0;
         unsigned int idx;
@@ -385,7 +385,7 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
 
         struct gds_mlx5_peer_op_wr *wr;
 
-        gds_mlx5_cq *tx_cq = to_gds_mcq(qp->send_cq);
+        gds_mlx5_cq *tx_cq = to_gds_mcq(gqp->send_cq);
 
         if (commit->entries < 3) {
                 gds_err("not enough entries in gds_mlx5_peer_commit.\n");
@@ -399,16 +399,16 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
                 goto out;
         }
 
-        qend = (void *)((char *)qp->dv_qp.sq.buf + (qp->dv_qp.sq.wqe_cnt * qp->dv_qp.sq.stride));
+        qend = (void *)((char *)gqp->dv_qp.sq.buf + (gqp->dv_qp.sq.wqe_cnt * gqp->dv_qp.sq.stride));
         for (nreq = 0; p_ewr; ++nreq, p_ewr = p_ewr->next) {
-                idx = qp->sq_cur_post & (qp->dv_qp.sq.wqe_cnt - 1);
-                seg = (void *)((char *)qp->dv_qp.sq.buf + (idx * qp->dv_qp.sq.stride));
+                idx = gqp->sq_cur_post & (gqp->dv_qp.sq.wqe_cnt - 1);
+                seg = (void *)((char *)gqp->dv_qp.sq.buf + (idx * gqp->dv_qp.sq.stride));
 
                 ctrl_seg = (struct mlx5_wqe_ctrl_seg *)seg;
                 size = sizeof(struct mlx5_wqe_ctrl_seg) / 16;
                 seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_ctrl_seg));
 
-                switch (qp->qp->qp_type) {
+                switch (gqp->qp->qp_type) {
                         case IBV_QPT_UD:
                                 ret = set_datagram_seg((struct mlx5_wqe_datagram_seg *)seg, p_ewr);
                                 if (ret)
@@ -416,7 +416,7 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
                                 size = sizeof(struct mlx5_wqe_datagram_seg) / 16;
                                 seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_datagram_seg));
                                 if (seg == qend)
-                                        seg = qp->dv_qp.sq.buf;
+                                        seg = gqp->dv_qp.sq.buf;
                                 break;
                         case IBV_QPT_RC:
                                 break;
@@ -429,7 +429,7 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
                 data_seg = (struct mlx5_wqe_data_seg *)seg;
                 for (i = 0; i < p_ewr->num_sge; ++i) {
                         if (data_seg == qend) {
-                                seg = qp->dv_qp.sq.buf;
+                                seg = gqp->dv_qp.sq.buf;
                                 data_seg = (struct mlx5_wqe_data_seg *)seg;
                         }
                         if (p_ewr->sg_list[i].length) {
@@ -439,20 +439,20 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
                         }
                 }
 
-                mlx5dv_set_ctrl_seg(ctrl_seg, qp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, qp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
+                mlx5dv_set_ctrl_seg(ctrl_seg, gqp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, gqp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
 
                 tx_cq->wrid[idx] = p_ewr->wr_id;
-                qp->sq_cur_post += (size * 16 + qp->dv_qp.sq.stride - 1) / qp->dv_qp.sq.stride;
+                gqp->sq_cur_post += (size * 16 + gqp->dv_qp.sq.stride - 1) / gqp->dv_qp.sq.stride;
         }
 
-        commit->rollback_id = qp->peer_scur_post | ((uint64_t)qp->sq_cur_post << 32);
-        qp->peer_scur_post = qp->sq_cur_post;
+        commit->rollback_id = gqp->peer_scur_post | ((uint64_t)gqp->sq_cur_post << 32);
+        gqp->peer_scur_post = gqp->sq_cur_post;
 
         wr = commit->storage;
 
         wr->type = GDS_MLX5_PEER_OP_STORE_DWORD;
-        wr->wr.dword_va.data = htonl(qp->sq_cur_post & 0xffff);
-        wr->wr.dword_va.target_id = qp->peer_va_id_dbr;
+        wr->wr.dword_va.data = htonl(gqp->sq_cur_post & 0xffff);
+        wr->wr.dword_va.target_id = gqp->peer_va_id_dbr;
         wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
         wr = wr->next;
 
@@ -462,10 +462,10 @@ int gds_mlx5_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_
 
         wr->type = GDS_MLX5_PEER_OP_STORE_QWORD;
         wr->wr.qword_va.data = *(__be64 *)ctrl_seg;
-        wr->wr.qword_va.target_id = qp->peer_va_id_bf;
-        wr->wr.qword_va.offset = qp->bf_offset;
+        wr->wr.qword_va.target_id = gqp->peer_va_id_bf;
+        wr->wr.qword_va.offset = gqp->bf_offset;
 
-        qp->bf_offset ^= qp->dv_qp.bf.size;
+        gqp->bf_offset ^= gqp->dv_qp.bf.size;
         commit->entries = 3;
 
 out:
@@ -474,11 +474,9 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_peer_peek_cq(struct gds_cq *cq, struct gds_mlx5_peer_peek *peek)
+int gds_mlx5_peer_peek_cq(gds_mlx5_cq *gcq, struct gds_mlx5_peer_peek *peek)
 {
         int ret = 0;
-
-        gds_mlx5_cq *gcq = to_gds_mcq(cq);
 
         gds_peer_attr *peer_attr = (gds_peer_attr *)gcq->peer_attr;
         struct gds_mlx5_peer_op_wr *wr;

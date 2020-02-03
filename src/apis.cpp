@@ -81,7 +81,7 @@ static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t *send_info, enu
         /* Reserved for future expensions, must be 0 */
         rollback.comp_mask = 0;
         gds_warn("Need to rollback WQE %lx\n", rollback.rollback_id);
-        ret = gds_mlx5_rollback_send(qp, &rollback);
+        ret = gds_mlx5_rollback_send(to_gds_mqp(qp), &rollback);
         if(ret)
                 gds_err("error %d in ibv_exp_rollback_qp\n", ret);
 
@@ -171,7 +171,7 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         assert(qp->qp);
         assert(request->commit.entries >= 3);
 
-        ret = gds_mlx5_post_send(qp, p_ewr, bad_ewr, &request->commit);
+        ret = gds_mlx5_post_send(to_gds_mqp(qp), p_ewr, bad_ewr, &request->commit);
 
         return ret;
 }
@@ -267,7 +267,7 @@ int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flag
 
         gds_init_wait_request(request, cq->curr_offset++);
 
-        gds_mlx5_peer_peek_cq(cq, &request->peek);
+        gds_mlx5_peer_peek_cq(to_gds_mcq(cq), &request->peek);
 
 out:
         return ret;
