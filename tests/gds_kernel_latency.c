@@ -545,6 +545,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
                 .sg_list    = &list,
                 .num_sge    = 1,
                 .opcode     = IBV_WR_SEND,
+                .send_flags = IBV_SEND_SIGNALED,
                 .wr         = {
                         .ud = {
                                 .ah          = ctx->ah,
@@ -558,6 +559,7 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
                 memset(&ewr, 0, sizeof(ewr));
                 ewr.num_sge = 1;
                 ewr.opcode = IBV_WR_SEND;
+                ewr.send_flags = IBV_SEND_SIGNALED,
                 ewr.wr_id = PINGPONG_SEND_WRID;
                 ewr.sg_list = &list;
                 ewr.next = NULL;
@@ -580,6 +582,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
                 .sg_list    = &list,
                 .num_sge    = 1,
                 .opcode     = IBV_WR_SEND,
+                .send_flags = IBV_SEND_SIGNALED,
                 .wr         = {
                         .ud = {
                                 .ah          = ctx->ah,
@@ -593,6 +596,7 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
                 memset(&ewr, 0, sizeof(ewr));
                 ewr.num_sge = 1;
                 ewr.opcode = IBV_WR_SEND;
+                ewr.send_flags = IBV_SEND_SIGNALED,
                 ewr.wr_id = PINGPONG_SEND_WRID;
                 ewr.sg_list = &list;
                 ewr.next = NULL;

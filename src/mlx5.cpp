@@ -399,6 +399,12 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_e
                 goto out;
         }
 
+        if (p_ewr->send_flags != IBV_SEND_SIGNALED) {
+                gds_err("Unsupported send_flags. Currently we support only IBV_SEND_SIGNALED\n");
+                ret = EINVAL;
+                goto out;
+        }
+
         qend = (void *)((char *)gqp->dv_qp.sq.buf + (gqp->dv_qp.sq.wqe_cnt * gqp->dv_qp.sq.stride));
         for (nreq = 0; p_ewr; ++nreq, p_ewr = p_ewr->next) {
                 idx = gqp->sq_cur_post & (gqp->dv_qp.sq.wqe_cnt - 1);
