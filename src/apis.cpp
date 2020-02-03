@@ -635,7 +635,6 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                                         ret = retcode;
                                         goto out;
                                 }
-                        break;
                                 break;
                         }
                         case GDS_TAG_WAIT: {

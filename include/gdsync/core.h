@@ -102,7 +102,8 @@ struct gds_qp {
 
 /* \brief: Poll a peer-enabled CQ.
  *
- * It works similar to ibv_poll_cq while taking peer peek entry into account.
+ * It works similarly to ibv_poll_cq while blocking CPU access to the CQ
+ * entries until the GPU has a chance to observe them.
  */
 
 int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc);
