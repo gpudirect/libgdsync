@@ -45,7 +45,7 @@
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_t *request)
+int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_mlx5_send_request_t *request)
 {
         int retcode = 0;
         size_t n_ops = request->commit.entries;
@@ -151,13 +151,13 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_get_send_info(int count, const gds_send_request_t *requests, gds_mlx5_send_info_t *mlx5_infos)
+int gds_mlx5_get_send_info(int count, const gds_mlx5_send_request_t *requests, gds_mlx5_send_info_t *mlx5_infos)
 {
         int retcode = 0;
 
         for (int j=0; j<count; j++) {
                 gds_mlx5_send_info *mlx5_i = mlx5_infos + j;
-                const gds_send_request_t *request = requests + j;
+                const gds_mlx5_send_request_t *request = requests + j;
                 retcode = gds_mlx5_get_send_descs(mlx5_i, request);
                 if (retcode) {
                         gds_err("error %d while retrieving descriptors for %dth request\n", retcode, j);
@@ -172,7 +172,7 @@ int gds_mlx5_get_send_info(int count, const gds_send_request_t *requests, gds_ml
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request_t *request)
+int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_mlx5_wait_request_t *request)
 {
         int retcode = 0;
         size_t n_ops = request->peek.entries;

@@ -41,8 +41,6 @@
 
 #include <infiniband/mlx5dv.h>
 
-#include "mlx5_peer.h"
-
 typedef enum gds_param {
         GDS_PARAM_VERSION,
         GDS_NUM_PARAMS
@@ -175,8 +173,8 @@ enum {
  */
 
 typedef struct gds_send_request {
-        struct gds_mlx5_peer_commit commit;
-        struct gds_mlx5_peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+        uint8_t reserve0[32];
+        uint8_t reserve1[56 * GDS_SEND_INFO_MAX_OPS];
 } gds_send_request_t;
 
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
@@ -188,8 +186,8 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
  */
 
 typedef struct gds_wait_request {
-        struct gds_mlx5_peer_peek peek;
-        struct gds_mlx5_peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+        uint8_t reserve0[40];
+        uint8_t reserve1[56 * GDS_WAIT_INFO_MAX_OPS];
 } gds_wait_request_t;
 
 /**

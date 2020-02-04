@@ -778,6 +778,12 @@ int main(int argc, char *argv[])
         int                      skip_kernel_launch = 0;
         int                      hide_cpu_launch_latency = 0;
 
+        /*printf("sizeof(gds_send_request_t)=%zu\n", sizeof(gds_send_request_t));
+        printf("sizeof(gds_mlx5_peer_commit)=%zu\n", sizeof(struct gds_mlx5_peer_commit));
+        printf("sizeof(gds_mlx5_peer_op_wr)=%zu\n", sizeof(struct gds_mlx5_peer_op_wr));
+        printf("sizeof(gds_wait_request_t)=%zu\n", sizeof(gds_wait_request_t));
+        printf("sizeof(gds_mlx5_peer_peek)=%zu\n", sizeof(struct gds_mlx5_peer_peek));
+        exit(0);*/
         fprintf(stdout, "libgdsync build version 0x%08x, major=%d minor=%d\n", GDS_API_VERSION, GDS_API_MAJOR_VERSION, GDS_API_MINOR_VERSION);
 
         int version;

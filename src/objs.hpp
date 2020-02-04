@@ -31,19 +31,6 @@
 
 static const size_t max_gpus = 16;
 
-enum gds_peer_op_caps {
-        GDS_PEER_OP_FENCE_CAP   = (1 << GDS_MLX5_PEER_OP_FENCE),
-        GDS_PEER_OP_STORE_DWORD_CAP = (1 << GDS_MLX5_PEER_OP_STORE_DWORD),
-        GDS_PEER_OP_STORE_QWORD_CAP = (1 << GDS_MLX5_PEER_OP_STORE_QWORD),
-        GDS_PEER_OP_COPY_BLOCK_CAP  = (1 << GDS_MLX5_PEER_OP_COPY_BLOCK),
-        GDS_PEER_OP_POLL_AND_DWORD_CAP
-                = (1 << GDS_MLX5_PEER_OP_POLL_AND_DWORD),
-        GDS_PEER_OP_POLL_NOR_DWORD_CAP
-                = (1 << GDS_MLX5_PEER_OP_POLL_NOR_DWORD),
-        GDS_PEER_OP_POLL_GEQ_DWORD_CAP
-                = (1 << GDS_MLX5_PEER_OP_POLL_GEQ_DWORD),
-};
-
 enum gds_peer_fence {
         GDS_PEER_FENCE_OP_READ      = (1 << 0), 
         GDS_PEER_FENCE_OP_WRITE     = (1 << 1), 

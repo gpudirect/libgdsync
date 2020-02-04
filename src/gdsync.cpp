@@ -1076,12 +1076,15 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uint32_t val)
+int gds_post_pokes_on_cpu(int count, gds_send_request_t *p_info, uint32_t *dw, uint32_t val)
 {
         int retcode = 0;
         int idx = 0;
+        gds_mlx5_send_request_t *info;
 
-        assert(info);
+        assert(p_info);
+
+        info = to_gds_msreq(p_info);
 
         for (int j=0; j<count; j++) {
                 gds_dbg("peer_commit:%d idx=%d\n", j, idx);
@@ -1160,9 +1163,14 @@ static void gds_dump_ops(struct gds_mlx5_peer_op_wr *op, size_t count)
 
 //-----------------------------------------------------------------------------
 
-void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
+void gds_dump_wait_request(gds_wait_request_t *p_wreq, size_t count)
 {
-        for (size_t j=0; j<count; ++j) {
+        gds_mlx5_wait_request_t *request;
+
+        assert(p_wreq);
+
+        request = to_gds_mwreq(p_wreq);
+        for (size_t j = 0; j < count; ++j) {
                 struct gds_mlx5_peer_peek *peek = &request[j].peek;
                 gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%" PRIx64 " comp_mask:%08x\n", 
                                 j, peek->entries, peek->whence, peek->offset, 
