@@ -92,6 +92,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/libgdsync*.a
 
 %changelog
+* 2019-05-06  Davide Rossetti  <drossetti@nvidia.com>
+- libgdsync.spec.in: align AC_INIT version to GDS_API_*_VERSION
 * Wed Oct 5 2016 Davide Rossetti <drossetti@nvidia.com> - 1.0.0-1
 - New upstream release
 

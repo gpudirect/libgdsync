@@ -32,12 +32,12 @@
 #error "don't include directly this header, use gdsync.h always"
 #endif
 
-#define GDS_API_MAJOR_VERSION    2U
-#define GDS_API_MINOR_VERSION    2U
-#define GDS_API_VERSION          ((GDS_API_MAJOR_VERSION << 16) | GDS_API_MINOR_VERSION)
+#define GDS_API_MAJOR_VERSION    2
+#define GDS_API_MINOR_VERSION    2
+#define GDS_API_VERSION          (((unsigned)GDS_API_MAJOR_VERSION << 16) | (unsigned)GDS_API_MINOR_VERSION)
 #define GDS_API_VERSION_COMPATIBLE(v) \
-    ( ((((v) & 0xffff0000U) >> 16) == GDS_API_MAJOR_VERSION) &&   \
-      ((((v) & 0x0000ffffU) >> 0 ) >= GDS_API_MINOR_VERSION) )
+        ( ((((v) & 0xffff0000U) >> 16) == (unsigned)GDS_API_MAJOR_VERSION) && \
+          ((((v) & 0x0000ffffU) >> 0 ) >= (unsigned)GDS_API_MINOR_VERSION) )
 
 #include <infiniband/mlx5dv.h>
 
