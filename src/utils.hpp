@@ -33,6 +33,35 @@
 #include <inttypes.h> // to pull PRIx64
 #include <stdio.h>
 
+#if (__GNUC__ >= 6 && !defined(__powerpc__)) || defined(__clang__)
+#define uninitialized_var(x) x
+#else
+#define uninitialized_var(x) x = x
+#endif
+
+#ifndef likely
+#ifdef __GNUC__
+#define likely(x)       __builtin_expect(!!(x), 1)
+#else
+#define likely(x)      (x)
+#endif
+#endif
+
+#ifndef unlikely
+#ifdef __GNUC__
+#define unlikely(x)      __builtin_expect(!!(x), 0)
+#else
+#define unlikely(x)    (x)
+#endif
+#endif
+
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+
+static inline unsigned long align(unsigned long val, unsigned long align)
+{
+        return (val + align - 1) & ~(align - 1);
+}
+
 // internal assert function
 
 void gds_assert(const char *cond, const char *file, unsigned line, const char *function);

@@ -194,7 +194,11 @@ typedef struct gds_mlx5_qp {
         struct mlx5dv_qp dv_qp;
 
         unsigned int sq_cur_post;
+        uint8_t	sq_signal_bits;
+
         unsigned int bf_offset;
+
+        uint8_t fm_cache;
 
         uint32_t peer_scur_post;
         uint64_t peer_va_id_dbr;

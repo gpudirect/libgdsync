@@ -1969,6 +1969,11 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         rx_gcq->type = GDS_CQ_TYPE_RQ;
         gqp->recv_cq = to_gds_cq(rx_gcq);
 
+        if (qp_attr->sq_sig_all)
+                gqp->sq_signal_bits = MLX5_WQE_CTRL_CQ_UPDATE;
+        else
+                gqp->sq_signal_bits = 0;
+
         dv_obj = {
                 .qp = {
                         .in     = gqp->qp,
