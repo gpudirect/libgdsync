@@ -1152,78 +1152,34 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                 gqp->sq_cur_post += (size * 16 + gqp->dv_qp.sq.stride - 1) / gqp->dv_qp.sq.stride;
         }
 
-        #if 0
-        qend = (void *)((char *)gqp->dv_qp.sq.buf + (gqp->dv_qp.sq.wqe_cnt * gqp->dv_qp.sq.stride));
-        for (nreq = 0; p_ewr; ++nreq, p_ewr = p_ewr->next) {
-                idx = gqp->sq_cur_post & (gqp->dv_qp.sq.wqe_cnt - 1);
-                seg = (void *)((char *)gqp->dv_qp.sq.buf + (idx * gqp->dv_qp.sq.stride));
-
-                ctrl_seg = (struct mlx5_wqe_ctrl_seg *)seg;
-                size = sizeof(struct mlx5_wqe_ctrl_seg) / 16;
-                seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_ctrl_seg));
-
-                switch (gqp->qp->qp_type) {
-                        case IBV_QPT_UD:
-                                ret = set_datagram_seg((struct mlx5_wqe_datagram_seg *)seg, p_ewr);
-                                if (ret)
-                                        goto out;
-                                size = sizeof(struct mlx5_wqe_datagram_seg) / 16;
-                                seg = (void *)((char *)seg + sizeof(struct mlx5_wqe_datagram_seg));
-                                if (seg == qend)
-                                        seg = gqp->dv_qp.sq.buf;
-                                break;
-                        case IBV_QPT_RC:
-                                break;
-                        default:
-                                gds_err("Encountered unsupported qp_type. We currently support only IBV_QPT_UD\n");
-                                ret = EINVAL;
-                                goto out;
-                }
-
-                data_seg = (struct mlx5_wqe_data_seg *)seg;
-                for (i = 0; i < p_ewr->num_sge; ++i) {
-                        if (data_seg == qend) {
-                                seg = gqp->dv_qp.sq.buf;
-                                data_seg = (struct mlx5_wqe_data_seg *)seg;
-                        }
-                        if (p_ewr->sg_list[i].length) {
-                                mlx5dv_set_data_seg(data_seg, p_ewr->sg_list[i].length, p_ewr->sg_list[i].lkey, p_ewr->sg_list[i].addr);
-                                ++data_seg;
-                                size += sizeof(struct mlx5_wqe_data_seg) / 16;
-                        }
-                }
-
-                mlx5dv_set_ctrl_seg(ctrl_seg, gqp->sq_cur_post & 0xffff, MLX5_OPCODE_SEND, 0, gqp->qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, size, 0, 0);
-
-                tx_cq->wrid[idx] = p_ewr->wr_id;
-                gqp->sq_cur_post += (size * 16 + gqp->dv_qp.sq.stride - 1) / gqp->dv_qp.sq.stride;
-        }
-        #endif
-
-        commit->rollback_id = gqp->peer_scur_post | ((uint64_t)gqp->sq_cur_post << 32);
-        gqp->peer_scur_post = gqp->sq_cur_post;
-
-        wr = commit->storage;
-
-        wr->type = GDS_MLX5_PEER_OP_STORE_DWORD;
-        wr->wr.dword_va.data = htonl(gqp->sq_cur_post & 0xffff);
-        wr->wr.dword_va.target_id = gqp->peer_va_id_dbr;
-        wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
-        wr = wr->next;
-
-        wr->type = GDS_MLX5_PEER_OP_FENCE;
-        wr->wr.fence.fence_flags = GDS_PEER_FENCE_OP_WRITE | GDS_PEER_FENCE_FROM_HCA | GDS_PEER_FENCE_MEM_SYS;
-        wr = wr->next;
-
-        wr->type = GDS_MLX5_PEER_OP_STORE_QWORD;
-        wr->wr.qword_va.data = *(__be64 *)ctrl;
-        wr->wr.qword_va.target_id = gqp->peer_va_id_bf;
-        wr->wr.qword_va.offset = gqp->bf_offset;
-
-        gqp->bf_offset ^= gqp->dv_qp.bf.size;
-        commit->entries = 3;
-
 out:
+	gqp->fm_cache = next_fence;
+
+        if (likely(nreq > 0)) {
+                commit->rollback_id = gqp->peer_scur_post | ((uint64_t)gqp->sq_cur_post << 32);
+                gqp->peer_scur_post = gqp->sq_cur_post;
+
+                wr = commit->storage;
+
+                wr->type = GDS_MLX5_PEER_OP_STORE_DWORD;
+                wr->wr.dword_va.data = htonl(gqp->sq_cur_post & 0xffff);
+                wr->wr.dword_va.target_id = gqp->peer_va_id_dbr;
+                wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
+                wr = wr->next;
+
+                wr->type = GDS_MLX5_PEER_OP_FENCE;
+                wr->wr.fence.fence_flags = GDS_PEER_FENCE_OP_WRITE | GDS_PEER_FENCE_FROM_HCA | GDS_PEER_FENCE_MEM_SYS;
+                wr = wr->next;
+
+                wr->type = GDS_MLX5_PEER_OP_STORE_QWORD;
+                wr->wr.qword_va.data = *(__be64 *)ctrl;
+                wr->wr.qword_va.target_id = gqp->peer_va_id_bf;
+                wr->wr.qword_va.offset = gqp->bf_offset;
+
+                gqp->bf_offset ^= gqp->dv_qp.bf.size;
+                commit->entries = 3;
+        }
+
         return ret;
 }
 
