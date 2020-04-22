@@ -1803,7 +1803,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
                 .comp_mask      = peer_attr->comp_mask
         };
         gds_peer *peer = peer_from_id(peer_attr->peer_id);
-        gds_mlx5_qp *gqp; 
+        gds_mlx5_qp_t *gqp; 
         uint64_t range_id;
         gds_buf *buf = NULL;
         void *ptr = NULL;
@@ -1842,7 +1842,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
         }
 
         assert(peer->obj);
-        gqp = (gds_mlx5_qp *)peer->obj;
+        gqp = (gds_mlx5_qp_t *)peer->obj;
 
         if ((range_id = peer_attr->register_va(ptr, size, peer_attr->peer_id, buf)) == 0) {
                 gds_err("error in register_va\n");
@@ -1869,7 +1869,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         int ret = 0;
         struct ibv_pd *pd = NULL;
         struct ibv_parent_domain_init_attr pd_init_attr;
-        gds_mlx5_qp *mqp = NULL;
+        gds_mlx5_qp_t *mqp = NULL;
         gds_qp_t *gqp = NULL;
         struct ibv_qp *ibqp = NULL;
         struct gds_mlx5_cq *rx_mcq = NULL, *tx_mcq = NULL;

@@ -371,7 +371,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_rollback_send(gds_mlx5_qp *mqp,
+int gds_mlx5_rollback_send(gds_mlx5_qp_t *mqp,
 		       struct gds_mlx5_rollback_ctx *rollback)
 {
 	int diff;
@@ -423,7 +423,7 @@ static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_w
 
 //-----------------------------------------------------------------------------
 
-static inline int mlx5_wq_overflow(gds_mlx5_qp *mqp, int nreq)
+static inline int mlx5_wq_overflow(gds_mlx5_qp_t *mqp, int nreq)
 {
         gds_mlx5_cq *mcq = to_gds_mcq(mqp->gqp.send_cq);
 
@@ -436,7 +436,7 @@ static inline int mlx5_wq_overflow(gds_mlx5_qp *mqp, int nreq)
 
 //-----------------------------------------------------------------------------
 
-static inline void *mlx5_get_send_wqe(gds_mlx5_qp *mqp, int n)
+static inline void *mlx5_get_send_wqe(gds_mlx5_qp_t *mqp, int n)
 {
         return (void *)((uintptr_t)mqp->dvqp.sq.buf + (n * mqp->dvqp.sq.stride));
 }
@@ -490,7 +490,7 @@ static inline __be16 get_klm_octo(int nentries)
         return htobe16(ALIGN(nentries, 3) / 2);
 }
 
-static void set_umr_data_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
+static void set_umr_data_seg(gds_mlx5_qp_t *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
@@ -508,7 +508,7 @@ static void set_umr_data_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
         *size += (sizeof(*data) / 16);
 }
 
-static void set_umr_mkey_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
+static void set_umr_mkey_seg(gds_mlx5_qp_t *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
@@ -547,7 +547,7 @@ static void set_umr_mkey_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
         *size += (sizeof(struct mlx5_wqe_mkey_context_seg) / 16);
 }
 
-static inline void set_umr_control_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
+static inline void set_umr_control_seg(gds_mlx5_qp_t *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
@@ -585,7 +585,7 @@ static inline void set_umr_control_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
         *size += sizeof(struct mlx5_wqe_umr_ctrl_seg) / 16;
 }
 
-static inline int set_bind_wr(gds_mlx5_qp *mqp, enum ibv_mw_type type,
+static inline int set_bind_wr(gds_mlx5_qp_t *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
@@ -613,7 +613,7 @@ static inline int set_bind_wr(gds_mlx5_qp *mqp, enum ibv_mw_type type,
 
 //-----------------------------------------------------------------------------
 
-static inline int mlx5_post_send_underlay(gds_mlx5_qp *mqp, gds_send_wr *wr,
+static inline int mlx5_post_send_underlay(gds_mlx5_qp_t *mqp, gds_send_wr *wr,
                 void **pseg, int *total_size,
                 struct mlx5_sg_copy_ptr *sg_copy_ptr)
 {
@@ -674,7 +674,7 @@ static inline int mlx5_post_send_underlay(gds_mlx5_qp *mqp, gds_send_wr *wr,
  */
 static inline int set_tso_eth_seg(void **seg, void *hdr, uint16_t hdr_sz,
                 uint16_t mss,
-                gds_mlx5_qp *mqp, int *size)
+                gds_mlx5_qp_t *mqp, int *size)
 {
         struct mlx5_wqe_eth_seg *eseg = (struct mlx5_wqe_eth_seg *)*seg;
         int size_of_inl_hdr_start = sizeof(eseg->inline_hdr_start);
@@ -802,7 +802,7 @@ static inline int copy_eth_inline_headers(struct ibv_qp *ibqp,
 
 //-----------------------------------------------------------------------------
 
-static inline int set_data_inl_seg(gds_mlx5_qp *mqp, gds_send_wr *wr,
+static inline int set_data_inl_seg(gds_mlx5_qp_t *mqp, gds_send_wr *wr,
                 void *wqe, int *sz,
                 struct mlx5_sg_copy_ptr *sg_copy_ptr)
 {
@@ -863,7 +863,7 @@ static inline void set_data_ptr_seg_atomic(struct mlx5_wqe_data_seg *dseg,
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_post_send(gds_mlx5_qp *mqp, gds_send_wr *p_ewr, gds_send_wr **bad_wr, gds_mlx5_peer_commit *commit)
+int gds_mlx5_post_send(gds_mlx5_qp_t *mqp, gds_send_wr *p_ewr, gds_send_wr **bad_wr, gds_mlx5_peer_commit *commit)
 {
         int ret = 0;
         unsigned int idx;
@@ -1250,16 +1250,16 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq *tx_mcq, gds_mlx5_cq *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp **out_mqp)
+int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq *tx_mcq, gds_mlx5_cq *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp)
 {
         int ret = 0;
 
-        gds_mlx5_qp *mqp = NULL;
+        gds_mlx5_qp_t *mqp = NULL;
         gds_qp_t *gqp;
 
         mlx5dv_obj dv_obj;
 
-        mqp = (gds_mlx5_qp *)calloc(1, sizeof(gds_mlx5_qp));
+        mqp = (gds_mlx5_qp_t *)calloc(1, sizeof(gds_mlx5_qp_t));
         if (!mqp) {
                 gds_err("cannot allocate memory\n");
                 ret = ENOMEM;
