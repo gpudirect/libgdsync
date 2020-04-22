@@ -371,28 +371,28 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_rollback_send(gds_mlx5_qp *gqp,
+int gds_mlx5_rollback_send(gds_mlx5_qp *mqp,
 		       struct gds_mlx5_rollback_ctx *rollback)
 {
 	int diff;
 
-	gqp->bf_offset = (rollback->rollback_id & GDS_MLX5_ROLLBACK_ID_PARITY_MASK) ?
-					gqp->dv_qp.bf.size : 0;
+	mqp->bf_offset = (rollback->rollback_id & GDS_MLX5_ROLLBACK_ID_PARITY_MASK) ?
+					mqp->dvqp.bf.size : 0;
 	rollback->rollback_id &= GDS_MLX5_ROLLBACK_ID_PARITY_MASK - 1;
 
 	if (rollback->flags & GDS_MLX5_ROLLBACK_ABORT_UNCOMMITED) {
-		diff = (gqp->sq_cur_post & 0xffff)
-		     - ntohl(gqp->dv_qp.dbrec[MLX5_SND_DBR]);
+		diff = (mqp->sq_cur_post & 0xffff)
+		     - ntohl(mqp->dvqp.dbrec[MLX5_SND_DBR]);
 		if (diff < 0)
 			diff += 0x10000;
-		gqp->sq_cur_post -= diff;
+		mqp->sq_cur_post -= diff;
 	} else {
 		if (!(rollback->flags & GDS_MLX5_ROLLBACK_ABORT_LATE)) {
-			if (gqp->sq_cur_post !=
+			if (mqp->sq_cur_post !=
 			    (rollback->rollback_id >> 32))
 				return -ERANGE;
 		}
-		gqp->sq_cur_post = rollback->rollback_id & 0xffffffff;
+		mqp->sq_cur_post = rollback->rollback_id & 0xffffffff;
 	}
 	return 0;
 }
@@ -423,22 +423,22 @@ static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_w
 
 //-----------------------------------------------------------------------------
 
-static inline int mlx5_wq_overflow(gds_mlx5_qp *gqp, int nreq)
+static inline int mlx5_wq_overflow(gds_mlx5_qp *mqp, int nreq)
 {
-        gds_mlx5_cq *gcq = to_gds_mcq(gqp->send_cq);
+        gds_mlx5_cq *mcq = to_gds_mcq(mqp->gqp.send_cq);
 
 	unsigned int cur;
 
-	cur = gqp->sq_cur_post - gcq->cons_index;
+	cur = mqp->sq_cur_post - mcq->cons_index;
 
-	return cur + nreq >= gqp->dv_qp.sq.wqe_cnt;
+	return cur + nreq >= mqp->dvqp.sq.wqe_cnt;
 }
 
 //-----------------------------------------------------------------------------
 
-static inline void *mlx5_get_send_wqe(gds_mlx5_qp *gqp, int n)
+static inline void *mlx5_get_send_wqe(gds_mlx5_qp *mqp, int n)
 {
-        return (void *)((uintptr_t)gqp->dv_qp.sq.buf + (n * gqp->dv_qp.sq.stride));
+        return (void *)((uintptr_t)mqp->dvqp.sq.buf + (n * mqp->dvqp.sq.stride));
 }
 
 //-----------------------------------------------------------------------------
@@ -490,7 +490,7 @@ static inline __be16 get_klm_octo(int nentries)
         return htobe16(ALIGN(nentries, 3) / 2);
 }
 
-static void set_umr_data_seg(gds_mlx5_qp *qp, enum ibv_mw_type type,
+static void set_umr_data_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
@@ -508,7 +508,7 @@ static void set_umr_data_seg(gds_mlx5_qp *qp, enum ibv_mw_type type,
         *size += (sizeof(*data) / 16);
 }
 
-static void set_umr_mkey_seg(gds_mlx5_qp *qp, enum ibv_mw_type type,
+static void set_umr_mkey_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
@@ -547,7 +547,7 @@ static void set_umr_mkey_seg(gds_mlx5_qp *qp, enum ibv_mw_type type,
         *size += (sizeof(struct mlx5_wqe_mkey_context_seg) / 16);
 }
 
-static inline void set_umr_control_seg(gds_mlx5_qp *qp, enum ibv_mw_type type,
+static inline void set_umr_control_seg(gds_mlx5_qp *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
@@ -585,35 +585,35 @@ static inline void set_umr_control_seg(gds_mlx5_qp *qp, enum ibv_mw_type type,
         *size += sizeof(struct mlx5_wqe_umr_ctrl_seg) / 16;
 }
 
-static inline int set_bind_wr(gds_mlx5_qp *gqp, enum ibv_mw_type type,
+static inline int set_bind_wr(gds_mlx5_qp *mqp, enum ibv_mw_type type,
                 int32_t rkey,
                 const struct ibv_mw_bind_info *bind_info,
                 uint32_t qpn, void **seg, int *size)
 {
-        void *qend = mlx5_get_send_wqe(gqp, gqp->dv_qp.sq.wqe_cnt);
+        void *qend = mlx5_get_send_wqe(mqp, mqp->dvqp.sq.wqe_cnt);
 
         /* check that len > 2GB because KLM support only 2GB */
         if (bind_info->length > 1UL << 31)
                 return EOPNOTSUPP;
 
-        set_umr_control_seg(gqp, type, rkey, bind_info, qpn, seg, size);
+        set_umr_control_seg(mqp, type, rkey, bind_info, qpn, seg, size);
         if (unlikely((*seg == qend)))
-                *seg = mlx5_get_send_wqe(gqp, 0);
+                *seg = mlx5_get_send_wqe(mqp, 0);
 
-        set_umr_mkey_seg(gqp, type, rkey, bind_info, qpn, seg, size);
+        set_umr_mkey_seg(mqp, type, rkey, bind_info, qpn, seg, size);
         if (!bind_info->length)
                 return 0;
 
         if (unlikely((seg == qend)))
-                *seg = mlx5_get_send_wqe(gqp, 0);
+                *seg = mlx5_get_send_wqe(mqp, 0);
 
-        set_umr_data_seg(gqp, type, rkey, bind_info, qpn, seg, size);
+        set_umr_data_seg(mqp, type, rkey, bind_info, qpn, seg, size);
         return 0;
 }
 
 //-----------------------------------------------------------------------------
 
-static inline int mlx5_post_send_underlay(gds_mlx5_qp *qp, gds_send_wr *wr,
+static inline int mlx5_post_send_underlay(gds_mlx5_qp *mqp, gds_send_wr *wr,
                 void **pseg, int *total_size,
                 struct mlx5_sg_copy_ptr *sg_copy_ptr)
 {
@@ -674,13 +674,13 @@ static inline int mlx5_post_send_underlay(gds_mlx5_qp *qp, gds_send_wr *wr,
  */
 static inline int set_tso_eth_seg(void **seg, void *hdr, uint16_t hdr_sz,
                 uint16_t mss,
-                gds_mlx5_qp *qp, int *size)
+                gds_mlx5_qp *mqp, int *size)
 {
         struct mlx5_wqe_eth_seg *eseg = (struct mlx5_wqe_eth_seg *)*seg;
         int size_of_inl_hdr_start = sizeof(eseg->inline_hdr_start);
         uint64_t left, left_len, copy_sz;
 
-        void *qend = mlx5_get_send_wqe(qp, qp->dv_qp.sq.wqe_cnt);
+        void *qend = mlx5_get_send_wqe(mqp, mqp->dvqp.sq.wqe_cnt);
 
         if (unlikely(hdr_sz < MLX5_ETH_L2_MIN_HEADER_SIZE)) {
                 gds_dbg("TSO header size should be at least %d\n",
@@ -709,7 +709,7 @@ static inline int set_tso_eth_seg(void **seg, void *hdr, uint16_t hdr_sz,
 
         /* The last wqe in the queue */
         if (unlikely(copy_sz < left)) {
-                *seg = mlx5_get_send_wqe(qp, 0);
+                *seg = mlx5_get_send_wqe(mqp, 0);
                 left -= copy_sz;
                 hdr = (void *)((uintptr_t)hdr + copy_sz);
                 memcpy(*seg, hdr, left);
@@ -802,7 +802,7 @@ static inline int copy_eth_inline_headers(struct ibv_qp *ibqp,
 
 //-----------------------------------------------------------------------------
 
-static inline int set_data_inl_seg(gds_mlx5_qp *qp, gds_send_wr *wr,
+static inline int set_data_inl_seg(gds_mlx5_qp *mqp, gds_send_wr *wr,
                 void *wqe, int *sz,
                 struct mlx5_sg_copy_ptr *sg_copy_ptr)
 {
@@ -813,7 +813,7 @@ static inline int set_data_inl_seg(gds_mlx5_qp *qp, gds_send_wr *wr,
         int inl = 0;
         int copy;
         int offset = sg_copy_ptr->offset;
-        void *qend = mlx5_get_send_wqe(qp, qp->dv_qp.sq.wqe_cnt);
+        void *qend = mlx5_get_send_wqe(mqp, mqp->dvqp.sq.wqe_cnt);
         
         seg = (struct mlx5_wqe_inline_seg *)wqe;
         wqe = (void *)((uintptr_t)wqe + sizeof *seg);
@@ -828,7 +828,7 @@ static inline int set_data_inl_seg(gds_mlx5_qp *qp, gds_send_wr *wr,
                         memcpy(wqe, addr, copy);
                         addr = (void *)((uintptr_t)addr + copy);
                         len -= copy;
-                        wqe = mlx5_get_send_wqe(qp, 0);
+                        wqe = mlx5_get_send_wqe(mqp, 0);
                 }
                 memcpy(wqe, addr, len);
                 wqe = (void *)((uintptr_t)wqe + len);
@@ -863,13 +863,13 @@ static inline void set_data_ptr_seg_atomic(struct mlx5_wqe_data_seg *dseg,
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_wr, gds_mlx5_peer_commit *commit)
+int gds_mlx5_post_send(gds_mlx5_qp *mqp, gds_send_wr *p_ewr, gds_send_wr **bad_wr, gds_mlx5_peer_commit *commit)
 {
         int ret = 0;
         unsigned int idx;
         int size;
         void *seg;
-        void *qend = mlx5_get_send_wqe(gqp, gqp->dv_qp.sq.wqe_cnt);
+        void *qend = mlx5_get_send_wqe(mqp, mqp->dvqp.sq.wqe_cnt);
         int i;
         int nreq;
 	int inl = 0;
@@ -887,7 +887,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
 
         struct gds_mlx5_peer_op_wr *wr;
 
-        gds_mlx5_cq *tx_cq = to_gds_mcq(gqp->send_cq);
+        gds_mlx5_cq *tx_cq = to_gds_mcq(mqp->gqp.send_cq);
 
         if (commit->entries < 3) {
                 gds_err("not enough entries in gds_mlx5_peer_commit.\n");
@@ -895,7 +895,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                 goto out;
         }
 
-	next_fence = gqp->fm_cache;
+	next_fence = mqp->fm_cache;
 
 	for (nreq = 0; p_ewr; ++nreq, p_ewr = p_ewr->next) {
                 if (unlikely(p_ewr->opcode < 0 ||
@@ -906,7 +906,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                         goto out;
                 }
 
-                if (unlikely(mlx5_wq_overflow(gqp, nreq))) {
+                if (unlikely(mlx5_wq_overflow(mqp, nreq))) {
                         gds_dbg("work queue overflow\n");
                         ret = ENOMEM;
                         *bad_wr = p_ewr;
@@ -918,12 +918,12 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                 else
                         fence = next_fence;
                 next_fence = 0;
-                idx = gqp->sq_cur_post & (gqp->dv_qp.sq.wqe_cnt - 1);
-                seg = mlx5_get_send_wqe(gqp, idx);
+                idx = mqp->sq_cur_post & (mqp->dvqp.sq.wqe_cnt - 1);
+                seg = mlx5_get_send_wqe(mqp, idx);
                 ctrl = (struct mlx5_wqe_ctrl_seg *)seg;
                 *(uint32_t *)((uintptr_t)seg + 8) = 0;
                 ctrl->imm = send_ieth(p_ewr);
-                ctrl->fm_ce_se = gqp->sq_signal_bits | fence |
+                ctrl->fm_ce_se = mqp->sq_signal_bits | fence |
                         (p_ewr->send_flags & IBV_SEND_SIGNALED ?
                          MLX5_WQE_CTRL_CQ_UPDATE : 0) |
                         (p_ewr->send_flags & IBV_SEND_SOLICITED ?
@@ -932,7 +932,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                 seg = (void *)((uintptr_t)seg + sizeof *ctrl);
                 size = sizeof *ctrl / 16;
 
-                switch (gqp->qp->qp_type) {
+                switch (mqp->gqp.ibqp->qp_type) {
                 case IBV_QPT_XRC_SEND:
                         if (unlikely(p_ewr->opcode != IBV_WR_BIND_MW &&
                                                 p_ewr->opcode != IBV_WR_LOCAL_INV)) {
@@ -974,10 +974,10 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                         case IBV_WR_BIND_MW:
                                 next_fence = MLX5_WQE_CTRL_INITIATOR_SMALL_FENCE;
                                 ctrl->imm = htobe32(p_ewr->bind_mw.mw->rkey);
-                                ret = set_bind_wr(gqp, p_ewr->bind_mw.mw->type,
+                                ret = set_bind_wr(mqp, p_ewr->bind_mw.mw->type,
                                                 p_ewr->bind_mw.rkey,
                                                 &p_ewr->bind_mw.bind_info,
-                                                gqp->qp->qp_num, &seg, &size);
+                                                mqp->gqp.ibqp->qp_num, &seg, &size);
                                 if (ret) {
                                         *bad_wr = p_ewr;
                                         goto out;
@@ -988,8 +988,8 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
 
                                 next_fence = MLX5_WQE_CTRL_INITIATOR_SMALL_FENCE;
                                 ctrl->imm = htobe32(p_ewr->invalidate_rkey);
-                                ret = set_bind_wr(gqp, IBV_MW_TYPE_2, 0,
-                                                &bind_info, gqp->qp->qp_num,
+                                ret = set_bind_wr(mqp, IBV_MW_TYPE_2, 0,
+                                                &bind_info, mqp->gqp.ibqp->qp_num,
                                                 &seg, &size);
                                 if (ret) {
                                         *bad_wr = p_ewr;
@@ -1016,10 +1016,10 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                         case IBV_WR_BIND_MW:
                                 next_fence = MLX5_WQE_CTRL_INITIATOR_SMALL_FENCE;
                                 ctrl->imm = htobe32(p_ewr->bind_mw.mw->rkey);
-                                ret = set_bind_wr(gqp, p_ewr->bind_mw.mw->type,
+                                ret = set_bind_wr(mqp, p_ewr->bind_mw.mw->type,
                                                 p_ewr->bind_mw.rkey,
                                                 &p_ewr->bind_mw.bind_info,
-                                                gqp->qp->qp_num, &seg, &size);
+                                                mqp->gqp.ibqp->qp_num, &seg, &size);
                                 if (ret) {
                                         *bad_wr = p_ewr;
                                         goto out;
@@ -1030,8 +1030,8 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
 
                                 next_fence = MLX5_WQE_CTRL_INITIATOR_SMALL_FENCE;
                                 ctrl->imm = htobe32(p_ewr->invalidate_rkey);
-                                ret = set_bind_wr(gqp, IBV_MW_TYPE_2, 0,
-                                                &bind_info, gqp->qp->qp_num,
+                                ret = set_bind_wr(mqp, IBV_MW_TYPE_2, 0,
+                                                &bind_info, mqp->gqp.ibqp->qp_num,
                                                 &seg, &size);
                                 if (ret) {
                                         *bad_wr = p_ewr;
@@ -1050,7 +1050,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                         seg = (void *)((uintptr_t)seg + sizeof(struct mlx5_wqe_datagram_seg));
                         size += sizeof(struct mlx5_wqe_datagram_seg) / 16;
                         if (unlikely((seg == qend)))
-                                seg = mlx5_get_send_wqe(gqp, 0);
+                                seg = mlx5_get_send_wqe(mqp, 0);
                         break;
 
 		case IBV_QPT_RAW_PACKET:
@@ -1064,7 +1064,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                         if (p_ewr->opcode == IBV_WR_TSO) {
                                 ret = set_tso_eth_seg(&seg, p_ewr->tso.hdr,
                                                 p_ewr->tso.hdr_sz,
-                                                p_ewr->tso.mss, gqp, &size);
+                                                p_ewr->tso.mss, mqp, &size);
                                 if (unlikely(ret)) {
                                         *bad_wr = p_ewr;
                                         goto out;
@@ -1081,7 +1081,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                         } else {
                                 uint32_t inl_hdr_size = MLX5_ETH_L2_INLINE_HEADER_SIZE;
 
-                                ret = copy_eth_inline_headers(gqp->qp, p_ewr->sg_list,
+                                ret = copy_eth_inline_headers(mqp->gqp.ibqp, p_ewr->sg_list,
                                                 p_ewr->num_sge, (struct mlx5_wqe_eth_seg *)seg,
                                                 &sg_copy_ptr, 1);
                                 if (unlikely(ret)) {
@@ -1110,7 +1110,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                 if (p_ewr->send_flags & IBV_SEND_INLINE && p_ewr->num_sge) {
                         int uninitialized_var(sz);
 
-                        ret = set_data_inl_seg(gqp, p_ewr, seg, &sz, &sg_copy_ptr);
+                        ret = set_data_inl_seg(mqp, p_ewr, seg, &sz, &sg_copy_ptr);
                         if (unlikely(ret)) {
                                 *bad_wr = p_ewr;
                                 gds_dbg("inline layout failed, err %d\n", ret);
@@ -1122,7 +1122,7 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                         dpseg = (struct mlx5_wqe_data_seg *)seg;
                         for (i = sg_copy_ptr.index; i < p_ewr->num_sge; ++i) {
                                 if (unlikely(dpseg == qend)) {
-                                        seg = mlx5_get_send_wqe(gqp, 0);
+                                        seg = mlx5_get_send_wqe(mqp, 0);
                                         dpseg = (struct mlx5_wqe_data_seg *)seg;
                                 }
                                 if (likely(p_ewr->sg_list[i].length)) {
@@ -1143,27 +1143,27 @@ int gds_mlx5_post_send(gds_mlx5_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_w
                 }
 
                 mlx5_opcode = mlx5_ib_opcode[p_ewr->opcode];
-                ctrl->opmod_idx_opcode = htobe32(((gqp->sq_cur_post & 0xffff) << 8) |
+                ctrl->opmod_idx_opcode = htobe32(((mqp->sq_cur_post & 0xffff) << 8) |
                                 mlx5_opcode			 |
                                 (opmod << 24));
-                ctrl->qpn_ds = htobe32(size | (gqp->qp->qp_num << 8));
+                ctrl->qpn_ds = htobe32(size | (mqp->gqp.ibqp->qp_num << 8));
 
                 tx_cq->wrid[idx] = p_ewr->wr_id;
-                gqp->sq_cur_post += (size * 16 + gqp->dv_qp.sq.stride - 1) / gqp->dv_qp.sq.stride;
+                mqp->sq_cur_post += (size * 16 + mqp->dvqp.sq.stride - 1) / mqp->dvqp.sq.stride;
         }
 
 out:
-	gqp->fm_cache = next_fence;
+	mqp->fm_cache = next_fence;
 
         if (likely(nreq > 0)) {
-                commit->rollback_id = gqp->peer_scur_post | ((uint64_t)gqp->sq_cur_post << 32);
-                gqp->peer_scur_post = gqp->sq_cur_post;
+                commit->rollback_id = mqp->peer_scur_post | ((uint64_t)mqp->sq_cur_post << 32);
+                mqp->peer_scur_post = mqp->sq_cur_post;
 
                 wr = commit->storage;
 
                 wr->type = GDS_MLX5_PEER_OP_STORE_DWORD;
-                wr->wr.dword_va.data = htonl(gqp->sq_cur_post & 0xffff);
-                wr->wr.dword_va.target_id = gqp->peer_va_id_dbr;
+                wr->wr.dword_va.data = htonl(mqp->sq_cur_post & 0xffff);
+                wr->wr.dword_va.target_id = mqp->peer_va_id_dbr;
                 wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
                 wr = wr->next;
 
@@ -1173,10 +1173,10 @@ out:
 
                 wr->type = GDS_MLX5_PEER_OP_STORE_QWORD;
                 wr->wr.qword_va.data = *(__be64 *)ctrl;
-                wr->wr.qword_va.target_id = gqp->peer_va_id_bf;
-                wr->wr.qword_va.offset = gqp->bf_offset;
+                wr->wr.qword_va.target_id = mqp->peer_va_id_bf;
+                wr->wr.qword_va.offset = mqp->bf_offset;
 
-                gqp->bf_offset ^= gqp->dv_qp.bf.size;
+                mqp->bf_offset ^= mqp->dvqp.bf.size;
                 commit->entries = 3;
         }
 

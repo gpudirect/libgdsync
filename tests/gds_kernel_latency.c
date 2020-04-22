@@ -292,9 +292,9 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 goto clean_mr;
         }
 
-        ctx->qp = ctx->gds_qp->qp;
-        ctx->tx_cq = ctx->gds_qp->qp->send_cq;
-        ctx->rx_cq = ctx->gds_qp->qp->recv_cq;
+        ctx->qp = ctx->gds_qp->ibqp;
+        ctx->tx_cq = ctx->gds_qp->ibqp->send_cq;
+        ctx->rx_cq = ctx->gds_qp->ibqp->recv_cq;
 
         {
                 struct ibv_qp_attr attr = {

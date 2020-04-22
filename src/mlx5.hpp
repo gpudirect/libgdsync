@@ -28,6 +28,7 @@
 #pragma once
 
 #include "objs.hpp"
+#include "utils.hpp"
 
 //-----------------------------------------------------------------------------
 
@@ -187,11 +188,9 @@ typedef struct gds_mlx5_cq {
 } gds_mlx5_cq;
 
 typedef struct gds_mlx5_qp {
-        struct ibv_qp *qp;
-        struct gds_cq *send_cq;
-        struct gds_cq *recv_cq;
-        struct ibv_context *dev_context;
-        struct mlx5dv_qp dv_qp;
+        gds_qp_t gqp;
+
+        struct mlx5dv_qp dvqp;
 
         unsigned int sq_cur_post;
         uint8_t	sq_signal_bits;
@@ -213,12 +212,8 @@ static inline struct gds_cq *to_gds_cq(gds_mlx5_cq *mcq) {
         return (struct gds_cq *)mcq;
 }
 
-static inline gds_mlx5_qp *to_gds_mqp(struct gds_qp *qp) {
-        return (gds_mlx5_qp *)qp;
-}
-
-static inline struct gds_qp *to_gds_qp(gds_mlx5_qp *mqp) {
-        return (struct gds_qp *)mqp;
+static inline gds_mlx5_qp *to_gds_mqp(struct gds_qp *gqp) {
+        return container_of(gqp, gds_mlx5_qp, gqp);
 }
 
 int gds_mlx5_rollback_send(gds_mlx5_qp *gqp, struct gds_mlx5_rollback_ctx *rollback);

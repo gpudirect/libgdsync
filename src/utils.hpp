@@ -32,6 +32,7 @@
 #endif
 #include <inttypes.h> // to pull PRIx64
 #include <stdio.h>
+#include <stddef.h>
 
 #if (__GNUC__ >= 6 && !defined(__powerpc__)) || defined(__clang__)
 #define uninitialized_var(x) x
@@ -53,6 +54,13 @@
 #else
 #define unlikely(x)    (x)
 #endif
+#endif
+
+#ifndef container_of
+#define container_of(ptr, type, member) ({                      \
+        void *__mptr = (void *)(ptr);                           \
+        ((type *)((uintptr_t)__mptr - offsetof(type, member))); })
+
 #endif
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))

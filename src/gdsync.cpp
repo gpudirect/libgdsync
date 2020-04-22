@@ -1869,8 +1869,9 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         int ret = 0;
         struct ibv_pd *pd = NULL;
         struct ibv_parent_domain_init_attr pd_init_attr;
-        gds_mlx5_qp *gqp = NULL;
-        struct ibv_qp *qp = NULL;
+        gds_mlx5_qp *mqp = NULL;
+        gds_qp_t *gqp = NULL;
+        struct ibv_qp *ibqp = NULL;
         struct gds_mlx5_cq *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
@@ -1889,11 +1890,14 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 return NULL;
         }
 
-        gqp = (gds_mlx5_qp*)calloc(1, sizeof(gds_mlx5_qp));
-        if (!gqp) {
+        mqp = (gds_mlx5_qp *)calloc(1, sizeof(gds_mlx5_qp));
+        if (!mqp) {
                 gds_err("cannot allocate memory\n");
                 return NULL;
         }
+
+        gqp = &mqp->gqp;
+        gqp->dtype = GDS_DRIVER_TYPE_MLX5;
 
         gqp->dev_context = context;
 
@@ -1950,34 +1954,34 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 peer->alloc_flags |= GDS_ALLOC_DBREC_ON_GPU;
         }        
 
-        qp = ibv_create_qp(pd, qp_attr);
-        if (!qp)  {
+        ibqp = ibv_create_qp(pd, qp_attr);
+        if (!ibqp)  {
                 ret = EINVAL;
                 gds_err("error in ibv_create_qp\n");
                 goto err;
         }
 
-        gqp->qp = qp;
+        gqp->ibqp = ibqp;
 
-        tx_gcq->cq = qp->send_cq;
+        tx_gcq->cq = ibqp->send_cq;
         tx_gcq->curr_offset = 0;
         tx_gcq->type = GDS_CQ_TYPE_SQ;
         gqp->send_cq = to_gds_cq(tx_gcq);
 
-        rx_gcq->cq = qp->recv_cq;
+        rx_gcq->cq = ibqp->recv_cq;
         rx_gcq->curr_offset = 0;
         rx_gcq->type = GDS_CQ_TYPE_RQ;
         gqp->recv_cq = to_gds_cq(rx_gcq);
 
         if (qp_attr->sq_sig_all)
-                gqp->sq_signal_bits = MLX5_WQE_CTRL_CQ_UPDATE;
+                mqp->sq_signal_bits = MLX5_WQE_CTRL_CQ_UPDATE;
         else
-                gqp->sq_signal_bits = 0;
+                mqp->sq_signal_bits = 0;
 
         dv_obj = {
                 .qp = {
-                        .in     = gqp->qp,
-                        .out    = &gqp->dv_qp
+                        .in     = gqp->ibqp,
+                        .out    = &mqp->dvqp
                 }
         };
         ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_QP);
@@ -1986,30 +1990,30 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 goto err;
         }
 
-        tx_gcq->wrid = (uint64_t *)malloc(gqp->dv_qp.sq.wqe_cnt * sizeof(uint64_t));
+        tx_gcq->wrid = (uint64_t *)malloc(mqp->dvqp.sq.wqe_cnt * sizeof(uint64_t));
         if (!tx_gcq->wrid) {
                 gds_err("error in malloc tx_gcq->wrid\n");
                 goto err;
         }
 
-        gqp->peer_va_id_bf = peer_attr->register_va(
-                (uint32_t *)gqp->dv_qp.bf.reg,
-                gqp->dv_qp.bf.size,
+        mqp->peer_va_id_bf = peer_attr->register_va(
+                (uint32_t *)mqp->dvqp.bf.reg,
+                mqp->dvqp.bf.size,
                 peer_attr->peer_id,
                 GDS_PEER_IOMEMORY
         );
-        if (!gqp->peer_va_id_bf) {
-                gds_err("error in gqp->peer_va_id_bf = peer_attr->register_va\n");
+        if (!mqp->peer_va_id_bf) {
+                gds_err("error in mqp->peer_va_id_bf = peer_attr->register_va\n");
                 goto err;
         }
 
         gds_dbg("created gds_qp=%p\n", gqp);
 
-        return to_gds_qp(gqp);
+        return gqp;
 
 err:
         gds_dbg("destroying QP\n");
-        gds_destroy_qp(to_gds_qp(gqp));
+        gds_destroy_qp(gqp);
 
         return NULL;
 }
@@ -2075,9 +2079,9 @@ int gds_destroy_qp(struct gds_qp *gqp)
 
         if (!gqp) return retcode;
 
-        if (gqp->qp)
+        if (gqp->ibqp)
         {
-                ret = ibv_destroy_qp(gqp->qp);
+                ret = ibv_destroy_qp(gqp->ibqp);
                 if (ret) {
                         gds_err("error %d in destroy_qp\n", ret);
                         retcode = ret;

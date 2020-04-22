@@ -64,17 +64,23 @@ typedef enum gds_cq_type {
         GDS_CQ_TYPE_RQ
 } gds_cq_type_t;
 
+typedef enum gds_driver_type {
+        GDS_DRIVER_TYPE_MLX5
+} gds_driver_type_t;
+
 struct gds_cq {
         struct ibv_cq          *cq;
         uint32_t                curr_offset;
 };
 
-struct gds_qp {
-        struct ibv_qp *qp;
+typedef struct gds_qp {
+        struct ibv_qp *ibqp;
         struct gds_cq *send_cq;
         struct gds_cq *recv_cq;
         struct ibv_context *dev_context;
-};
+
+        gds_driver_type_t dtype;
+} gds_qp_t;
 
 /* \brief: Poll a peer-enabled CQ.
  *
