@@ -171,7 +171,7 @@ static inline gds_mlx5_wait_request_t *to_gds_mwreq(gds_wait_request_t *req) {
         return (gds_mlx5_wait_request_t *)req;
 }
 
-typedef struct gds_mlx5_cq {
+typedef struct gds_mlx5_cq_t {
         struct ibv_cq          *cq;
         uint32_t                curr_offset;
         uint32_t                cons_index;
@@ -185,7 +185,7 @@ typedef struct gds_mlx5_cq {
         struct gds_buf         *peer_buf;
         struct gds_mlx5_peek_entry **peer_peek_table;
         struct gds_mlx5_peek_entry  *peer_peek_free;
-} gds_mlx5_cq;
+} gds_mlx5_cq_t;
 
 typedef struct gds_mlx5_qp_t {
         gds_qp_t gqp;
@@ -204,11 +204,11 @@ typedef struct gds_mlx5_qp_t {
         uint64_t peer_va_id_bf;
 } gds_mlx5_qp_t;
 
-static inline gds_mlx5_cq *to_gds_mcq(struct gds_cq *cq) {
-        return (gds_mlx5_cq *)cq;
+static inline gds_mlx5_cq_t *to_gds_mcq(struct gds_cq *cq) {
+        return (gds_mlx5_cq_t *)cq;
 }
 
-static inline struct gds_cq *to_gds_cq(gds_mlx5_cq *mcq) {
+static inline struct gds_cq *to_gds_cq(gds_mlx5_cq_t *mcq) {
         return (struct gds_cq *)mcq;
 }
 
@@ -218,8 +218,8 @@ static inline gds_mlx5_qp_t *to_gds_mqp(struct gds_qp *gqp) {
 
 int gds_mlx5_rollback_send(gds_mlx5_qp_t *mqp, struct gds_mlx5_rollback_ctx *rollback);
 int gds_mlx5_post_send(gds_mlx5_qp_t *mqp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_mlx5_peer_commit *commit);
-int gds_mlx5_peer_peek_cq(gds_mlx5_cq *mcq, struct gds_mlx5_peer_peek *peek);
-int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq *tx_mcq, gds_mlx5_cq *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp);
+int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *mcq, struct gds_mlx5_peer_peek *peek);
+int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp);
 
 //-----------------------------------------------------------------------------
 

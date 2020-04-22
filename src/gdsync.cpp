@@ -1619,12 +1619,12 @@ gds_peer *peer_from_stream(CUstream stream)
 
 //-----------------------------------------------------------------------------
 
-static struct gds_mlx5_cq *
+static struct gds_mlx5_cq_t *
 gds_create_cq_internal(struct ibv_context *context, int cqe,
                 void *cq_context, struct ibv_comp_channel *channel,
                 int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
-        struct gds_mlx5_cq *gcq = NULL;
+        struct gds_mlx5_cq_t *gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         int ret = 0;
@@ -1644,7 +1644,7 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
                 goto err;
         }
 
-        gcq = (gds_mlx5_cq *)calloc(1, sizeof(gds_mlx5_cq));
+        gcq = (gds_mlx5_cq_t *)calloc(1, sizeof(gds_mlx5_cq_t));
         if (!gcq) {
                 gds_err("cannot allocate memory\n");
                 goto err;
@@ -1744,7 +1744,7 @@ gds_create_cq(struct ibv_context *context, int cqe,
                 int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
         int ret = 0;
-        gds_mlx5_cq *gcq = NULL;
+        gds_mlx5_cq_t *gcq = NULL;
         gds_dbg("cqe=%d gpu_id=%d cq_flags=%08x\n", cqe, gpu_id, flags);
 
         gcq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id, flags);
@@ -1763,7 +1763,7 @@ int gds_poll_cq(struct gds_cq *p_gcq, int ne, struct ibv_wc *wc)
         int cnt;
         int p_ne;
 
-        gds_mlx5_cq *gcq = to_gds_mcq(p_gcq);
+        gds_mlx5_cq_t *gcq = to_gds_mcq(p_gcq);
 
         for (cnt = 0; cnt < ne; ++cnt) {
                 idx = gcq->cons_index & (gcq->dv_cq.cqe_cnt - 1);
@@ -1872,7 +1872,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         gds_mlx5_qp_t *mqp = NULL;
         gds_qp_t *gqp = NULL;
         struct ibv_qp *ibqp = NULL;
-        struct gds_mlx5_cq *rx_mcq = NULL, *tx_mcq = NULL;
+        struct gds_mlx5_cq_t *rx_mcq = NULL, *tx_mcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
 
@@ -1974,7 +1974,7 @@ err:
 int gds_destroy_cq(struct gds_cq *p_gcq)
 {
         int ret = 0;
-        gds_mlx5_cq *gcq;
+        gds_mlx5_cq_t *gcq;
 
         if (!p_gcq)
                 goto out;

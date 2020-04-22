@@ -425,7 +425,7 @@ static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_w
 
 static inline int mlx5_wq_overflow(gds_mlx5_qp_t *mqp, int nreq)
 {
-        gds_mlx5_cq *mcq = to_gds_mcq(mqp->gqp.send_cq);
+        gds_mlx5_cq_t *mcq = to_gds_mcq(mqp->gqp.send_cq);
 
 	unsigned int cur;
 
@@ -887,7 +887,7 @@ int gds_mlx5_post_send(gds_mlx5_qp_t *mqp, gds_send_wr *p_ewr, gds_send_wr **bad
 
         struct gds_mlx5_peer_op_wr *wr;
 
-        gds_mlx5_cq *tx_cq = to_gds_mcq(mqp->gqp.send_cq);
+        gds_mlx5_cq_t *tx_cq = to_gds_mcq(mqp->gqp.send_cq);
 
         if (commit->entries < 3) {
                 gds_err("not enough entries in gds_mlx5_peer_commit.\n");
@@ -1185,7 +1185,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_peer_peek_cq(gds_mlx5_cq *gcq, struct gds_mlx5_peer_peek *peek)
+int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *gcq, struct gds_mlx5_peer_peek *peek)
 {
         int ret = 0;
 
@@ -1250,7 +1250,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq *tx_mcq, gds_mlx5_cq *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp)
+int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp)
 {
         int ret = 0;
 
