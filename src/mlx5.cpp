@@ -1250,6 +1250,86 @@ out:
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq *tx_mcq, gds_mlx5_cq *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp **out_mqp)
+{
+        int ret = 0;
+
+        gds_mlx5_qp *mqp = NULL;
+        gds_qp_t *gqp;
+
+        mlx5dv_obj dv_obj;
+
+        mqp = (gds_mlx5_qp *)calloc(1, sizeof(gds_mlx5_qp));
+        if (!mqp) {
+                gds_err("cannot allocate memory\n");
+                ret = ENOMEM;
+                goto err;
+        }
+
+        gqp = &mqp->gqp;
+        gqp->dtype = GDS_DRIVER_TYPE_MLX5;
+        gqp->ibqp = ibqp;
+
+        tx_mcq->cq = ibqp->send_cq;
+        tx_mcq->curr_offset = 0;
+        tx_mcq->type = GDS_CQ_TYPE_SQ;
+        gqp->send_cq = to_gds_cq(tx_mcq);
+
+        rx_mcq->cq = ibqp->recv_cq;
+        rx_mcq->curr_offset = 0;
+        rx_mcq->type = GDS_CQ_TYPE_RQ;
+        gqp->recv_cq = to_gds_cq(rx_mcq);
+
+        if (qp_attr->sq_sig_all)
+                mqp->sq_signal_bits = MLX5_WQE_CTRL_CQ_UPDATE;
+        else
+                mqp->sq_signal_bits = 0;
+
+        dv_obj = {
+                .qp = {
+                        .in     = gqp->ibqp,
+                        .out    = &mqp->dvqp
+                }
+        };
+        ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_QP);
+        if (ret != 0) {
+                gds_err("error in mlx5dv_init_obj MLX5DV_OBJ_QP\n");
+                goto err;
+        }
+
+        mqp->peer_va_id_bf = peer_attr->register_va(
+                (uint32_t *)mqp->dvqp.bf.reg,
+                mqp->dvqp.bf.size,
+                peer_attr->peer_id,
+                GDS_PEER_IOMEMORY
+        );
+        if (!mqp->peer_va_id_bf) {
+                gds_err("error in mqp->peer_va_id_bf = peer_attr->register_va\n");
+                goto err;
+        }
+
+        tx_mcq->wrid = (uint64_t *)malloc(mqp->dvqp.sq.wqe_cnt * sizeof(uint64_t));
+        if (!tx_mcq->wrid) {
+                gds_err("error in malloc tx_mcq->wrid\n");
+                ret = ENOMEM;
+                goto err;
+        }
+
+        *out_mqp = mqp;
+        return 0;
+
+err:
+        if (tx_mcq->wrid) {
+                free(tx_mcq->wrid);
+                tx_mcq->wrid = NULL;
+        }
+        if (mqp)
+                free(mqp);
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 /*
  * Local variables:
  *  c-indent-level: 8

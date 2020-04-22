@@ -68,16 +68,15 @@ typedef enum gds_driver_type {
         GDS_DRIVER_TYPE_MLX5
 } gds_driver_type_t;
 
-struct gds_cq {
+typedef struct gds_cq {
         struct ibv_cq          *cq;
         uint32_t                curr_offset;
-};
+} gds_cq_t;
 
 typedef struct gds_qp {
         struct ibv_qp *ibqp;
         struct gds_cq *send_cq;
         struct gds_cq *recv_cq;
-        struct ibv_context *dev_context;
 
         gds_driver_type_t dtype;
 } gds_qp_t;
