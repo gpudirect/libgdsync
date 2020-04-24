@@ -65,6 +65,7 @@ typedef enum gds_cq_type {
 } gds_cq_type_t;
 
 typedef enum gds_driver_type {
+        GDS_DRIVER_TYPE_UNKNOW = 0,
         GDS_DRIVER_TYPE_MLX5
 } gds_driver_type_t;
 

@@ -1619,6 +1619,22 @@ gds_peer *peer_from_stream(CUstream stream)
 
 //-----------------------------------------------------------------------------
 
+/* \brief: Get the underlying driver associated with the ibdev.
+ *
+ */
+static inline gds_driver_type gds_get_driver_type(struct ibv_device *ibdev)
+{
+        const char *dev_name = ibv_get_device_name(ibdev);
+
+        // Heuristically guess the driver by the device name.
+        // Until we find a better way to do so...
+        if (strstr(dev_name, "mlx5") != NULL)
+                return GDS_DRIVER_TYPE_MLX5;
+        return GDS_DRIVER_TYPE_UNKNOW;
+}
+
+//-----------------------------------------------------------------------------
+
 static struct gds_mlx5_cq_t *
 gds_create_cq_internal(struct ibv_context *context, int cqe,
                 void *cq_context, struct ibv_comp_channel *channel,
@@ -1875,16 +1891,24 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         struct gds_mlx5_cq_t *rx_mcq = NULL, *tx_mcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
+        gds_driver_type dtype;
 
         int old_errno = errno;
 
         gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", p_pd, context, gpu_id, flags, errno);
         assert(p_pd);
         assert(context);
+        assert(context->device);
         assert(qp_attr);
 
         if (flags & ~(GDS_CREATE_QP_WQ_ON_GPU|GDS_CREATE_QP_TX_CQ_ON_GPU|GDS_CREATE_QP_RX_CQ_ON_GPU|GDS_CREATE_QP_WQ_DBREC_ON_GPU)) {
                 gds_err("invalid flags");
+                return NULL;
+        }
+
+        dtype = gds_get_driver_type(context->device);
+        if (dtype != GDS_DRIVER_TYPE_MLX5) {
+                gds_err("Not supported IB device. Currently only mlx5 devices are supported.\n");
                 return NULL;
         }
 
