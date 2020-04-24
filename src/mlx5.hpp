@@ -192,6 +192,7 @@ typedef struct gds_mlx5_qp_peer {
         struct {
                 uint64_t va_id;
                 size_t size;
+                gds_buf *gbuf;
         } dbr;
 
         struct {
