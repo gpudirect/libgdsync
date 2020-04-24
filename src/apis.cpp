@@ -565,9 +565,9 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 switch(desc->tag) {
                         case GDS_TAG_SEND: {
                                 gds_mlx5_send_request_t *sreq = to_gds_msreq(desc->send);
-                                retcode = gds_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
+                                retcode = gds_mlx5_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }
@@ -580,9 +580,9 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                                         gds_dbg("discarding FLUSH!\n");
                                         flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
                                 }
-                                retcode = gds_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
+                                retcode = gds_mlx5_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }
@@ -643,9 +643,9 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         case GDS_TAG_SEND: {
                                 gds_dbg("desc[%zu] SEND\n", i);
                                 gds_mlx5_send_request_t *sreq = to_gds_msreq(desc->send);
-                                retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
+                                retcode = gds_mlx5_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops_on_cpu\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }
@@ -654,9 +654,9 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         case GDS_TAG_WAIT: {
                                 gds_dbg("desc[%zu] WAIT\n", i);
                                 gds_mlx5_wait_request_t *wreq = to_gds_mwreq(desc->wait);
-                                retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
+                                retcode = gds_mlx5_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops_on_cpu\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }

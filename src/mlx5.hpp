@@ -234,6 +234,11 @@ int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx,
 int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_mlx5_qp_peer_t *qp_peer, gds_mlx5_qp_t **out_mqp);
 void gds_mlx5_destroy_qp(gds_mlx5_qp_t *mqp);
 
+int gds_mlx5_post_ops_on_cpu(size_t n_ops, struct gds_mlx5_peer_op_wr *op, int post_flags = 0);
+int gds_mlx5_post_ops(gds_peer *peer, size_t n_ops, struct gds_mlx5_peer_op_wr *op, gds_op_list_t &ops, int post_flags = 0);
+
+void gds_mlx5_dump_ops(struct gds_mlx5_peer_op_wr *op, size_t count);
+
 //-----------------------------------------------------------------------------
 
 /*
