@@ -219,6 +219,8 @@ static inline gds_mlx5_qp_t *to_gds_mqp(struct gds_qp *gqp) {
 int gds_mlx5_rollback_send(gds_mlx5_qp_t *mqp, struct gds_mlx5_rollback_ctx *rollback);
 int gds_mlx5_post_send(gds_mlx5_qp_t *mqp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_mlx5_peer_commit *commit);
 int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *mcq, struct gds_mlx5_peer_peek *peek);
+
+int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx, gds_peer_attr *peer_attr, struct ibv_pd **out_pd);
 int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp);
 
 //-----------------------------------------------------------------------------

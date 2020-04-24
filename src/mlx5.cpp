@@ -1330,6 +1330,102 @@ err:
 
 //-----------------------------------------------------------------------------
 
+static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
+                        size_t alignment, uint64_t resource_type)
+{
+        assert(pd_context);
+
+        gds_peer_attr *peer_attr = (gds_peer_attr *)pd_context;
+        gds_buf_alloc_attr buf_attr = {
+                .length         = size,
+                .dir            = GDS_PEER_DIRECTION_FROM_PEER | GDS_PEER_DIRECTION_TO_HCA,
+                .peer_id        = peer_attr->peer_id,
+                .alignment      = (uint32_t)alignment,
+                .comp_mask      = peer_attr->comp_mask
+        };
+        gds_peer *peer = peer_from_id(peer_attr->peer_id);
+        gds_mlx5_qp_t *gqp; 
+        uint64_t range_id;
+        gds_buf *buf = NULL;
+        void *ptr = NULL;
+
+        gds_dbg("pd_mem_alloc: pd=%p, pd_context=%p, size=%zu, alignment=%zu, resource_type=0x%lx\n",
+                pd, pd_context, size, alignment, resource_type);
+
+        switch (resource_type) {
+                case MLX5DV_RES_TYPE_QP:
+                        break;
+                case MLX5DV_RES_TYPE_DBR:
+                        buf = peer_attr->buf_alloc(&buf_attr);
+                        break;
+                default:
+                        gds_err("request allocation with unsupported resource_type\n");
+                        return NULL;
+        }
+
+        if (!buf) {
+                int err;
+                gds_dbg("alloc on host\n");
+                // We should return IBV_ALLOCATOR_USE_DEFAULT so that libmlx5
+                // can do further optimization. However, we need to later query
+                // this mlx5-allocated ptr to do register_va later.
+
+                // TODO: Return IBV_ALLOCATOR_USE_DEFAULT and implement a
+                // tracking mechanism to register_va libmlx5-allocated ptr.
+                if ((err = posix_memalign(&ptr, alignment, size)) != 0) {
+                        gds_err("error %d in posix_memalign\n", err);
+                        return NULL;
+                }
+        }
+        else {
+                gds_dbg("alloc on GPU\n");
+                ptr = buf->addr;
+        }
+
+        assert(peer->obj);
+        gqp = (gds_mlx5_qp_t *)peer->obj;
+
+        if ((range_id = peer_attr->register_va(ptr, size, peer_attr->peer_id, buf)) == 0) {
+                gds_err("error in register_va\n");
+                return NULL;
+        }
+        else if (resource_type == MLX5DV_RES_TYPE_DBR)
+                gqp->peer_va_id_dbr = range_id;
+        
+        return ptr;
+}
+
+static void pd_mem_free(struct ibv_pd *pd, void *pd_context, void *ptr,
+                        uint64_t resource_type)
+{
+        gds_dbg("pd_mem_free: pd=%p, pd_context=%p, ptr=%p, resource_type=0x%lx\n",
+                pd, pd_context, ptr, resource_type);
+}
+
+int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx, gds_peer_attr *peer_attr, struct ibv_pd **out_pd)
+{
+        struct ibv_parent_domain_init_attr pd_init_attr;
+        struct ibv_pd *pd = NULL;
+
+        memset(&pd_init_attr, 0, sizeof(ibv_parent_domain_init_attr));
+        pd_init_attr.pd = p_pd;
+        pd_init_attr.comp_mask = IBV_PARENT_DOMAIN_INIT_ATTR_ALLOCATORS | IBV_PARENT_DOMAIN_INIT_ATTR_PD_CONTEXT;
+        pd_init_attr.alloc = pd_mem_alloc;
+        pd_init_attr.free = pd_mem_free;
+        pd_init_attr.pd_context = peer_attr;
+
+        pd = ibv_alloc_parent_domain(ibctx, &pd_init_attr);
+        if (!pd) {
+                gds_err("error in ibv_alloc_parent_domain\n");
+                return EINVAL;
+        }
+
+        *out_pd = pd;
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
 /*
  * Local variables:
  *  c-indent-level: 8
