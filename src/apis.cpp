@@ -57,14 +57,14 @@ static void gds_init_ops(struct gds_mlx5_peer_op_wr *op, int count)
 
 //-----------------------------------------------------------------------------
 
-static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t *p_sreq, enum gds_mlx5_rollback_flags flag)
+static int gds_rollback_qp(struct gds_qp *gqp, gds_send_request_t *p_sreq, enum gds_mlx5_rollback_flags flag)
 {
         struct gds_mlx5_rollback_ctx rollback;
         gds_mlx5_send_request_t *send_info;
         int ret = 0;
 
-        assert(qp);
-        assert(qp->qp);
+        assert(gqp);
+        assert(gqp->ibqp);
         assert(p_sreq);
 
         send_info = to_gds_msreq(p_sreq);
@@ -84,7 +84,7 @@ static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t *p_sreq, enum g
         /* Reserved for future expensions, must be 0 */
         rollback.comp_mask = 0;
         gds_warn("Need to rollback WQE %lx\n", rollback.rollback_id);
-        ret = gds_mlx5_rollback_send(to_gds_mqp(qp), &rollback);
+        ret = gds_mlx5_rollback_send(to_gds_mqp(gqp), &rollback);
         if(ret)
                 gds_err("error %d in ibv_exp_rollback_qp\n", ret);
 
@@ -119,11 +119,11 @@ static void gds_init_wait_request(gds_mlx5_wait_request_t *request, uint32_t off
 
 //-----------------------------------------------------------------------------
 
-int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
+int gds_post_send(struct gds_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
         int ret = 0, ret_roll=0;
         gds_send_request_t send_info;
-        ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
+        ret = gds_prepare_send(gqp, p_ewr, bad_ewr, &send_info);
         if (ret) {
                 gds_err("error %d in gds_prepare_send\n", ret);
                 goto out;
@@ -132,7 +132,7 @@ int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
         ret = gds_post_pokes_on_cpu(1, &send_info, NULL, 0);
         if (ret) {
                 gds_err("error %d in gds_post_pokes_on_cpu\n", ret);
-                ret_roll = gds_rollback_qp(qp, &send_info, GDS_MLX5_ROLLBACK_ABORT_LATE);
+                ret_roll = gds_rollback_qp(gqp, &send_info, GDS_MLX5_ROLLBACK_ABORT_LATE);
                 if (ret_roll)
                         gds_err("error %d in gds_rollback_qp\n", ret_roll);
                 goto out;
@@ -144,14 +144,14 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
+int gds_post_recv(struct gds_qp *gqp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
 {
         int ret = 0;
 
-        gds_dbg("qp=%p wr=%p\n", qp, wr);
-        assert(qp);
-        assert(qp->qp);
-        ret = ibv_post_recv(qp->qp, wr, bad_wr);
+        gds_dbg("gqp=%p wr=%p\n", gqp, wr);
+        assert(gqp);
+        assert(gqp->ibqp);
+        ret = ibv_post_recv(gqp->ibqp, wr, bad_wr);
         if (ret) {
                 gds_err("error %d in ibv_post_recv\n", ret);
                 goto out;
@@ -163,7 +163,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, 
+int gds_prepare_send(struct gds_qp *gqp, gds_send_wr *p_ewr, 
                 gds_send_wr **bad_ewr, 
                 gds_send_request_t *p_sreq)
 {
@@ -174,27 +174,27 @@ int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr,
         request = to_gds_msreq(p_sreq);
 
         gds_init_send_info(request);
-        assert(qp);
-        assert(qp->qp);
+        assert(gqp);
+        assert(gqp->ibqp);
         assert(request->commit.entries >= 3);
 
-        ret = gds_mlx5_post_send(to_gds_mqp(qp), p_ewr, bad_ewr, &request->commit);
+        ret = gds_mlx5_post_send(to_gds_mqp(gqp), p_ewr, bad_ewr, &request->commit);
 
         return ret;
 }
 
 //-----------------------------------------------------------------------------
 
-int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
+int gds_stream_queue_send(CUstream stream, struct gds_qp *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
 {
         int ret = 0, ret_roll = 0;
         gds_send_request_t send_info;
         gds_descriptor_t descs[1];
 
-        assert(qp);
+        assert(gqp);
         assert(p_ewr);
 
-        ret = gds_prepare_send(qp, p_ewr, bad_ewr, &send_info);
+        ret = gds_prepare_send(gqp, p_ewr, bad_ewr, &send_info);
         if (ret) {
                 gds_err("error %d in gds_prepare_send\n", ret);
                 goto out;
@@ -565,9 +565,9 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 switch(desc->tag) {
                         case GDS_TAG_SEND: {
                                 gds_mlx5_send_request_t *sreq = to_gds_msreq(desc->send);
-                                retcode = gds_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
+                                retcode = gds_mlx5_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }
@@ -580,9 +580,9 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                                         gds_dbg("discarding FLUSH!\n");
                                         flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
                                 }
-                                retcode = gds_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
+                                retcode = gds_mlx5_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }
@@ -643,9 +643,9 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         case GDS_TAG_SEND: {
                                 gds_dbg("desc[%zu] SEND\n", i);
                                 gds_mlx5_send_request_t *sreq = to_gds_msreq(desc->send);
-                                retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
+                                retcode = gds_mlx5_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops_on_cpu\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }
@@ -654,9 +654,9 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                         case GDS_TAG_WAIT: {
                                 gds_dbg("desc[%zu] WAIT\n", i);
                                 gds_mlx5_wait_request_t *wreq = to_gds_mwreq(desc->wait);
-                                retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
+                                retcode = gds_mlx5_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
                                 if (retcode) {
-                                        gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                        gds_err("error %d in gds_mlx5_post_ops_on_cpu\n", retcode);
                                         ret = retcode;
                                         goto out;
                                 }

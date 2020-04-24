@@ -32,6 +32,7 @@
 #endif
 #include <inttypes.h> // to pull PRIx64
 #include <stdio.h>
+#include <stddef.h>
 
 #if (__GNUC__ >= 6 && !defined(__powerpc__)) || defined(__clang__)
 #define uninitialized_var(x) x
@@ -53,6 +54,13 @@
 #else
 #define unlikely(x)    (x)
 #endif
+#endif
+
+#ifndef container_of
+#define container_of(ptr, type, member) ({                      \
+        void *__mptr = (void *)(ptr);                           \
+        ((type *)((uintptr_t)__mptr - offsetof(type, member))); })
+
 #endif
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -218,6 +226,10 @@ typedef enum gds_alloc_qp_flags {
         GDS_ALLOC_DBREC_MASK    = 1<<4        
 } gds_alloc_qp_flags_t;
 
+// TODO: use correct value
+// TODO: make it dependent upon the particular GPU
+const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
+
 #include <vector>
 
 typedef std::vector<CUstreamBatchMemOpParams> gds_op_list_t;
@@ -233,9 +245,13 @@ void gds_dump_params(gds_op_list_t &params);
 struct gds_peer;
 
 int gds_fill_membar(gds_peer *peer, gds_op_list_t &param, int flags);
+int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, const void *data, size_t n_bytes, int flags);
 int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &param, void *ptr, const void *data, size_t n_bytes, int flags);
+int gds_fill_poke(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, uint32_t value, int flags);
 int gds_fill_poke(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
+int gds_fill_poke64(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, uint64_t value, int flags);
 int gds_fill_poke64(gds_peer *peer, gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
+int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags);
 int gds_fill_poll(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
 
 int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params, int flags);
@@ -245,9 +261,18 @@ enum gds_post_ops_flags {
 };
 
 struct gds_peer;
-int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_mlx5_peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
-int gds_post_ops_on_cpu(size_t n_descs, struct gds_mlx5_peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
+
+bool gds_enable_write64();
+bool gds_enable_wait_nor();
+bool gds_enable_remote_flush();
+bool gds_enable_wait_checker();
+bool gds_enable_inlcpy();
+bool gds_simulate_write64();
+bool gds_enable_membar();
+bool gds_enable_weak_consistency();
+bool gds_enable_dump_memops();
+void gds_enable_barrier_for_inlcpy(CUstreamBatchMemOpParams *param);
 
 //-----------------------------------------------------------------------------
 

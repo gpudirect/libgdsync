@@ -64,17 +64,24 @@ typedef enum gds_cq_type {
         GDS_CQ_TYPE_RQ
 } gds_cq_type_t;
 
-struct gds_cq {
-        struct ibv_cq          *cq;
-        uint32_t                curr_offset;
-};
+typedef enum gds_driver_type {
+        GDS_DRIVER_TYPE_UNKNOW = 0,
+        GDS_DRIVER_TYPE_MLX5
+} gds_driver_type_t;
 
-struct gds_qp {
-        struct ibv_qp *qp;
-        struct gds_cq *send_cq;
-        struct gds_cq *recv_cq;
-        struct ibv_context *dev_context;
-};
+typedef struct gds_cq {
+        struct ibv_cq          *ibcq;
+        uint32_t                curr_offset;
+        gds_cq_type_t           ctype;
+        gds_driver_type_t       dtype;
+} gds_cq_t;
+
+typedef struct gds_qp {
+        struct ibv_qp          *ibqp;
+        gds_cq_t               *send_cq;
+        gds_cq_t               *recv_cq;
+        gds_driver_type_t       dtype;
+} gds_qp_t;
 
 /* \brief: Poll a peer-enabled CQ.
  *
@@ -82,7 +89,7 @@ struct gds_qp {
  * entries until the GPU has a chance to observe them.
  */
 
-int gds_poll_cq(struct gds_cq *cq, int ne, struct ibv_wc *wc);
+int gds_poll_cq(gds_cq_t *cq, int ne, struct ibv_wc *wc);
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
  *
@@ -97,13 +104,13 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
 /* \brief: Destroy a peer-enabled CQ
  *
  */
-int gds_destroy_cq(struct gds_cq *cq);
+void gds_destroy_cq(gds_cq_t *cq);
 
 /* \brief: Destroy a peer-enabled QP
  *
  * The associated CQs are destroyed as well.
  */
-int gds_destroy_qp(struct gds_qp *qp);
+void gds_destroy_qp(gds_qp_t *qp);
 
 /* \brief: CPU-synchronous post send for peer QPs
  *
