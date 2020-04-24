@@ -1782,7 +1782,7 @@ int gds_poll_cq(struct gds_cq *p_gcq, int ne, struct ibv_wc *wc)
                         return p_ne;
                 if (gcq->type == GDS_CQ_TYPE_SQ)
                         wc[cnt].wr_id = gcq->wrid[idx];
-                ++gcq->cons_index;
+                gcq->cons_index += 2;
         }
         return cnt;
 }

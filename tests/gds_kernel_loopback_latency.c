@@ -736,7 +736,7 @@ static void usage(const char *argv0)
         printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
         printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
         printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
-        printf("  -E, --gpu-mem             allocate GPU intead of CPU memory buffers\n");
+        printf("  -E, --gpu-mem             allocate GPU instead of CPU memory buffers\n");
         printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
         printf("  -L, --hide-cpu-launch-latency try to prelaunch work on blocked stream then unblock\n");
 }
