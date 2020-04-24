@@ -1185,11 +1185,11 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *gcq, struct gds_mlx5_peer_peek *peek)
+int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *mcq, struct gds_mlx5_peer_peek *peek)
 {
         int ret = 0;
 
-        gds_peer_attr *peer_attr = (gds_peer_attr *)gcq->peer_attr;
+        gds_peer_attr *peer_attr = (gds_peer_attr *)mcq->peer_attr;
         struct gds_mlx5_peer_op_wr *wr;
         int n, cur_own;
         void *cqe;
@@ -1205,9 +1205,9 @@ int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *gcq, struct gds_mlx5_peer_peek *peek)
         wr = peek->storage;
         n = peek->offset;
 
-        cqe = (char *)gcq->dv_cq.buf + (n & (gcq->dv_cq.cqe_cnt - 1)) * gcq->dv_cq.cqe_size;
-        cur_own = n & gcq->dv_cq.cqe_cnt;
-        cqe64 = (gds_cqe64 *)((gcq->dv_cq.cqe_size == 64) ? cqe : (char *)cqe + 64);
+        cqe = (char *)mcq->dvcq.buf + (n & (mcq->dvcq.cqe_cnt - 1)) * mcq->dvcq.cqe_size;
+        cur_own = n & mcq->dvcq.cqe_cnt;
+        cqe64 = (gds_cqe64 *)((mcq->dvcq.cqe_size == 64) ? cqe : (char *)cqe + 64);
 
         if (cur_own) {
                 wr->type = GDS_MLX5_PEER_OP_POLL_AND_DWORD;
@@ -1221,31 +1221,177 @@ int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *gcq, struct gds_mlx5_peer_peek *peek)
                 wr->type = GDS_MLX5_PEER_OP_POLL_GEQ_DWORD;
                 wr->wr.dword_va.data = 0;
         }
-        wr->wr.dword_va.target_id = gcq->active_buf_va_id;
-        wr->wr.dword_va.offset = (uintptr_t)&cqe64->wqe_counter - (uintptr_t)gcq->dv_cq.buf;
+        wr->wr.dword_va.target_id = mcq->active_buf_va_id;
+        wr->wr.dword_va.offset = (uintptr_t)&cqe64->wqe_counter - (uintptr_t)mcq->dvcq.buf;
         wr = wr->next;
 
-        tmp = gcq->peer_peek_free;
+        tmp = mcq->peer_peek_free;
         if (!tmp) {
                 ret = ENOMEM;
                 goto out;
         }
-        gcq->peer_peek_free = GDS_MLX5_PEEK_ENTRY(gcq, tmp->next);
+        mcq->peer_peek_free = GDS_MLX5_PEEK_ENTRY(mcq, tmp->next);
         tmp->busy = 1;
         wmb();
-        tmp->next = GDS_MLX5_PEEK_ENTRY_N(gcq, gcq->peer_peek_table[n & (gcq->dv_cq.cqe_cnt - 1)]);
-        gcq->peer_peek_table[n & (gcq->dv_cq.cqe_cnt - 1)] = tmp;
+        tmp->next = GDS_MLX5_PEEK_ENTRY_N(mcq, mcq->peer_peek_table[n & (mcq->dvcq.cqe_cnt - 1)]);
+        mcq->peer_peek_table[n & (mcq->dvcq.cqe_cnt - 1)] = tmp;
 
         wr->type = GDS_MLX5_PEER_OP_STORE_DWORD;
         wr->wr.dword_va.data = 0;
-        wr->wr.dword_va.target_id = gcq->peer_va_id;
-        wr->wr.dword_va.offset = (uintptr_t)&tmp->busy - (uintptr_t)gcq->peer_buf->addr;
+        wr->wr.dword_va.target_id = mcq->peer_va_id;
+        wr->wr.dword_va.offset = (uintptr_t)&tmp->busy - (uintptr_t)mcq->peer_buf->addr;
 
         peek->entries = 2;
         peek->peek_id = (uintptr_t)tmp;
 
 out:
         return ret;
+}
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_create_cq(struct ibv_cq *ibcq, gds_peer_attr *peer_attr, gds_mlx5_cq_t **out_mcq)
+{
+        int ret = 0;
+
+        gds_mlx5_cq_t *mcq = NULL;
+        gds_cq_t *gcq;
+        mlx5dv_obj dv_obj;
+
+        struct gds_buf_alloc_attr ba_attr;
+
+        mcq = (gds_mlx5_cq_t *)calloc(1, sizeof(gds_mlx5_cq_t));
+        if (!mcq) {
+                gds_err("cannot allocate memory\n");
+                ret = ENOMEM;
+                goto err;
+        }
+
+        dv_obj.cq.in = ibcq;
+        dv_obj.cq.out = &mcq->dvcq;
+        ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_CQ);
+        if (ret) {
+                gds_err("error %d in mlx5dv_init_obj MLX5DV_OBJ_CQ\n", ret);
+                goto err;
+        }
+
+        mcq->peer_attr = peer_attr;
+
+        mcq->active_buf_va_id = peer_attr->register_va(
+                mcq->dvcq.buf,
+                (uint64_t)mcq->dvcq.cqe_cnt * (uint64_t)mcq->dvcq.cqe_size,
+                peer_attr->peer_id,
+                NULL
+        );
+        if (!mcq->active_buf_va_id) {
+                gds_err("error in peer_attr->register_va\n");
+                ret = EINVAL;
+                goto err;
+        }
+
+        mcq->peer_peek_table = (struct gds_mlx5_peek_entry **)malloc(sizeof(struct gds_mlx5_peek_entry *) * mcq->dvcq.cqe_cnt);
+        if (!mcq->peer_peek_table) {
+                gds_err("error %d in malloc peer_peek_table\n", errno);
+                ret = ENOMEM;
+                goto err;
+        }
+        memset(mcq->peer_peek_table, 0, sizeof(struct gds_peek_entry *) * mcq->dvcq.cqe_cnt);
+        mcq->peer_dir = GDS_PEER_DIRECTION_FROM_PEER | GDS_PEER_DIRECTION_TO_CPU;
+
+        ba_attr = {
+                .length         = sizeof(struct gds_mlx5_peek_entry) * mcq->dvcq.cqe_cnt,
+                .dir            = mcq->peer_dir,
+                .peer_id        = peer_attr->peer_id,
+                .alignment      = (uint32_t)sysconf(_SC_PAGESIZE),
+                .comp_mask      = 0
+        };
+        mcq->peer_buf = peer_attr->buf_alloc(&ba_attr);
+        if (!mcq->peer_buf) {
+                gds_err("error %d in buf_alloc\n", errno);
+                ret = ENOMEM;
+                goto err;
+        }
+
+        mcq->peer_va_id = peer_attr->register_va(mcq->peer_buf->addr, mcq->peer_buf->length, peer_attr->peer_id, mcq->peer_buf);
+        if (!mcq->peer_va_id) {
+                gds_err("error %d in register_va\n", errno);
+                ret = EINVAL;
+                goto err;
+        }
+
+        memset(mcq->peer_buf->addr, 0, mcq->peer_buf->length);
+
+        mcq->peer_peek_free = (struct gds_mlx5_peek_entry *)mcq->peer_buf->addr;
+        for (int i = 0; i < mcq->dvcq.cqe_cnt - 1; ++i)
+                mcq->peer_peek_free[i].next = i + 1;
+        mcq->peer_peek_free[mcq->dvcq.cqe_size - 1].next = GDS_MLX5_LAST_PEEK_ENTRY;
+
+        mcq->gcq.ibcq = ibcq;
+        mcq->gcq.dtype = GDS_DRIVER_TYPE_MLX5;
+        *out_mcq = mcq;
+
+        return 0;
+
+err:
+        if (mcq) {
+                if (mcq->peer_va_id)
+                        peer_attr->unregister_va(mcq->peer_va_id, peer_attr->peer_id);
+
+                if (mcq->peer_buf)
+                        peer_attr->buf_release(mcq->peer_buf);
+
+                if (mcq->peer_peek_table)
+                        free(mcq->peer_peek_table);
+
+                if (mcq->active_buf_va_id)
+                        peer_attr->unregister_va(mcq->active_buf_va_id, peer_attr->peer_id);
+
+                free(mcq);
+        }
+
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+void gds_mlx5_destroy_cq(gds_mlx5_cq_t *mcq)
+{
+        int status = 0;
+        if (mcq->peer_peek_table) {
+                free(mcq->peer_peek_table);
+                mcq->peer_peek_table = NULL;
+        }
+
+        if (mcq->wrid) {
+                free(mcq->wrid);
+                mcq->wrid = NULL;
+        }
+
+        if (mcq->peer_attr) {
+                gds_peer_attr *peer_attr = mcq->peer_attr;
+                if (mcq->active_buf_va_id) {
+                        peer_attr->unregister_va(mcq->active_buf_va_id, peer_attr->peer_id);
+                        mcq->active_buf_va_id = 0;
+                }
+                if (mcq->peer_va_id) {
+                        peer_attr->unregister_va(mcq->peer_va_id, peer_attr->peer_id);
+                        mcq->peer_va_id = 0;
+                }
+                if (mcq->peer_buf) {
+                        mcq->peer_attr->buf_release(mcq->peer_buf);
+                        mcq->peer_buf = NULL;
+                }
+        }
+
+        if (mcq->gcq.ibcq) {
+                status = ibv_destroy_cq(mcq->gcq.ibcq);
+                if (status) {
+                        gds_err("error %d in ibv_destroy\n", status);
+                        return;
+                }
+                mcq->gcq.ibcq = NULL;
+        }
+
+        free(mcq);
 }
 
 //-----------------------------------------------------------------------------
@@ -1270,15 +1416,15 @@ int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx
         gqp->dtype = GDS_DRIVER_TYPE_MLX5;
         gqp->ibqp = ibqp;
 
-        tx_mcq->cq = ibqp->send_cq;
-        tx_mcq->curr_offset = 0;
-        tx_mcq->type = GDS_CQ_TYPE_SQ;
-        gqp->send_cq = to_gds_cq(tx_mcq);
+        tx_mcq->gcq.ibcq = ibqp->send_cq;
+        tx_mcq->gcq.curr_offset = 0;
+        tx_mcq->gcq.ctype = GDS_CQ_TYPE_SQ;
+        gqp->send_cq = &tx_mcq->gcq;
 
-        rx_mcq->cq = ibqp->recv_cq;
-        rx_mcq->curr_offset = 0;
-        rx_mcq->type = GDS_CQ_TYPE_RQ;
-        gqp->recv_cq = to_gds_cq(rx_mcq);
+        rx_mcq->gcq.ibcq = ibqp->recv_cq;
+        rx_mcq->gcq.curr_offset = 0;
+        rx_mcq->gcq.ctype = GDS_CQ_TYPE_RQ;
+        gqp->recv_cq = &rx_mcq->gcq;
 
         if (qp_attr->sq_sig_all)
                 mqp->sq_signal_bits = MLX5_WQE_CTRL_CQ_UPDATE;
@@ -1315,6 +1461,7 @@ int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx
                 goto err;
         }
 
+        mqp->peer_attr = peer_attr;
         *out_mqp = mqp;
         return 0;
 
@@ -1323,9 +1470,42 @@ err:
                 free(tx_mcq->wrid);
                 tx_mcq->wrid = NULL;
         }
-        if (mqp)
+        if (mqp) {
+                if (mqp->peer_va_id_bf)
+                        peer_attr->unregister_va(mqp->peer_va_id_bf, peer_attr->peer_id);
                 free(mqp);
+        }
         return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+void gds_mlx5_destroy_qp(gds_mlx5_qp_t *mqp)
+{
+        int status;
+        if (mqp->gqp.ibqp) {
+                status = ibv_destroy_qp(mqp->gqp.ibqp);
+                if (status)
+                        gds_err("error %d in ibv_destroy_qp\n", status);
+        }
+
+        if (mqp->gqp.send_cq) {
+                gds_destroy_cq(mqp->gqp.send_cq);
+                mqp->gqp.send_cq = NULL;
+        }
+
+        if (mqp->gqp.recv_cq)
+        {
+                gds_destroy_cq(mqp->gqp.recv_cq);
+                mqp->gqp.recv_cq = NULL;
+        }
+
+        if (mqp->peer_va_id_bf) {
+                gds_peer_attr *peer_attr = mqp->peer_attr;
+                peer_attr->unregister_va(mqp->peer_va_id_bf, peer_attr->peer_id);
+        }
+
+        free(mqp);
 }
 
 //-----------------------------------------------------------------------------

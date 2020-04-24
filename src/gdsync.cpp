@@ -1635,20 +1635,18 @@ static inline gds_driver_type gds_get_driver_type(struct ibv_device *ibdev)
 
 //-----------------------------------------------------------------------------
 
-static struct gds_mlx5_cq_t *
-gds_create_cq_internal(struct ibv_context *context, int cqe,
+gds_cq_t *gds_create_cq(struct ibv_context *context, int cqe,
                 void *cq_context, struct ibv_comp_channel *channel,
                 int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
 {
-        struct gds_mlx5_cq_t *gcq = NULL;
+        gds_mlx5_cq_t *mcq = NULL;
+        struct ibv_cq *ibcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
+        gds_driver_type dtype;
         int ret = 0;
 
-        mlx5dv_obj dv_obj;
-        struct gds_buf_alloc_attr ba_attr;
-        int i;
-        int old_errno = 0;
+        gds_dbg("cqe=%d gpu_id=%d cq_flags=%08x\n", cqe, gpu_id, flags);
 
         if (!context) {
                 gds_dbg("Invalid input context\n");
@@ -1660,14 +1658,13 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
                 goto err;
         }
 
-        gcq = (gds_mlx5_cq_t *)calloc(1, sizeof(gds_mlx5_cq_t));
-        if (!gcq) {
-                gds_err("cannot allocate memory\n");
-                goto err;
+        dtype = gds_get_driver_type(context->device);
+        if (dtype != GDS_DRIVER_TYPE_MLX5) {
+                gds_err("Not supported IB device. Currently only mlx5 devices are supported.\n");
+                return NULL;
         }
 
-        //Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags
-        //before ibv_exp_create_cq
+        // Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags.
         ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
                 gds_err("error %d while registering GPU peer\n", ret);
@@ -1679,133 +1676,62 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
         peer->alloc_type = gds_peer::CQ;
         peer->alloc_flags = flags;
 
-        old_errno = errno;
-        gcq->cq = ibv_create_cq(context, cqe, cq_context, channel, comp_vector);
-        if (!gcq->cq) {
-                gds_err("error %d in mlx5dv_create_cq, old errno %d\n", errno, old_errno);
+        ibcq = ibv_create_cq(context, cqe, cq_context, channel, comp_vector);
+        if (!ibcq) {
+                gds_err("error %d in ibv_create_cq\n", errno);
                 goto err;
         }
 
-        old_errno = errno;
-        dv_obj.cq.in = gcq->cq;
-        dv_obj.cq.out = &gcq->dv_cq;
-        ret = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_CQ);
-        if (ret != 0) {
-                gds_err("error %d in mlx5dv_init_obj MLX5DV_OBJ_CQ, old errno %d\n", errno, old_errno);
+        ret = gds_mlx5_create_cq(ibcq, peer_attr, &mcq);
+        if (ret) {
+                gds_err("error %d in gds_mlx5_create_cq\n", ret);
                 goto err;
         }
 
-        gcq->peer_attr = peer_attr;
-
-        gcq->active_buf_va_id = peer_attr->register_va(
-                gcq->dv_cq.buf,
-                (uint64_t)gcq->dv_cq.cqe_cnt * (uint64_t)gcq->dv_cq.cqe_size,
-                peer_attr->peer_id,
-                NULL
-        );
-        if (!gcq->active_buf_va_id) {
-                gds_err("error in gcq->active_buf_va_id = peer_attr->register_va\n");
-                goto err;
-        }
-
-        old_errno = errno;
-        gcq->peer_peek_table = (struct gds_mlx5_peek_entry **)malloc(sizeof(struct gds_mlx5_peek_entry *) * gcq->dv_cq.cqe_cnt);
-        if (!gcq->peer_peek_table) {
-                gds_err("error %d in malloc peer_peek_table, old_errno %d\n", errno, old_errno);
-                goto err;
-        }
-        memset(gcq->peer_peek_table, 0, sizeof(struct gds_peek_entry *) * gcq->dv_cq.cqe_cnt);
-        gcq->peer_dir = GDS_PEER_DIRECTION_FROM_PEER | GDS_PEER_DIRECTION_TO_CPU;
-
-        old_errno = errno;
-        ba_attr = {
-                .length         = sizeof(struct gds_mlx5_peek_entry) * gcq->dv_cq.cqe_cnt,
-                .dir            = gcq->peer_dir,
-                .peer_id        = peer_attr->peer_id,
-                .alignment      = (uint32_t)sysconf(_SC_PAGESIZE),
-                .comp_mask      = 0
-        };
-        gcq->peer_buf = peer_attr->buf_alloc(&ba_attr);
-        if (!gcq->peer_buf) {
-                gds_err("error %d in buf_alloc, old_errno %d\n", errno, old_errno);
-                goto err;
-        }
-
-        old_errno = errno;
-        gcq->peer_va_id = peer_attr->register_va(gcq->peer_buf->addr, gcq->peer_buf->length, peer_attr->peer_id, gcq->peer_buf);
-        if (!gcq->peer_va_id) {
-                gds_err("error %d in register_va, old_errno %d\n", errno, old_errno);
-                goto err;
-        }
-
-        memset(gcq->peer_buf->addr, 0, gcq->peer_buf->length);
-
-        gcq->peer_peek_free = (struct gds_mlx5_peek_entry *)gcq->peer_buf->addr;
-        for (i = 0; i < gcq->dv_cq.cqe_cnt - 1; ++i)
-                gcq->peer_peek_free[i].next = i + 1;
-        gcq->peer_peek_free[gcq->dv_cq.cqe_size - 1].next = GDS_MLX5_LAST_PEEK_ENTRY;
-
-        return gcq;
+        return &mcq->gcq;
 
 err:
-        if (gcq)
-                gds_destroy_cq(to_gds_cq(gcq));
+        if (ibcq)
+                ibv_destroy_cq(ibcq);
+
         return NULL;
 }
 
-//Note: general create cq function, not really used for now!
-struct gds_cq *
-gds_create_cq(struct ibv_context *context, int cqe,
-                void *cq_context, struct ibv_comp_channel *channel,
-                int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags)
-{
-        int ret = 0;
-        gds_mlx5_cq_t *gcq = NULL;
-        gds_dbg("cqe=%d gpu_id=%d cq_flags=%08x\n", cqe, gpu_id, flags);
+//-----------------------------------------------------------------------------
 
-        gcq = gds_create_cq_internal(context, cqe, cq_context, channel, comp_vector, gpu_id, flags);
-
-        if (!gcq) {
-                gds_err("error in gds_create_cq_internal\n");
-                return NULL;
-        }
-
-        return to_gds_cq(gcq);
-}
-
-int gds_poll_cq(struct gds_cq *p_gcq, int ne, struct ibv_wc *wc)
+int gds_poll_cq(struct gds_cq *gcq, int ne, struct ibv_wc *wc)
 {
         unsigned int idx;
         int cnt;
         int p_ne;
 
-        gds_mlx5_cq_t *gcq = to_gds_mcq(p_gcq);
+        gds_mlx5_cq_t *mcq = to_gds_mcq(gcq);
 
         for (cnt = 0; cnt < ne; ++cnt) {
-                idx = gcq->cons_index & (gcq->dv_cq.cqe_cnt - 1);
-                while (gcq->peer_peek_table[idx]) {
+                idx = mcq->cons_index & (mcq->dvcq.cqe_cnt - 1);
+                while (mcq->peer_peek_table[idx]) {
                         struct gds_mlx5_peek_entry *tmp;
-                        if (*(volatile uint32_t *)&gcq->peer_peek_table[idx]->busy) {
+                        if (*(volatile uint32_t *)&mcq->peer_peek_table[idx]->busy) {
                                 return cnt;
                         }
-                        tmp = gcq->peer_peek_table[idx];
-                        gcq->peer_peek_table[idx] = GDS_MLX5_PEEK_ENTRY(gcq, tmp->next);
-                        tmp->next = GDS_MLX5_PEEK_ENTRY_N(gcq, gcq->peer_peek_free);
-                        gcq->peer_peek_free = tmp;
+                        tmp = mcq->peer_peek_table[idx];
+                        mcq->peer_peek_table[idx] = GDS_MLX5_PEEK_ENTRY(mcq, tmp->next);
+                        tmp->next = GDS_MLX5_PEEK_ENTRY_N(mcq, mcq->peer_peek_free);
+                        mcq->peer_peek_free = tmp;
                 }
-                p_ne = ibv_poll_cq(gcq->cq, 1, wc + cnt);
+                p_ne = ibv_poll_cq(gcq->ibcq, 1, wc + cnt);
                 if (p_ne <= 0)
                         return p_ne;
-                if (gcq->type == GDS_CQ_TYPE_SQ)
-                        wc[cnt].wr_id = gcq->wrid[idx];
-                ++gcq->cons_index;
+                if (gcq->ctype == GDS_CQ_TYPE_SQ)
+                        wc[cnt].wr_id = mcq->wrid[idx];
+                ++mcq->cons_index;
         }
         return cnt;
 }
 
 //-----------------------------------------------------------------------------
 
-struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
+gds_qp_t *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
 {
         int ret = 0;
@@ -1813,12 +1739,10 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         gds_mlx5_qp_t *mqp = NULL;
         gds_qp_t *gqp = NULL;
         struct ibv_qp *ibqp = NULL;
-        struct gds_mlx5_cq_t *rx_mcq = NULL, *tx_mcq = NULL;
+        gds_cq_t *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
         gds_driver_type dtype;
-
-        int old_errno = errno;
 
         gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", p_pd, context, gpu_id, flags, errno);
         assert(p_pd);
@@ -1851,25 +1775,25 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 goto err;
         }
 
-        tx_mcq = gds_create_cq_internal(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
+        tx_gcq = gds_create_cq(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
                         (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
-        if (!tx_mcq) {
+        if (!tx_gcq) {
                 ret = errno;
-                gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
+                gds_err("error %d while creating TX CQ\n", ret);
                 goto err;
         }
 
-        rx_mcq = gds_create_cq_internal(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
+        rx_gcq = gds_create_cq(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
                         (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT);
-        if (!rx_mcq) {
+        if (!rx_gcq) {
                 ret = errno;
                 gds_err("error %d while creating RX CQ\n", ret);
                 goto err;
         }
 
         // peer registration
-        qp_attr->send_cq = tx_mcq->cq;
-        qp_attr->recv_cq = rx_mcq->cq;
+        qp_attr->send_cq = tx_gcq->ibcq;
+        qp_attr->recv_cq = rx_gcq->ibcq;
 
         peer->obj = gqp;
         peer->alloc_type = gds_peer::WQ;
@@ -1890,7 +1814,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 goto err;
         }
 
-        ret = gds_mlx5_create_qp(ibqp, qp_attr, tx_mcq, rx_mcq, peer_attr, &mqp);
+        ret = gds_mlx5_create_qp(ibqp, qp_attr, to_gds_mcq(tx_gcq), to_gds_mcq(rx_gcq), peer_attr, &mqp);
         if (ret) {
                 gds_err("error in gds_mlx5_create_qp\n");
                 goto err;
@@ -1903,107 +1827,42 @@ struct gds_qp *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         return gqp;
 
 err:
-        if (gqp) {
-                gds_dbg("destroying QP\n");
-                gds_destroy_qp(gqp);
-        }
+        if (ibqp)
+                ibv_destroy_qp(ibqp);
+
+        if (rx_gcq)
+                gds_destroy_cq(rx_gcq);
+
+        if (tx_gcq)
+                gds_destroy_cq(tx_gcq);
 
         return NULL;
 }
 
 //-----------------------------------------------------------------------------
 
-int gds_destroy_cq(struct gds_cq *p_gcq)
+void gds_destroy_cq(gds_cq_t *gcq)
 {
-        int ret = 0;
-        gds_mlx5_cq_t *gcq;
+        gds_mlx5_cq_t *mcq;
 
-        if (!p_gcq)
-                goto out;
+        if (!gcq)
+                return;
 
-        gcq = to_gds_mcq(p_gcq);
-
-        if (gcq->peer_peek_table) {
-                free(gcq->peer_peek_table);
-                gcq->peer_peek_table = NULL;
-        }
-
-        if (gcq->wrid) {
-                free(gcq->wrid);
-                gcq->wrid = NULL;
-        }
-
-        if (gcq->peer_attr) {
-                gds_peer_attr *peer_attr = gcq->peer_attr;
-                if (gcq->active_buf_va_id) {
-                        peer_attr->unregister_va(gcq->active_buf_va_id, peer_attr->peer_id);
-                        gcq->active_buf_va_id = 0;
-                }
-                if (gcq->peer_va_id) {
-                        peer_attr->unregister_va(gcq->peer_va_id, peer_attr->peer_id);
-                        gcq->peer_va_id = 0;
-                }
-                if (gcq->peer_buf) {
-                        gcq->peer_attr->buf_release(gcq->peer_buf);
-                        gcq->peer_buf = NULL;
-                }
-        }
-
-        if (gcq->cq) {
-                ret = ibv_destroy_cq(gcq->cq);
-                if (ret) {
-                        gds_err("error %d in ibv_destroy\n", ret);
-                        goto out;
-                }
-                gcq->cq = NULL;
-        }
-
-        free(gcq);
-out:
-        return ret;
+        assert(gcq->dtype == GDS_DRIVER_TYPE_MLX5);
+        
+        gds_mlx5_destroy_cq(to_gds_mcq(gcq));
 }
 
 //-----------------------------------------------------------------------------
 
-int gds_destroy_qp(struct gds_qp *gqp)
+void gds_destroy_qp(gds_qp_t *gqp)
 {
-        int retcode = 0;
-        int ret;
+        if (!gqp) 
+                return;
 
-        if (!gqp) return retcode;
+        assert(gqp->dtype == GDS_DRIVER_TYPE_MLX5);
 
-        if (gqp->ibqp)
-        {
-                ret = ibv_destroy_qp(gqp->ibqp);
-                if (ret) {
-                        gds_err("error %d in destroy_qp\n", ret);
-                        retcode = ret;
-                }            
-        }
-
-        if (gqp->send_cq)
-        {
-                ret = gds_destroy_cq(gqp->send_cq);
-                if (ret) {
-                        gds_err("error %d in gds_destroy_cq send_cq\n", ret);
-                        retcode = ret;
-                }
-                gqp->send_cq = NULL;
-        }
-
-        if (gqp->recv_cq)
-        {
-                ret = gds_destroy_cq(gqp->recv_cq);
-                if (ret) {
-                        gds_err("error %d in gds_destroy_cq recv_cq\n", ret);
-                        retcode = ret;
-                }
-                gqp->recv_cq = NULL;
-        }
-
-        free(gqp);
-
-        return retcode;
+        gds_mlx5_destroy_qp(to_gds_mqp(gqp));
 }
 
 //-----------------------------------------------------------------------------

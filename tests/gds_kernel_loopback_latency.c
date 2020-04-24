@@ -386,9 +386,7 @@ clean_ctx:
 
 int pp_close_ctx(struct pingpong_context *ctx)
 {
-        if (gds_destroy_qp(ctx->gds_qp)) {
-                fprintf(stderr, "Couldn't destroy QP\n");
-        }
+        gds_destroy_qp(ctx->gds_qp);
 
         if (ibv_dereg_mr(ctx->mr)) {
                 fprintf(stderr, "Couldn't deregister MR\n");
