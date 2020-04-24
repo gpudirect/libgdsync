@@ -185,6 +185,20 @@ typedef struct gds_mlx5_cq {
         struct gds_mlx5_peek_entry  *peer_peek_free;
 } gds_mlx5_cq_t;
 
+typedef struct gds_mlx5_qp_peer {
+        gds_peer_attr *peer_attr;
+        uint32_t scur_post;
+
+        struct {
+                uint64_t va_id;
+                size_t size;
+        } dbr;
+
+        struct {
+                uint64_t va_id;
+        } bf;
+} gds_mlx5_qp_peer_t;
+
 typedef struct gds_mlx5_qp {
         gds_qp_t gqp;
 
@@ -197,10 +211,7 @@ typedef struct gds_mlx5_qp {
 
         uint8_t fm_cache;
 
-        gds_peer_attr *peer_attr;
-        uint32_t peer_scur_post;
-        uint64_t peer_va_id_dbr;
-        uint64_t peer_va_id_bf;
+        gds_mlx5_qp_peer_t *qp_peer;
 } gds_mlx5_qp_t;
 
 static inline gds_mlx5_cq_t *to_gds_mcq(struct gds_cq *gcq) {
@@ -218,8 +229,9 @@ int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *mcq, struct gds_mlx5_peer_peek *peek);
 int gds_mlx5_create_cq(struct ibv_cq *ibcq, gds_peer_attr *peer_attr, gds_mlx5_cq_t **out_mcq);
 void gds_mlx5_destroy_cq(gds_mlx5_cq_t *mcq);
 
-int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx, gds_peer_attr *peer_attr, struct ibv_pd **out_pd);
-int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp);
+int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx, gds_peer_attr *peer_attr, struct ibv_pd **out_pd, gds_mlx5_qp_peer_t **out_qp_peer);
+
+int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_mlx5_qp_peer_t *qp_peer, gds_mlx5_qp_t **out_mqp);
 void gds_mlx5_destroy_qp(gds_mlx5_qp_t *mqp);
 
 //-----------------------------------------------------------------------------

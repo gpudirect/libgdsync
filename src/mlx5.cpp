@@ -1156,14 +1156,14 @@ out:
 	mqp->fm_cache = next_fence;
 
         if (likely(nreq > 0)) {
-                commit->rollback_id = mqp->peer_scur_post | ((uint64_t)mqp->sq_cur_post << 32);
-                mqp->peer_scur_post = mqp->sq_cur_post;
+                commit->rollback_id = mqp->qp_peer->scur_post | ((uint64_t)mqp->sq_cur_post << 32);
+                mqp->qp_peer->scur_post = mqp->sq_cur_post;
 
                 wr = commit->storage;
 
                 wr->type = GDS_MLX5_PEER_OP_STORE_DWORD;
                 wr->wr.dword_va.data = htonl(mqp->sq_cur_post & 0xffff);
-                wr->wr.dword_va.target_id = mqp->peer_va_id_dbr;
+                wr->wr.dword_va.target_id = mqp->qp_peer->dbr.va_id;
                 wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
                 wr = wr->next;
 
@@ -1173,7 +1173,7 @@ out:
 
                 wr->type = GDS_MLX5_PEER_OP_STORE_QWORD;
                 wr->wr.qword_va.data = *(__be64 *)ctrl;
-                wr->wr.qword_va.target_id = mqp->peer_va_id_bf;
+                wr->wr.qword_va.target_id = mqp->qp_peer->bf.va_id;
                 wr->wr.qword_va.offset = mqp->bf_offset;
 
                 mqp->bf_offset ^= mqp->dvqp.bf.size;
@@ -1396,12 +1396,16 @@ void gds_mlx5_destroy_cq(gds_mlx5_cq_t *mcq)
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_peer_attr *peer_attr, gds_mlx5_qp_t **out_mqp)
+int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_mlx5_qp_peer_t *qp_peer, gds_mlx5_qp_t **out_mqp)
 {
         int ret = 0;
 
         gds_mlx5_qp_t *mqp = NULL;
         gds_qp_t *gqp;
+
+        gds_peer_attr *peer_attr = qp_peer->peer_attr;
+
+        bool register_peer_dbr = false;
 
         mlx5dv_obj dv_obj;
 
@@ -1443,14 +1447,28 @@ int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx
                 goto err;
         }
 
-        mqp->peer_va_id_bf = peer_attr->register_va(
+        if (!qp_peer->dbr.va_id) {
+                qp_peer->dbr.va_id = peer_attr->register_va(
+                        mqp->dvqp.dbrec,
+                        qp_peer->dbr.size,
+                        peer_attr->peer_id,
+                        NULL
+                );
+                if (!qp_peer->dbr.va_id) {
+                        gds_err("error in register_va\n");
+                        goto err;
+                }
+                register_peer_dbr = true;
+        }
+
+        qp_peer->bf.va_id = peer_attr->register_va(
                 (uint32_t *)mqp->dvqp.bf.reg,
                 mqp->dvqp.bf.size,
                 peer_attr->peer_id,
                 GDS_PEER_IOMEMORY
         );
-        if (!mqp->peer_va_id_bf) {
-                gds_err("error in mqp->peer_va_id_bf = peer_attr->register_va\n");
+        if (!qp_peer->bf.va_id) {
+                gds_err("error in register_va\n");
                 goto err;
         }
 
@@ -1461,20 +1479,25 @@ int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx
                 goto err;
         }
 
-        mqp->peer_attr = peer_attr;
+        mqp->qp_peer = qp_peer;
         *out_mqp = mqp;
         return 0;
 
 err:
+        if (register_peer_dbr)
+                peer_attr->unregister_va(qp_peer->dbr.va_id, peer_attr->peer_id);
+
+        if (qp_peer->bf.va_id)
+                peer_attr->unregister_va(qp_peer->bf.va_id, peer_attr->peer_id);
+
         if (tx_mcq->wrid) {
                 free(tx_mcq->wrid);
                 tx_mcq->wrid = NULL;
         }
-        if (mqp) {
-                if (mqp->peer_va_id_bf)
-                        peer_attr->unregister_va(mqp->peer_va_id_bf, peer_attr->peer_id);
+
+        if (mqp)
                 free(mqp);
-        }
+
         return ret;
 }
 
@@ -1483,6 +1506,21 @@ err:
 void gds_mlx5_destroy_qp(gds_mlx5_qp_t *mqp)
 {
         int status;
+        gds_mlx5_qp_peer_t *qp_peer = mqp->qp_peer;
+        
+        if (qp_peer) {
+                gds_peer_attr *peer_attr = qp_peer->peer_attr;
+                if (qp_peer->dbr.va_id) {
+                        peer_attr->unregister_va(qp_peer->dbr.va_id, peer_attr->peer_id);
+                        qp_peer->dbr.va_id = 0;
+                }
+
+                if (qp_peer->bf.va_id) {
+                        peer_attr->unregister_va(qp_peer->bf.va_id, peer_attr->peer_id);
+                        qp_peer->bf.va_id = 0;
+                }
+        }
+
         if (mqp->gqp.ibqp) {
                 status = ibv_destroy_qp(mqp->gqp.ibqp);
                 if (status)
@@ -1498,11 +1536,6 @@ void gds_mlx5_destroy_qp(gds_mlx5_qp_t *mqp)
         {
                 gds_destroy_cq(mqp->gqp.recv_cq);
                 mqp->gqp.recv_cq = NULL;
-        }
-
-        if (mqp->peer_va_id_bf) {
-                gds_peer_attr *peer_attr = mqp->peer_attr;
-                peer_attr->unregister_va(mqp->peer_va_id_bf, peer_attr->peer_id);
         }
 
         free(mqp);
@@ -1524,7 +1557,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
                 .comp_mask      = peer_attr->comp_mask
         };
         gds_peer *peer = peer_from_id(peer_attr->peer_id);
-        gds_mlx5_qp_t *gqp; 
+        gds_mlx5_qp_peer_t *qp_peer;
         uint64_t range_id;
         gds_buf *buf = NULL;
         void *ptr = NULL;
@@ -1532,45 +1565,37 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
         gds_dbg("pd_mem_alloc: pd=%p, pd_context=%p, size=%zu, alignment=%zu, resource_type=0x%lx\n",
                 pd, pd_context, size, alignment, resource_type);
 
+        assert(peer->obj);
+        qp_peer = (gds_mlx5_qp_peer_t *)peer->obj;
+
         switch (resource_type) {
                 case MLX5DV_RES_TYPE_QP:
                         break;
                 case MLX5DV_RES_TYPE_DBR:
                         buf = peer_attr->buf_alloc(&buf_attr);
+                        qp_peer->dbr.size = size;
                         break;
                 default:
                         gds_err("request allocation with unsupported resource_type\n");
-                        return NULL;
+                        break;
         }
 
         if (!buf) {
                 int err;
                 gds_dbg("alloc on host\n");
-                // We should return IBV_ALLOCATOR_USE_DEFAULT so that libmlx5
-                // can do further optimization. However, we need to later query
-                // this mlx5-allocated ptr to do register_va later.
-
-                // TODO: Return IBV_ALLOCATOR_USE_DEFAULT and implement a
-                // tracking mechanism to register_va libmlx5-allocated ptr.
-                if ((err = posix_memalign(&ptr, alignment, size)) != 0) {
-                        gds_err("error %d in posix_memalign\n", err);
-                        return NULL;
-                }
+                return IBV_ALLOCATOR_USE_DEFAULT;
         }
         else {
                 gds_dbg("alloc on GPU\n");
                 ptr = buf->addr;
         }
 
-        assert(peer->obj);
-        gqp = (gds_mlx5_qp_t *)peer->obj;
-
         if ((range_id = peer_attr->register_va(ptr, size, peer_attr->peer_id, buf)) == 0) {
                 gds_err("error in register_va\n");
                 return NULL;
         }
         else if (resource_type == MLX5DV_RES_TYPE_DBR)
-                gqp->peer_va_id_dbr = range_id;
+                qp_peer->dbr.va_id = range_id;
         
         return ptr;
 }
@@ -1582,10 +1607,23 @@ static void pd_mem_free(struct ibv_pd *pd, void *pd_context, void *ptr,
                 pd, pd_context, ptr, resource_type);
 }
 
-int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx, gds_peer_attr *peer_attr, struct ibv_pd **out_pd)
+int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx, gds_peer_attr *peer_attr, struct ibv_pd **out_pd, gds_mlx5_qp_peer_t **out_qp_peer)
 {
+        int ret = 0;
+
         struct ibv_parent_domain_init_attr pd_init_attr;
         struct ibv_pd *pd = NULL;
+        gds_peer *peer = peer_from_id(peer_attr->peer_id);
+
+        gds_mlx5_qp_peer_t *qp_peer = (gds_mlx5_qp_peer_t *)calloc(1, sizeof(gds_mlx5_qp_peer_t));
+        if (!qp_peer) {
+                gds_err("cannot allocate memory\n");
+                ret = ENOMEM;
+                goto err;
+        }
+
+        qp_peer->peer_attr = peer_attr;
+        peer->obj = qp_peer;
 
         memset(&pd_init_attr, 0, sizeof(ibv_parent_domain_init_attr));
         pd_init_attr.pd = p_pd;
@@ -1597,11 +1635,18 @@ int gds_mlx5_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx,
         pd = ibv_alloc_parent_domain(ibctx, &pd_init_attr);
         if (!pd) {
                 gds_err("error in ibv_alloc_parent_domain\n");
-                return EINVAL;
+                ret = EINVAL;
+                goto err;
         }
 
         *out_pd = pd;
+        *out_qp_peer = qp_peer;
         return 0;
+
+err:
+        if (qp_peer)
+                free(qp_peer);
+        return ret;
 }
 
 //-----------------------------------------------------------------------------

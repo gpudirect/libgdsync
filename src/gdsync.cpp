@@ -1742,6 +1742,7 @@ gds_qp_t *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         gds_cq_t *rx_gcq = NULL, *tx_gcq = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
+        gds_mlx5_qp_peer_t *qp_peer = NULL;
         gds_driver_type dtype;
 
         gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", p_pd, context, gpu_id, flags, errno);
@@ -1769,7 +1770,18 @@ gds_qp_t *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 goto err;
         }
 
-        ret = gds_mlx5_alloc_parent_domain(p_pd, context, peer_attr, &pd);
+        peer->alloc_type = gds_peer::WQ;
+        peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
+        if (flags & GDS_CREATE_QP_WQ_ON_GPU) {
+                gds_err("error, QP WQ on GPU is not supported yet\n");
+                goto err;
+        }
+        if (flags & GDS_CREATE_QP_WQ_DBREC_ON_GPU) {
+                gds_warn("QP WQ DBREC on GPU\n");
+                peer->alloc_flags |= GDS_ALLOC_DBREC_ON_GPU;
+        }        
+
+        ret = gds_mlx5_alloc_parent_domain(p_pd, context, peer_attr, &pd, &qp_peer);
         if (ret) {
                 gds_err("error %d in gds_mlx5_alloc_parent_domain\n", ret);
                 goto err;
@@ -1795,18 +1807,6 @@ gds_qp_t *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         qp_attr->send_cq = tx_gcq->ibcq;
         qp_attr->recv_cq = rx_gcq->ibcq;
 
-        peer->obj = gqp;
-        peer->alloc_type = gds_peer::WQ;
-        peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
-        if (flags & GDS_CREATE_QP_WQ_ON_GPU) {
-                gds_err("error, QP WQ on GPU is not supported yet\n");
-                goto err;
-        }
-        if (flags & GDS_CREATE_QP_WQ_DBREC_ON_GPU) {
-                gds_warn("QP WQ DBREC on GPU\n");
-                peer->alloc_flags |= GDS_ALLOC_DBREC_ON_GPU;
-        }        
-
         ibqp = ibv_create_qp(pd, qp_attr);
         if (!ibqp)  {
                 ret = EINVAL;
@@ -1814,7 +1814,7 @@ gds_qp_t *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
                 goto err;
         }
 
-        ret = gds_mlx5_create_qp(ibqp, qp_attr, to_gds_mcq(tx_gcq), to_gds_mcq(rx_gcq), peer_attr, &mqp);
+        ret = gds_mlx5_create_qp(ibqp, qp_attr, to_gds_mcq(tx_gcq), to_gds_mcq(rx_gcq), qp_peer, &mqp);
         if (ret) {
                 gds_err("error in gds_mlx5_create_qp\n");
                 goto err;
@@ -1827,6 +1827,9 @@ gds_qp_t *gds_create_qp(struct ibv_pd *p_pd, struct ibv_context *context,
         return gqp;
 
 err:
+        if (qp_peer)
+                free(qp_peer);
+
         if (ibqp)
                 ibv_destroy_qp(ibqp);
 
