@@ -32,8 +32,8 @@
 #error "don't include directly this header, use gdsync.h always"
 #endif
 
-#define GDS_API_MAJOR_VERSION    2
-#define GDS_API_MINOR_VERSION    2
+#define GDS_API_MAJOR_VERSION    3
+#define GDS_API_MINOR_VERSION    0
 #define GDS_API_VERSION          (((unsigned)GDS_API_MAJOR_VERSION << 16) | (unsigned)GDS_API_MINOR_VERSION)
 #define GDS_API_VERSION_COMPATIBLE(v) \
         ( ((((v) & 0xffff0000U) >> 16) == (unsigned)GDS_API_MAJOR_VERSION) && \
