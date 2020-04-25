@@ -1414,6 +1414,8 @@ static gds_mlx5_wq_t *mlx5_create_wq(uint32_t wqe_cnt)
                 goto err;
         }
 
+        wq->wqe_cnt = wqe_cnt;
+
         return wq;
 err:
         if (wq) {
