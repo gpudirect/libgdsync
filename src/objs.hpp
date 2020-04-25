@@ -150,8 +150,6 @@ struct gds_peer {
         void free(gds_buf *buf);
 };
 
-typedef struct mlx5_cqe64 gds_cqe64;
-
 static inline uint64_t peer_to_id(gds_peer *peer)
 {
         assert(peer);

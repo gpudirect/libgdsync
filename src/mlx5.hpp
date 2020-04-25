@@ -171,11 +171,19 @@ static inline gds_mlx5_wait_request_t *to_gds_mwreq(gds_wait_request_t *req) {
         return (gds_mlx5_wait_request_t *)req;
 }
 
+typedef struct gds_mlx5_wq {
+        uint64_t               *wrid;
+        uint64_t               *wqe_head;
+        unsigned int            wqe_cnt;
+        uint64_t                head;
+        uint64_t                tail;
+} gds_mlx5_wq_t;
+
 typedef struct gds_mlx5_cq {
         gds_cq_t                gcq;
         uint32_t                cons_index;
         struct mlx5dv_cq        dvcq;
-        uint64_t               *wrid;
+        gds_mlx5_wq_t          *wq;
         uint64_t                active_buf_va_id;
         gds_peer_attr          *peer_attr;
         uint64_t                peer_va_id;
@@ -201,18 +209,20 @@ typedef struct gds_mlx5_qp_peer {
 } gds_mlx5_qp_peer_t;
 
 typedef struct gds_mlx5_qp {
-        gds_qp_t gqp;
+        gds_qp_t                gqp;
 
-        struct mlx5dv_qp dvqp;
+        struct mlx5dv_qp        dvqp;
 
-        unsigned int sq_cur_post;
-        uint8_t	sq_signal_bits;
+        unsigned int            sq_cur_post;
+        uint8_t	                sq_signal_bits;
 
-        unsigned int bf_offset;
+        unsigned int            bf_offset;
 
-        uint8_t fm_cache;
+        uint8_t                 fm_cache;
 
-        gds_mlx5_qp_peer_t *qp_peer;
+        gds_mlx5_qp_peer_t     *qp_peer;
+
+        gds_mlx5_wq_t          *wq;
 } gds_mlx5_qp_t;
 
 static inline gds_mlx5_cq_t *to_gds_mcq(struct gds_cq *gcq) {
@@ -239,6 +249,8 @@ int gds_mlx5_post_ops_on_cpu(size_t n_ops, struct gds_mlx5_peer_op_wr *op, int p
 int gds_mlx5_post_ops(gds_peer *peer, size_t n_ops, struct gds_mlx5_peer_op_wr *op, gds_op_list_t &ops, int post_flags = 0);
 
 void gds_mlx5_dump_ops(struct gds_mlx5_peer_op_wr *op, size_t count);
+
+int gds_mlx5_poll_cq(gds_mlx5_cq_t *mcq, int ne, struct ibv_wc *wc);
 
 //-----------------------------------------------------------------------------
 

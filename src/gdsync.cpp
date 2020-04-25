@@ -1262,32 +1262,18 @@ err:
 
 int gds_poll_cq(struct gds_cq *gcq, int ne, struct ibv_wc *wc)
 {
-        unsigned int idx;
-        int cnt;
-        int p_ne;
+        assert(gcq->dtype == GDS_DRIVER_TYPE_MLX5);
 
         gds_mlx5_cq_t *mcq = to_gds_mcq(gcq);
 
-        for (cnt = 0; cnt < ne; ++cnt) {
-                idx = mcq->cons_index & (mcq->dvcq.cqe_cnt - 1);
-                while (mcq->peer_peek_table[idx]) {
-                        struct gds_mlx5_peek_entry *tmp;
-                        if (*(volatile uint32_t *)&mcq->peer_peek_table[idx]->busy) {
-                                return cnt;
-                        }
-                        tmp = mcq->peer_peek_table[idx];
-                        mcq->peer_peek_table[idx] = GDS_MLX5_PEEK_ENTRY(mcq, tmp->next);
-                        tmp->next = GDS_MLX5_PEEK_ENTRY_N(mcq, mcq->peer_peek_free);
-                        mcq->peer_peek_free = tmp;
-                }
-                p_ne = ibv_poll_cq(gcq->ibcq, 1, wc + cnt);
-                if (p_ne <= 0)
-                        return p_ne;
-                if (gcq->ctype == GDS_CQ_TYPE_SQ)
-                        wc[cnt].wr_id = mcq->wrid[idx];
-                mcq->cons_index += 2;
+        switch (gcq->ctype) {
+                case GDS_CQ_TYPE_SQ:
+                        return gds_mlx5_poll_cq(mcq, ne, wc);
+                case GDS_CQ_TYPE_RQ:
+                        return ibv_poll_cq(gcq->ibcq, ne, wc);
         }
-        return cnt;
+
+        return -EINVAL;
 }
 
 //-----------------------------------------------------------------------------

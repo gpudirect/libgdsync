@@ -426,11 +426,9 @@ static inline int set_datagram_seg(struct mlx5_wqe_datagram_seg *seg, gds_send_w
 
 static inline int mlx5_wq_overflow(gds_mlx5_qp_t *mqp, int nreq)
 {
-        gds_mlx5_cq_t *mcq = to_gds_mcq(mqp->gqp.send_cq);
+	unsigned cur;
 
-	unsigned int cur;
-
-	cur = mqp->sq_cur_post - mcq->cons_index;
+	cur = mqp->wq->head - mqp->wq->tail;
 
 	return cur + nreq >= mqp->dvqp.sq.wqe_cnt;
 }
@@ -888,8 +886,6 @@ int gds_mlx5_post_send(gds_mlx5_qp_t *mqp, gds_send_wr *p_ewr, gds_send_wr **bad
 
         struct gds_mlx5_peer_op_wr *wr;
 
-        gds_mlx5_cq_t *tx_cq = to_gds_mcq(mqp->gqp.send_cq);
-
         if (commit->entries < 3) {
                 gds_err("not enough entries in gds_mlx5_peer_commit.\n");
                 ret = EINVAL;
@@ -1149,7 +1145,8 @@ int gds_mlx5_post_send(gds_mlx5_qp_t *mqp, gds_send_wr *p_ewr, gds_send_wr **bad
                                 (opmod << 24));
                 ctrl->qpn_ds = htobe32(size | (mqp->gqp.ibqp->qp_num << 8));
 
-                tx_cq->wrid[idx] = p_ewr->wr_id;
+                mqp->wq->wrid[idx] = p_ewr->wr_id;
+                mqp->wq->wqe_head[idx] = mqp->wq->head + nreq;
                 mqp->sq_cur_post += (size * 16 + mqp->dvqp.sq.stride - 1) / mqp->dvqp.sq.stride;
         }
 
@@ -1157,6 +1154,8 @@ out:
 	mqp->fm_cache = next_fence;
 
         if (likely(nreq > 0)) {
+                mqp->wq->head += nreq;
+
                 commit->rollback_id = mqp->qp_peer->scur_post | ((uint64_t)mqp->sq_cur_post << 32);
                 mqp->qp_peer->scur_post = mqp->sq_cur_post;
 
@@ -1194,7 +1193,7 @@ int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *mcq, struct gds_mlx5_peer_peek *peek)
         struct gds_mlx5_peer_op_wr *wr;
         int n, cur_own;
         void *cqe;
-        gds_cqe64 *cqe64;
+        struct mlx5_cqe64 *cqe64;
         struct gds_mlx5_peek_entry *tmp;
 
         if (peek->entries < 2) {
@@ -1208,7 +1207,7 @@ int gds_mlx5_peer_peek_cq(gds_mlx5_cq_t *mcq, struct gds_mlx5_peer_peek *peek)
 
         cqe = (char *)mcq->dvcq.buf + (n & (mcq->dvcq.cqe_cnt - 1)) * mcq->dvcq.cqe_size;
         cur_own = n & mcq->dvcq.cqe_cnt;
-        cqe64 = (gds_cqe64 *)((mcq->dvcq.cqe_size == 64) ? cqe : (char *)cqe + 64);
+        cqe64 = (struct mlx5_cqe64 *)((mcq->dvcq.cqe_size == 64) ? cqe : (char *)cqe + 64);
 
         if (cur_own) {
                 wr->type = GDS_MLX5_PEER_OP_POLL_AND_DWORD;
@@ -1362,10 +1361,8 @@ void gds_mlx5_destroy_cq(gds_mlx5_cq_t *mcq)
                 mcq->peer_peek_table = NULL;
         }
 
-        if (mcq->wrid) {
-                free(mcq->wrid);
-                mcq->wrid = NULL;
-        }
+        if (mcq->wq)
+                mcq->wq = NULL;
 
         if (mcq->peer_attr) {
                 gds_peer_attr *peer_attr = mcq->peer_attr;
@@ -1397,12 +1394,63 @@ void gds_mlx5_destroy_cq(gds_mlx5_cq_t *mcq)
 
 //-----------------------------------------------------------------------------
 
+static gds_mlx5_wq_t *mlx5_create_wq(uint32_t wqe_cnt)
+{
+        gds_mlx5_wq_t *wq = (gds_mlx5_wq_t *)calloc(1, sizeof(gds_mlx5_wq_t));
+        if (!wq) {
+                gds_err("error in calloc wq\n");
+                goto err;
+        }
+
+        wq->wrid = (uint64_t *)malloc(wqe_cnt * sizeof(uint64_t));
+        if (!wq->wrid) {
+                gds_err("error in calloc wq->wrid\n");
+                goto err;
+        }
+
+        wq->wqe_head = (uint64_t *)malloc(wqe_cnt * sizeof(uint64_t));
+        if (!wq->wqe_head) {
+                gds_err("error in calloc wq->wqe_head\n");
+                goto err;
+        }
+
+        return wq;
+err:
+        if (wq) {
+                if (wq->wrid)
+                        free(wq->wrid);
+                if (wq->wqe_head)
+                        free(wq->wqe_head);
+                free(wq);
+        }
+        return NULL;
+}
+
+static void mlx5_destroy_wq(gds_mlx5_wq_t *wq)
+{
+        if (wq) {
+                if (wq->wrid) {
+                        free(wq->wrid);
+                        wq->wrid = NULL;
+                }
+                if (wq->wqe_head) {
+                        free(wq->wqe_head);
+                        wq->wqe_head = NULL;
+                }
+                free(wq);
+        }
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx5_cq_t *tx_mcq, gds_mlx5_cq_t *rx_mcq, gds_mlx5_qp_peer_t *qp_peer, gds_mlx5_qp_t **out_mqp)
 {
         int ret = 0;
 
         gds_mlx5_qp_t *mqp = NULL;
         gds_qp_t *gqp;
+
+        gds_mlx5_wq_t *wq = NULL;
 
         gds_peer_attr *peer_attr = qp_peer->peer_attr;
 
@@ -1473,14 +1521,16 @@ int gds_mlx5_create_qp(struct ibv_qp *ibqp, gds_qp_init_attr_t *qp_attr, gds_mlx
                 goto err;
         }
 
-        tx_mcq->wrid = (uint64_t *)malloc(mqp->dvqp.sq.wqe_cnt * sizeof(uint64_t));
-        if (!tx_mcq->wrid) {
-                gds_err("error in malloc tx_mcq->wrid\n");
+        wq = mlx5_create_wq(mqp->dvqp.sq.wqe_cnt);
+        if (!wq) {
+                gds_err("error in mlx5_create_wq\n");
                 ret = ENOMEM;
                 goto err;
         }
 
         mqp->qp_peer = qp_peer;
+        mqp->wq = wq;
+        tx_mcq->wq = wq;
         *out_mqp = mqp;
         return 0;
 
@@ -1491,10 +1541,8 @@ err:
         if (qp_peer->bf.va_id)
                 peer_attr->unregister_va(qp_peer->bf.va_id, peer_attr->peer_id);
 
-        if (tx_mcq->wrid) {
-                free(tx_mcq->wrid);
-                tx_mcq->wrid = NULL;
-        }
+        if (wq)
+                mlx5_destroy_wq(wq);
 
         if (mqp)
                 free(mqp);
@@ -1533,10 +1581,14 @@ void gds_mlx5_destroy_qp(gds_mlx5_qp_t *mqp)
                 mqp->gqp.send_cq = NULL;
         }
 
-        if (mqp->gqp.recv_cq)
-        {
+        if (mqp->gqp.recv_cq) {
                 gds_destroy_cq(mqp->gqp.recv_cq);
                 mqp->gqp.recv_cq = NULL;
+        }
+
+        if (mqp->wq) {
+                mlx5_destroy_wq(mqp->wq);
+                mqp->wq = NULL;
         }
 
         free(mqp);
@@ -2102,6 +2154,53 @@ void gds_mlx5_dump_ops(struct gds_mlx5_peer_op_wr *op, size_t count)
         }
 
         assert(count == n);
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_poll_cq(gds_mlx5_cq_t *mcq, int ne, struct ibv_wc *wc)
+{
+        unsigned int idx;
+        int cnt;
+        int p_ne;
+
+        void *cqe;
+        struct mlx5_cqe64 *cqe64;
+
+        uint16_t wqe_ctr;
+        int wqe_ctr_idx;
+
+        assert(mcq->gcq.ctype == GDS_CQ_TYPE_SQ);
+
+        for (cnt = 0; cnt < ne; ++cnt) {
+                idx = mcq->cons_index & (mcq->dvcq.cqe_cnt - 1);
+                while (mcq->peer_peek_table[idx]) {
+                        struct gds_mlx5_peek_entry *tmp;
+                        if (*(volatile uint32_t *)&mcq->peer_peek_table[idx]->busy) {
+                                return cnt;
+                        }
+                        tmp = mcq->peer_peek_table[idx];
+                        mcq->peer_peek_table[idx] = GDS_MLX5_PEEK_ENTRY(mcq, tmp->next);
+                        tmp->next = GDS_MLX5_PEEK_ENTRY_N(mcq, mcq->peer_peek_free);
+                        mcq->peer_peek_free = tmp;
+                }
+                cqe = (void *)((uintptr_t)mcq->dvcq.buf + mcq->cons_index * mcq->dvcq.cqe_size);
+                cqe64 = (mcq->dvcq.cqe_size == 64) ? (struct mlx5_cqe64 *)cqe : (struct mlx5_cqe64 *)((uintptr_t)cqe + 64);
+
+                wqe_ctr = be16toh(cqe64->wqe_counter);
+                wqe_ctr_idx = wqe_ctr & (mcq->wq->wqe_cnt - 1);
+
+                p_ne = ibv_poll_cq(mcq->gcq.ibcq, 1, wc + cnt);
+                if (p_ne <= 0)
+                        return p_ne;
+
+                wc[cnt].wr_id = mcq->wq->wrid[wqe_ctr_idx];
+
+                mcq->wq->tail = mcq->wq->wqe_head[wqe_ctr_idx] + 1;
+
+                ++mcq->cons_index;
+        }
+        return cnt;
 }
 
 //-----------------------------------------------------------------------------
