@@ -87,18 +87,6 @@ namespace gdsync {
                         *sem.access_once() = sem.value;
                 }
 
-                template<typename S> __device__ inline int wait(S &sem, wait_cond_t cond) {
-                        int ret = 0;
-                        switch(cond) {
-                                case GDS_WAIT_COND_EQ:  ret = wait_eq(sem);  break;
-                                case GDS_WAIT_COND_GEQ: ret = wait_geq(sem); break;
-                                case GDS_WAIT_COND_AND: ret = wait_and(sem); break;
-                                case GDS_WAIT_COND_NOR: ret = wait_nor(sem); break;
-                                default: ret = ERROR_INVALID; break;
-                        }
-                        return ret;
-                }
-
                 template <typename S> __device__ inline int wait_eq(S &sem) {
                         int ret = ERROR_TIMEOUT;
                         volatile clock_t tmout = clock() + large_timeout;
@@ -151,6 +139,19 @@ namespace gdsync {
                         } while(clock() < tmout);
                         return ret;
                 }
+
+                template<typename S> __device__ inline int wait(S &sem, wait_cond_t cond) {
+                        int ret = 0;
+                        switch(cond) {
+                                case GDS_WAIT_COND_EQ:  ret = wait_eq(sem);  break;
+                                case GDS_WAIT_COND_GEQ: ret = wait_geq(sem); break;
+                                case GDS_WAIT_COND_AND: ret = wait_and(sem); break;
+                                case GDS_WAIT_COND_NOR: ret = wait_nor(sem); break;
+                                default: ret = ERROR_INVALID; break;
+                        }
+                        return ret;
+                }
+
 
         } // namespace device
 #endif
