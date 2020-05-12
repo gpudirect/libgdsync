@@ -31,6 +31,44 @@
 #warning "__STDC_FORMAT_MACROS should be defined to pull definition of PRIx64, etc"
 #endif
 #include <inttypes.h> // to pull PRIx64
+#include <stdio.h>
+#include <stddef.h>
+
+#if (__GNUC__ >= 6 && !defined(__powerpc__)) || defined(__clang__)
+#define uninitialized_var(x) x
+#else
+#define uninitialized_var(x) x = x
+#endif
+
+#ifndef likely
+#ifdef __GNUC__
+#define likely(x)       __builtin_expect(!!(x), 1)
+#else
+#define likely(x)      (x)
+#endif
+#endif
+
+#ifndef unlikely
+#ifdef __GNUC__
+#define unlikely(x)      __builtin_expect(!!(x), 0)
+#else
+#define unlikely(x)    (x)
+#endif
+#endif
+
+#ifndef container_of
+#define container_of(ptr, type, member) ({                      \
+        void *__mptr = (void *)(ptr);                           \
+        ((type *)((uintptr_t)__mptr - offsetof(type, member))); })
+
+#endif
+
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+
+static inline unsigned long align(unsigned long val, unsigned long align)
+{
+        return (val + align - 1) & ~(align - 1);
+}
 
 // internal assert function
 
@@ -39,9 +77,9 @@ void gds_assert(const char *cond, const char *file, unsigned line, const char *f
 #define GDS_ASSERT2(COND)                                               \
         do {                                                            \
                 if (!(COND))                                            \
-                        gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__); \
+                gds_assert(#COND, __FILE__, __LINE__, __FUNCTION__);    \
         }                                                               \
-        while(0)
+while(0)
 
 #define GDS_ASSERT(COND) GDS_ASSERT2(COND)
 
@@ -49,26 +87,26 @@ void gds_assert(const char *cond, const char *file, unsigned line, const char *f
 // CUDA error checking
 
 #define __CUCHECK(stmt, cond_str)					\
-	do {								\
-		CUresult result = (stmt);				\
-		if (CUDA_SUCCESS != result) {				\
-			const char *err_str = NULL;			\
-			cuGetErrorString(result, &err_str);		\
-			fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", \
-                                cond_str, __FILE__, __LINE__, result, err_str); \
-			exit(EXIT_FAILURE);                             \
-		}							\
+        do {								\
+                CUresult result = (stmt);				\
+                if (CUDA_SUCCESS != result) {				\
+                        const char *err_str = NULL;			\
+                        cuGetErrorString(result, &err_str);		\
+                        fprintf(stderr, "Assertion \"%s != cudaSuccess\" failed at %s:%d error=%d(%s)\n", \
+                                        cond_str, __FILE__, __LINE__, result, err_str); \
+                        exit(EXIT_FAILURE);                             \
+                }							\
         } while (0)
 
 #define CUCHECK(stmt) __CUCHECK(stmt, #stmt)
 
-template <typename T>
+        template <typename T>
 static inline void gds_atomic_set(T *ptr, T value)
 {
         *(volatile T*)ptr = value;
 }
 
-template <typename T>
+        template <typename T>
 static inline T gds_atomic_get(T *ptr)
 {
         return *(volatile T*)ptr;
@@ -94,10 +132,10 @@ static inline T gds_atomic_get(T *ptr)
 // tracing support
 
 enum gds_msg_level {
-    GDS_MSG_DEBUG = 1,
-    GDS_MSG_INFO,
-    GDS_MSG_WARN,
-    GDS_MSG_ERROR
+        GDS_MSG_DEBUG = 1,
+        GDS_MSG_INFO,
+        GDS_MSG_WARN,
+        GDS_MSG_ERROR
 };
 
 #define gds_stream stderr
@@ -105,9 +143,9 @@ enum gds_msg_level {
 
 int gds_dbg_enabled();
 #define gds_msg(LVL, LVLSTR, FMT, ARGS...)   do {			\
-		fprintf(gds_stream, "[%d] GDS " LVLSTR " %s() " FMT, getpid(), __FUNCTION__ ,##ARGS); \
-		fflush(gds_stream);                                     \
-	} while(0)
+        fprintf(gds_stream, "[%d] GDS " LVLSTR " %s() " FMT, getpid(), __FUNCTION__ ,##ARGS); \
+        fflush(gds_stream);                                             \
+} while(0)
 
 #define gds_dbg(FMT, ARGS...)  do { if (gds_dbg_enabled()) gds_msg(GDS_MSG_DEBUG, "DBG  ", FMT, ## ARGS); } while(0)
 #define gds_dbgc(CNT, FMT, ARGS...) do { static int __cnt = 0; if (__cnt++ < CNT) gds_dbg(FMT, ## ARGS); } while(0)
@@ -121,19 +159,18 @@ int gds_dbg_enabled();
 
 #define gds_err(FMT, ARGS...)  gds_msg(GDS_MSG_ERROR, "ERR  ", FMT, ##ARGS)
 
-
 //-----------------------------------------------------------------------------
 
 static inline int gds_curesult_to_errno(CUresult result)
 {
         int retcode = 0;
         switch (result) {
-        case CUDA_SUCCESS:             retcode = 0; break;
-        case CUDA_ERROR_NOT_SUPPORTED: retcode = EPERM; break;
-        case CUDA_ERROR_INVALID_VALUE: retcode = EINVAL; break;
-        case CUDA_ERROR_OUT_OF_MEMORY: retcode = ENOMEM; break;
-        // TODO: add missing cases
-        default: retcode = EIO; break;
+                case CUDA_SUCCESS:             retcode = 0; break;
+                case CUDA_ERROR_NOT_SUPPORTED: retcode = EPERM; break;
+                case CUDA_ERROR_INVALID_VALUE: retcode = EINVAL; break;
+                case CUDA_ERROR_OUT_OF_MEMORY: retcode = ENOMEM; break;
+                                               // TODO: add missing cases
+                default: retcode = EIO; break;
         }
         return retcode;
 }
@@ -189,6 +226,10 @@ typedef enum gds_alloc_qp_flags {
         GDS_ALLOC_DBREC_MASK    = 1<<4        
 } gds_alloc_qp_flags_t;
 
+// TODO: use correct value
+// TODO: make it dependent upon the particular GPU
+const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
+
 #include <vector>
 
 typedef std::vector<CUstreamBatchMemOpParams> gds_op_list_t;
@@ -204,9 +245,13 @@ void gds_dump_params(gds_op_list_t &params);
 struct gds_peer;
 
 int gds_fill_membar(gds_peer *peer, gds_op_list_t &param, int flags);
+int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, const void *data, size_t n_bytes, int flags);
 int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &param, void *ptr, const void *data, size_t n_bytes, int flags);
+int gds_fill_poke(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, uint32_t value, int flags);
 int gds_fill_poke(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
+int gds_fill_poke64(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, uint64_t value, int flags);
 int gds_fill_poke64(gds_peer *peer, gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
+int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags);
 int gds_fill_poll(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
 
 int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params, int flags);
@@ -216,9 +261,18 @@ enum gds_post_ops_flags {
 };
 
 struct gds_peer;
-int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
-int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
+
+bool gds_enable_write64();
+bool gds_enable_wait_nor();
+bool gds_enable_remote_flush();
+bool gds_enable_wait_checker();
+bool gds_enable_inlcpy();
+bool gds_simulate_write64();
+bool gds_enable_membar();
+bool gds_enable_weak_consistency();
+bool gds_enable_dump_memops();
+void gds_enable_barrier_for_inlcpy(CUstreamBatchMemOpParams *param);
 
 //-----------------------------------------------------------------------------
 

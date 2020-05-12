@@ -40,7 +40,6 @@
 using namespace std;
 
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"
@@ -159,7 +158,7 @@ static int gds_map_gdr_memory(gds_mem_desc_t *desc, CUdeviceptr d_buf, size_t si
         desc->alloc_size = buf_size;
         desc->mh = mh;
         gds_dbg("d_ptr=%lx h_ptr=%p bar_ptr=%p flags=0x%08x alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->bar_ptr, desc->flags, desc->alloc_size, desc->mh);
 out:
         if (ret) {
                 if (is_gdr_mh_valid(mh)) {
@@ -186,7 +185,7 @@ static int gds_unmap_gdr_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         gds_dbg("d_ptr=%lx h_ptr=%p alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
         gdr_unmap(gdr, desc->mh, desc->bar_ptr, desc->alloc_size);
         gdr_unpin_buffer(gdr, desc->mh);
         return ret;
@@ -197,20 +196,26 @@ static int gds_unmap_gdr_memory(gds_mem_desc_t *desc)
 static int gds_alloc_gdr_memory(gds_mem_desc_t *desc, size_t size, int flags)
 {
         CUdeviceptr d_buf = 0;
-        size_t buf_size = size;
+        CUdeviceptr d_buf_aligned = 0;
+        size_t buf_size = size + GDS_GPU_PAGE_SIZE - 1;
         int ret = 0;
 
         assert(desc);
 
         CUCHECK(cuMemAlloc(&d_buf, buf_size));
-        gds_dbg("allocated GPU polling buffer d_buf=%p\n", (void*)d_buf);
-        //CUCHECK(cuMemsetD8(d_buf, 0, buf_size));
 
-        ret = gds_map_gdr_memory(desc, d_buf, buf_size, flags);
+        d_buf_aligned = (d_buf + GDS_GPU_PAGE_SIZE - 1) & GDS_GPU_PAGE_MASK;
+
+        gds_dbg("allocated GPU polling buffer d_buf=0x%llx req_size=%zu d_buf_aligned=0x%llx buf_size=%zu\n", d_buf, size, d_buf_aligned, buf_size);
+
+        ret = gds_map_gdr_memory(desc, d_buf_aligned, size, flags);
         if (ret) {
                 gds_err("error %d while mapping gdr memory\n", ret);
                 CUCHECK(cuMemFree(d_buf));
+                return ret;
         }
+
+        desc->original_d_ptr = d_buf;
         return ret;
 }
 
@@ -225,14 +230,14 @@ static int gds_free_gdr_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         gds_dbg("d_ptr=%lx h_ptr=%p alloc_size=%zd mh=%x\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->alloc_size, desc->mh);
 
         ret = gds_unmap_gdr_memory(desc);
         if (ret) {
                 gds_err("error %d while unmapping gdr, going on anyway\n", ret);
         }
 
-        CUCHECK(cuMemFree(desc->d_ptr));
+        CUCHECK(cuMemFree(desc->original_d_ptr));
         return ret;
 }
 
@@ -279,7 +284,7 @@ static int gds_alloc_pinned_memory(gds_mem_desc_t *desc, size_t size, int flags)
         desc->alloc_size = size;
         memset(&desc->mh, 0, sizeof(gdr_mh_t));
         gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
 out:
         if (ret) {
                 if (desc->h_ptr) {
@@ -306,7 +311,7 @@ static int gds_free_pinned_memory(gds_mem_desc_t *desc)
         // BUG: TBD
 #else
         gds_dbg("d_ptr=%lx h_ptr=%p flags=0x%08x alloc_size=%zd\n",
-                (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
+                        (unsigned long)desc->d_ptr, desc->h_ptr, desc->flags, desc->alloc_size);
         ret = gds_unregister_mem(desc->h_ptr, desc->alloc_size);
         free(desc->h_ptr);
         desc->h_ptr = NULL;
@@ -330,16 +335,16 @@ int gds_alloc_mapped_memory(gds_mem_desc_t *desc, size_t size, int flags)
                 return EINVAL;
         }
         switch(flags & GDS_MEMORY_MASK) {
-        case GDS_MEMORY_GPU:
-                ret = gds_alloc_gdr_memory(desc, size, flags);
-                break;
-        case GDS_MEMORY_HOST:
-                ret = gds_alloc_pinned_memory(desc, size, flags);
-                break;
-        default:
-                gds_err("invalid flags\n");
-                ret = EINVAL;
-                break;
+                case GDS_MEMORY_GPU:
+                        ret = gds_alloc_gdr_memory(desc, size, flags);
+                        break;
+                case GDS_MEMORY_HOST:
+                        ret = gds_alloc_pinned_memory(desc, size, flags);
+                        break;
+                default:
+                        gds_err("invalid flags\n");
+                        ret = EINVAL;
+                        break;
         }
         return ret;
 }
@@ -354,15 +359,15 @@ int gds_free_mapped_memory(gds_mem_desc_t *desc)
                 return EINVAL;
         }
         switch(desc->flags & GDS_MEMORY_MASK) {
-        case GDS_MEMORY_GPU:
-                ret = gds_free_gdr_memory(desc);
-                break;
-        case GDS_MEMORY_HOST:
-                ret = gds_free_pinned_memory(desc);
-                break;
-        default:
-                ret = EINVAL;
-                break;
+                case GDS_MEMORY_GPU:
+                        ret = gds_free_gdr_memory(desc);
+                        break;
+                case GDS_MEMORY_HOST:
+                        ret = gds_free_pinned_memory(desc);
+                        break;
+                default:
+                        ret = EINVAL;
+                        break;
         }
         return ret;
 }
@@ -370,10 +375,9 @@ int gds_free_mapped_memory(gds_mem_desc_t *desc)
 //-----------------------------------------------------------------------------
 
 #define ROUND_TO(V,PS) ((((V) + (PS) - 1)/(PS)) * (PS))
-//#define ROUND_TO_GDR_GPU_PAGE(V) ROUND_TO(V, GDR_GPU_PAGE_SIZE)
 
 // allocate GPU memory with a GDR mapping (CPU can dereference it)
-int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle, bool has_cpu_mapping)
+int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle, gds_memory_type_t mem_type, bool has_cpu_mapping)
 {
         int ret = 0;
         // assume GPUs are the only peers!!!
@@ -426,7 +430,7 @@ int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdevi
                 goto out;
         }
 
-        ret = gds_alloc_mapped_memory(desc, size, GDS_MEMORY_GPU);
+        ret = gds_alloc_mapped_memory(desc, size, mem_type);
         if (ret) {
                 gds_err("error %d while allocating mapped GPU buffers\n", ret);
                 goto out;
@@ -448,9 +452,9 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_peer_malloc(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle)
+int gds_peer_malloc(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle, gds_memory_type_t mem_type)
 {
-        return gds_peer_malloc_ex(peer_id, peer_data, host_addr, peer_addr, req_size, phandle, true);
+        return gds_peer_malloc_ex(peer_id, peer_data, host_addr, peer_addr, req_size, phandle, mem_type, true);
 }
 
 //-----------------------------------------------------------------------------

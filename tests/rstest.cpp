@@ -31,84 +31,84 @@
 using namespace std;
 
 std::ostream &operator <<(std::ostream &o, std::pair<const int, int> &r) {
-    o << "[" << r.first << "," << r.second << "]";
-    return o;
+        o << "[" << r.first << "," << r.second << "]";
+        return o;
 }
 
 std::ostream &operator << (std::ostream &o, RangeSet &rs) {
 #if __cplusplus <= 199711L // not C++-11, hopefully C++-98
-    for (RangeSet::iterator _s = rs.begin(); _s != rs.end(); ++_s) { Range s = *_s;
+        for (RangeSet::iterator _s = rs.begin(); _s != rs.end(); ++_s) { Range s = *_s;
 #else
-    for (auto s: rs) {
+        for (auto s: rs) {
 #endif
-        std::cout << s << std::endl;
-    }
-    return o;
+                std::cout << s << std::endl;
+        }
+        return o;
 }
 
 int main()
 {
-    RangeSet rs;
+        RangeSet rs;
 
-    Range r1(1,2);
-    Range r2(4,5);
-    Range r3(8,22);
+        Range r1(1,2);
+        Range r2(4,5);
+        Range r3(8,22);
 
-    rs.insert(r1);
-    rs.insert(r2);
-    rs.insert(r3);
+        rs.insert(r1);
+        rs.insert(r2);
+        rs.insert(r3);
 
-    cout << "rs contains:" << endl;
-    cout << rs;
-    cout << endl;
+        cout << "rs contains:" << endl;
+        cout << rs;
+        cout << endl;
 
-    { RangeSet::find_result res = rs.find(r1); Range r = *res.first; assert(r == r1); assert(res.second == RangeSet::fully_contained); }
-    
-    { RangeSet::find_result res = rs.find(r2); Range r = *res.first; assert(r == r2); assert(res.second == RangeSet::fully_contained); }
+        { RangeSet::find_result res = rs.find(r1); Range r = *res.first; assert(r == r1); assert(res.second == RangeSet::fully_contained); }
 
-    { 
-        RangeSet::find_result res = rs.find(r3); 
-        Range r = *res.first; 
-        if (r.second == RangeSet::not_found) {
-            assert(res.first == rs.end());
-            cout << "cannot find range " << r3 << endl; 
+        { RangeSet::find_result res = rs.find(r2); Range r = *res.first; assert(r == r2); assert(res.second == RangeSet::fully_contained); }
+
+        { 
+                RangeSet::find_result res = rs.find(r3); 
+                Range r = *res.first; 
+                if (r.second == RangeSet::not_found) {
+                        assert(res.first == rs.end());
+                        cout << "cannot find range " << r3 << endl; 
+                }
+                else {
+                        if (r != r3) cout << "ERROR: " << r3 << endl;
+                        if (res.second != RangeSet::fully_contained) cout << "ERROR: result " << res.second << endl;
+                }
         }
-        else {
-            if (r != r3) cout << "ERROR: " << r3 << endl;
-            if (res.second != RangeSet::fully_contained) cout << "ERROR: result " << res.second << endl;
+
+        { Range r(8,9); RangeSet::find_result res = rs.find(r); Range ro = *res.first; cout << r << " is contained in " << ro << endl; assert(res.second == RangeSet::fully_contained); }
+
+        { Range r(7,9); RangeSet::find_result res = rs.find(r); Range ro = *res.first; cout << r << " partially overlaps with " << ro << endl; assert(res.second == RangeSet::partial_overlap); }
+
+        {
+                Range r4(5,6);
+                cout << "range extension test" << endl;
+                cout << "adding " << r4 << endl;
+                RangeSet::insert_result res = rs.insert(r4);
+                cout << "res.first=" << *res.first << " res.second=" << res.second << endl;
+                assert(*res.first == Range(4,6));
+                assert(res.second);
         }
-    }
-    
-    { Range r(8,9); RangeSet::find_result res = rs.find(r); Range ro = *res.first; cout << r << " is contained in " << ro << endl; assert(res.second == RangeSet::fully_contained); }
 
-    { Range r(7,9); RangeSet::find_result res = rs.find(r); Range ro = *res.first; cout << r << " partially overlaps with " << ro << endl; assert(res.second == RangeSet::partial_overlap); }
+        cout << "rs contains:" << endl;
+        cout << rs;
+        cout << endl;
 
-    {
-        Range r4(5,6);
-        cout << "range extension test" << endl;
-        cout << "adding " << r4 << endl;
-        RangeSet::insert_result res = rs.insert(r4);
-        cout << "res.first=" << *res.first << " res.second=" << res.second << endl;
-        assert(*res.first == Range(4,6));
-        assert(res.second);
-    }
+        {
+                Range r5(5,9);
+                cout << "range extension test" << endl;
+                cout << "adding " << r5 << endl;
+                RangeSet::insert_result res = rs.insert(r5);
+                cout << "res.first=" << *res.first << " res.second=" << res.second << endl;
+                //assert(*res.first == Range(4,6));
+                //assert(res.second);
+        }
 
-    cout << "rs contains:" << endl;
-    cout << rs;
-    cout << endl;
-
-    {
-        Range r5(5,9);
-        cout << "range extension test" << endl;
-        cout << "adding " << r5 << endl;
-        RangeSet::insert_result res = rs.insert(r5);
-        cout << "res.first=" << *res.first << " res.second=" << res.second << endl;
-        //assert(*res.first == Range(4,6));
-        //assert(res.second);
-    }
-
-    cout << "rs contains:" << endl;
-    cout << rs;
-    cout << endl;
+        cout << "rs contains:" << endl;
+        cout << rs;
+        cout << endl;
 
 }

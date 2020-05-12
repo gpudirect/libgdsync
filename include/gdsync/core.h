@@ -32,43 +32,64 @@
 #error "don't include directly this header, use gdsync.h always"
 #endif
 
-#define GDS_API_MAJOR_VERSION    2
-#define GDS_API_MINOR_VERSION    2
+#define GDS_API_MAJOR_VERSION    3
+#define GDS_API_MINOR_VERSION    0
 #define GDS_API_VERSION          (((unsigned)GDS_API_MAJOR_VERSION << 16) | (unsigned)GDS_API_MINOR_VERSION)
 #define GDS_API_VERSION_COMPATIBLE(v) \
         ( ((((v) & 0xffff0000U) >> 16) == (unsigned)GDS_API_MAJOR_VERSION) && \
           ((((v) & 0x0000ffffU) >> 0 ) >= (unsigned)GDS_API_MINOR_VERSION) )
 
+#include <infiniband/mlx5dv.h>
+
 typedef enum gds_param {
-    GDS_PARAM_VERSION,
-    GDS_NUM_PARAMS
+        GDS_PARAM_VERSION,
+        GDS_NUM_PARAMS
 } gds_param_t;
 
 int gds_query_param(gds_param_t param, int *value);
 
 enum gds_create_qp_flags {
-    GDS_CREATE_QP_DEFAULT      = 0,
-    GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
-    GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
-    GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
-    GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
+        GDS_CREATE_QP_DEFAULT      = 0,
+        GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
+        GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
+        GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
+        GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
-typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
-typedef struct ibv_exp_send_wr gds_send_wr;
+typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
+typedef struct ibv_send_wr gds_send_wr;
 
-struct gds_cq {
-        struct ibv_cq *cq;
-        uint32_t curr_offset;
-};
+typedef enum gds_cq_type {
+        GDS_CQ_TYPE_SQ,
+        GDS_CQ_TYPE_RQ
+} gds_cq_type_t;
 
-struct gds_qp {
-        struct ibv_qp *qp;
-        struct gds_cq send_cq;
-        struct gds_cq recv_cq;
-        struct ibv_exp_res_domain * res_domain;
-        struct ibv_context *dev_context;
-};
+typedef enum gds_driver_type {
+        GDS_DRIVER_TYPE_UNKNOW = 0,
+        GDS_DRIVER_TYPE_MLX5
+} gds_driver_type_t;
+
+typedef struct gds_cq {
+        struct ibv_cq          *ibcq;
+        uint32_t                curr_offset;
+        gds_cq_type_t           ctype;
+        gds_driver_type_t       dtype;
+} gds_cq_t;
+
+typedef struct gds_qp {
+        struct ibv_qp          *ibqp;
+        gds_cq_t               *send_cq;
+        gds_cq_t               *recv_cq;
+        gds_driver_type_t       dtype;
+} gds_qp_t;
+
+/* \brief: Poll a peer-enabled CQ.
+ *
+ * It works similarly to ibv_poll_cq while blocking CPU access to the CQ
+ * entries until the GPU has a chance to observe them.
+ */
+
+int gds_poll_cq(gds_cq_t *cq, int ne, struct ibv_wc *wc);
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
  *
@@ -80,11 +101,16 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                              gds_qp_init_attr_t *qp_init_attr,
                              int gpu_id, int flags);
 
+/* \brief: Destroy a peer-enabled CQ
+ *
+ */
+void gds_destroy_cq(gds_cq_t *cq);
+
 /* \brief: Destroy a peer-enabled QP
  *
  * The associated CQs are destroyed as well.
  */
-int gds_destroy_qp(struct gds_qp *qp);
+void gds_destroy_qp(gds_qp_t *qp);
 
 /* \brief: CPU-synchronous post send for peer QPs
  *
@@ -114,10 +140,10 @@ int gds_stream_queue_send(CUstream stream, struct gds_qp *qp, gds_send_wr *p_ewr
 // batched submission APIs
 
 typedef enum gds_memory_type {
-        GDS_MEMORY_GPU  = 1, /*< use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
+        GDS_MEMORY_GPU  = 1,  /*< use this flag for both cudaMalloc/cuMemAlloc and cudaMallocHost/cuMemHostAlloc */
         GDS_MEMORY_HOST = 2,
         GDS_MEMORY_IO   = 4,
-	GDS_MEMORY_MASK = 0x7
+        GDS_MEMORY_MASK = 0x7
 } gds_memory_type_t;
 
 // Note: those flags below must not overlap with gds_memory_type_t
@@ -148,27 +174,27 @@ enum {
         GDS_WAIT_INFO_MAX_OPS = 32
 };
 
+
 /**
  * Represents a posted send operation on a particular QP
  */
 
 typedef struct gds_send_request {
-        struct ibv_exp_peer_commit commit;
-        struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+        uint8_t reserve0[32];
+        uint8_t reserve1[56 * GDS_SEND_INFO_MAX_OPS];
 } gds_send_request_t;
 
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
 int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *request);
 
-
 /**
  * Represents a wait operation on a particular CQ
  */
 
 typedef struct gds_wait_request {
-        struct ibv_exp_peer_peek peek;
-        struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+        uint8_t reserve0[40];
+        uint8_t reserve1[56 * GDS_WAIT_INFO_MAX_OPS];
 } gds_wait_request_t;
 
 /**

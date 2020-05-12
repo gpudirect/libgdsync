@@ -27,13 +27,44 @@
 
 #pragma once
 
+#include "task_queue.hpp"
+
 static const size_t max_gpus = 16;
 
-typedef struct ibv_exp_peer_direct_attr gds_peer_attr;
+enum gds_peer_fence {
+        GDS_PEER_FENCE_OP_READ      = (1 << 0), 
+        GDS_PEER_FENCE_OP_WRITE     = (1 << 1), 
+        GDS_PEER_FENCE_FROM_CPU     = (1 << 2), 
+        GDS_PEER_FENCE_FROM_HCA     = (1 << 3), 
+        GDS_PEER_FENCE_MEM_SYS      = (1 << 4), 
+        GDS_PEER_FENCE_MEM_PEER     = (1 << 5), 
+};
+
+enum gds_peer_direction {
+        GDS_PEER_DIRECTION_FROM_CPU  = (1 << 0),
+        GDS_PEER_DIRECTION_FROM_HCA  = (1 << 1),
+        GDS_PEER_DIRECTION_FROM_PEER = (1 << 2),
+        GDS_PEER_DIRECTION_TO_CPU    = (1 << 3),
+        GDS_PEER_DIRECTION_TO_HCA    = (1 << 4),
+        GDS_PEER_DIRECTION_TO_PEER   = (1 << 5),
+};  
+
+#define GDS_PEER_IOMEMORY ((struct gds_buf *)-1UL)
 
 struct gds_peer;
 
-struct gds_buf: ibv_exp_peer_buf {
+struct gds_buf_alloc_attr {
+        size_t      length;
+        uint32_t    dir;
+        uint64_t    peer_id;
+        uint32_t    alignment;
+        uint32_t    comp_mask;
+};
+
+struct gds_buf {
+        void       *addr;
+        size_t      length;
+        uint32_t    comp_mask;
         gds_peer   *peer;
         CUdeviceptr peer_addr;
         void       *handle;
@@ -45,11 +76,24 @@ struct gds_buf: ibv_exp_peer_buf {
         }
 };
 
+typedef struct {
+        uint64_t        peer_id;
+        struct gds_buf *(*buf_alloc)(struct gds_buf_alloc_attr *attr);
+        int             (*buf_release)(struct gds_buf *pb);
+        uint64_t        (*register_va)(void *start, size_t length, uint64_t peer_id, struct gds_buf *pb);
+        int             (*unregister_va)(uint64_t target_id, uint64_t peer_id);
+        uint64_t        caps;
+        size_t          peer_dma_op_map_len;
+        uint32_t        comp_mask;
+        uint32_t        version;
+} gds_peer_attr;
+
+
 struct gds_range {
         void *va;
         CUdeviceptr dptr;
         size_t size;
-        gds_buf *buf;
+        struct gds_buf *buf;
         gds_memory_type_t type;
 };
 
@@ -82,6 +126,7 @@ struct gds_peer {
         gds_peer_attr attr;
         task_queue *tq;
 
+        void *obj;
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
         // This field works as a ugly run-time parameters passing
         // mechanism, as it carries tracking info during the QP creation
@@ -98,7 +143,7 @@ struct gds_peer {
         // unregister all kinds of memory
         void unregister(gds_range *range);
 
-        gds_buf *alloc(size_t length, uint32_t alignment);
+        gds_buf *alloc(size_t length, uint32_t alignment, gds_memory_type_t mem_type);
         gds_buf *buf_alloc_cq(size_t length, uint32_t dir, uint32_t alignment, int flags);
         gds_buf *buf_alloc_wq(size_t length, uint32_t dir, uint32_t alignment, int flags);
         gds_buf *buf_alloc(obj_type type, size_t length, uint32_t dir, uint32_t alignment, int flags);
