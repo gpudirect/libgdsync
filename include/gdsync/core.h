@@ -40,26 +40,33 @@
           ((((v) & 0x0000ffffU) >> 0 ) >= (unsigned)GDS_API_MINOR_VERSION) )
 
 typedef enum gds_param {
-    GDS_PARAM_VERSION,
-    GDS_NUM_PARAMS
+        GDS_PARAM_VERSION,
+        GDS_NUM_PARAMS
 } gds_param_t;
 
 int gds_query_param(gds_param_t param, int *value);
 
 enum gds_create_qp_flags {
-    GDS_CREATE_QP_DEFAULT      = 0,
-    GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
-    GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
-    GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
-    GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
+        GDS_CREATE_QP_DEFAULT      = 0,
+        GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
+        GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
+        GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
+        GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
 typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
 typedef struct ibv_exp_send_wr gds_send_wr;
 
+typedef enum gds_driver_type {
+        GDS_DRIVER_TYPE_MLX5_EXP = 0,
+        GDS_DRIVER_TYPE_MLX5_DV,
+        GDS_DRIVER_TYPE_MLX5_DEVX
+} gds_driver_type_t;
+
 struct gds_cq {
         struct ibv_cq *cq;
         uint32_t curr_offset;
+        gds_driver_type_t dtype;
 };
 
 struct gds_qp {
@@ -68,6 +75,7 @@ struct gds_qp {
         struct gds_cq recv_cq;
         struct ibv_exp_res_domain * res_domain;
         struct ibv_context *dev_context;
+        gds_driver_type_t dtype;
 };
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
