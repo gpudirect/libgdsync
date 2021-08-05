@@ -43,6 +43,7 @@
 #include "archutils.h"
 #include "mlnxutils.h"
 #include "task_queue.hpp"
+#include "mlx5-exp.hpp"
 
 //-----------------------------------------------------------------------------
 
@@ -1721,7 +1722,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
 
         gds_dbg("created gds_qp=%p\n", gmexpqp->gqp);
 
-        return gmexpqp->gqp;
+        return &gmexpqp->gqp;
 
 err:
         return NULL;
