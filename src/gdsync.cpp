@@ -1785,51 +1785,40 @@ err:
 
 //-----------------------------------------------------------------------------
 
+int gds_destroy_cq(struct gds_cq *gcq)
+{
+        int retcode = 0;
+        int ret;
+        
+        if (!gcq) 
+                return retcode;
+
+        // Currently, we support only exp-verbs.
+        assert(gcq->dtype == GDS_DRIVER_TYPE_MLX5_EXP);
+
+        gds_mlx5_exp_cq_t *gmexpcq = to_gds_mexp_cq(gcq);
+
+        retcode = gds_mlx5_exp_destroy_cq(gmexpcq);
+
+        return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_destroy_qp(struct gds_qp *gqp)
 {
         int retcode = 0;
         int ret;
         
-        if(!gqp) return retcode;
+        if (!gqp) 
+                return retcode;
 
-        if(gqp->qp)
-        {
-            ret = ibv_destroy_qp(gqp->qp);
-            if (ret) {
-                    gds_err("error %d in destroy_qp\n", ret);
-                    retcode = ret;
-            }            
-        }
+        // Currently, we support only exp-verbs.
+        assert(gqp->dtype == GDS_DRIVER_TYPE_MLX5_EXP);
 
-        if(gqp->send_cq.cq)
-        {
-            ret = ibv_destroy_cq(gqp->send_cq.cq);
-            if (ret) {
-                    gds_err("error %d in destroy_cq send_cq\n", ret);
-                    retcode = ret;
-            }
-        }
+        gds_mlx5_exp_qp_t *gmexpqp = to_gds_mexp_qp(gqp);
 
-        if(gqp->recv_cq.cq)
-        {
-            ret = ibv_destroy_cq(gqp->recv_cq.cq);
-            if (ret) {
-                    gds_err("error %d in destroy_cq recv_cq\n", ret);
-                    retcode = ret;
-            }
-        }
-
-        if(gqp->res_domain) {
-            struct ibv_exp_destroy_res_domain_attr attr; //IBV_EXP_DESTROY_RES_DOMAIN_RESERVED
-            attr.comp_mask=0;
-            ret = ibv_exp_destroy_res_domain(gqp->dev_context, gqp->res_domain, &attr);
-            if (ret) {
-                    gds_err("ibv_exp_destroy_res_domain error %d: %s\n", ret, strerror(ret));
-                    retcode = ret;
-            }            
-        }
-
-        free(gqp);
+        retcode = gds_mlx5_exp_destroy_qp(gmexpqp);
 
         return retcode;
 }
