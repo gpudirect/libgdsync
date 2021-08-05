@@ -1754,6 +1754,8 @@ gds_create_cq_internal(struct ibv_context *context, int cqe,
             return NULL;
         }
 
+        gcq->dtype = GDS_DRIVER_TYPE_MLX5_EXP;
+
         return gcq;
 }
 
@@ -1893,6 +1895,7 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         gqp->send_cq.curr_offset = 0;
         gqp->recv_cq.cq = qp->recv_cq;
         gqp->recv_cq.curr_offset = 0;
+        gqp->dtype = GDS_DRIVER_TYPE_MLX5_EXP;
 
         gds_dbg("created gds_qp=%p\n", gqp);
 
