@@ -28,8 +28,7 @@ static ibv_exp_res_domain *gds_mlx5_exp_create_res_domain(struct ibv_context *co
 
 //-----------------------------------------------------------------------------
 
-static struct gds_mlx5_exp_cq_t *
-gds_mlx5_exp_create_cq(struct ibv_context *context, int cqe,
+gds_mlx5_exp_cq_t *gds_mlx5_exp_create_cq(struct ibv_context *context, int cqe,
                         void *cq_context, struct ibv_comp_channel *channel,
                         int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags,
                         struct ibv_exp_res_domain *res_domain)
@@ -89,7 +88,7 @@ gds_mlx5_exp_create_cq(struct ibv_context *context, int cqe,
 
 //-----------------------------------------------------------------------------
 
-struct gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(struct ibv_pd *pd, struct ibv_context *context,
+gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                                 gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
 {
         int ret = 0;
@@ -243,3 +242,29 @@ int gds_mlx5_exp_destroy_qp(gds_mlx5_exp_qp_t *gmexpqp)
         return retcode;
 }
 
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_exp_destroy_cq(gds_mlx5_exp_cq_t *gmexpcq)
+{
+        int retcode = 0;
+        int ret;
+        
+        if (!gmexpcq) 
+                return retcode;
+        
+        assert(gmexpcq->gcq.dtype == GDS_DRIVER_TYPE_MLX5_EXP);
+
+        if (gmexpcq->gcq.cq) {
+                ret = ibv_destroy_cq(gmexpcq->gcq.cq);
+                if (ret) {
+                        gds_err("error %d in destroy_cq\n", ret);
+                        retcode = ret;
+                }            
+        }
+
+        // res_domain will be destroyed in gds_mlx5_exp_destroy_qp.
+
+        free(gmexpcq);
+
+        return retcode;
+}
