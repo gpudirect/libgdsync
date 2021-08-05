@@ -54,8 +54,8 @@ enum gds_create_qp_flags {
         GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
-typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
-typedef struct ibv_exp_send_wr gds_send_wr;
+typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
+typedef struct ibv_send_wr gds_send_wr;
 
 typedef enum gds_driver_type {
         GDS_DRIVER_TYPE_MLX5_EXP = 0,
@@ -73,7 +73,6 @@ struct gds_qp {
         struct ibv_qp *qp;
         struct gds_cq send_cq;
         struct gds_cq recv_cq;
-        struct ibv_exp_res_domain * res_domain;
         struct ibv_context *dev_context;
         gds_driver_type_t dtype;
 };
