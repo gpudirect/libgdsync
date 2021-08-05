@@ -58,7 +58,8 @@ typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
 typedef struct ibv_send_wr gds_send_wr;
 
 typedef enum gds_driver_type {
-        GDS_DRIVER_TYPE_MLX5_EXP = 0,
+        GDS_DRIVER_TYPE_UNSUPPORTED = 0,
+        GDS_DRIVER_TYPE_MLX5_EXP,
         GDS_DRIVER_TYPE_MLX5_DV,
         GDS_DRIVER_TYPE_MLX5_DEVX
 } gds_driver_type_t;
@@ -71,8 +72,8 @@ struct gds_cq {
 
 struct gds_qp {
         struct ibv_qp *qp;
-        struct gds_cq send_cq;
-        struct gds_cq recv_cq;
+        struct gds_cq *send_cq;
+        struct gds_cq *recv_cq;
         struct ibv_context *dev_context;
         gds_driver_type_t dtype;
 };
