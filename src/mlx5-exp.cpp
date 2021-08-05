@@ -28,10 +28,11 @@ static ibv_exp_res_domain *gds_mlx5_exp_create_res_domain(struct ibv_context *co
 
 //-----------------------------------------------------------------------------
 
-gds_mlx5_exp_cq_t *gds_mlx5_exp_create_cq(struct ibv_context *context, int cqe,
-                        void *cq_context, struct ibv_comp_channel *channel,
-                        int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags,
-                        struct ibv_exp_res_domain *res_domain)
+gds_mlx5_exp_cq_t *gds_mlx5_exp_create_cq(
+        struct ibv_context *context, int cqe,
+        void *cq_context, struct ibv_comp_channel *channel,
+        int comp_vector, gds_peer *peer, gds_peer_attr *peer_attr, gds_alloc_cq_flags_t flags,
+        struct ibv_exp_res_domain *res_domain)
 {
         struct gds_mlx5_exp_cq_t *gmexpcq = NULL;
         ibv_exp_cq_init_attr attr;
@@ -39,27 +40,15 @@ gds_mlx5_exp_cq_t *gds_mlx5_exp_create_cq(struct ibv_context *context, int cqe,
         gds_peer_attr *peer_attr = NULL;
         int ret = 0;
 
-        if (!context)
-        {
-            gds_dbg("Invalid input context\n");
-            return NULL;
-        }
+        assert(context);
+        assert(peer);
+        assert(peer_attr);
 
         gmexpcq = (gds_mlx5_exp_cq_t *)calloc(1, sizeof(gds_mlx5_exp_cq_t));
         if (!gmexpcq) {
             gds_err("cannot allocate memory\n");
             return NULL;
         }
-
-        //Here we need to recover peer and peer_attr pointers to set alloc_type and alloc_flags
-        //before ibv_exp_create_cq
-        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
-        if (ret) {
-            gds_err("error %d while registering GPU peer\n", ret);
-            return NULL;
-        }
-        assert(peer);
-        assert(peer_attr);
 
         peer->alloc_type = gds_peer::CQ;
         peer->alloc_flags = flags;
@@ -88,8 +77,9 @@ gds_mlx5_exp_cq_t *gds_mlx5_exp_create_cq(struct ibv_context *context, int cqe,
 
 //-----------------------------------------------------------------------------
 
-gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(struct ibv_pd *pd, struct ibv_context *context,
-                                gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
+gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(
+        struct ibv_pd *pd, struct ibv_context *context, gds_qp_init_attr_t *qp_attr, 
+        gds_peer *peer, gds_peer_attr *peer_attr, int flags)
 {
         int ret = 0;
         gds_mlx5_exp_qp_t *gmexpqp = NULL;
@@ -103,8 +93,10 @@ gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(struct ibv_pd *pd, struct ibv_context 
         assert(pd);
         assert(context);
         assert(qp_attr);
+        assert(peer);
+        assert(peer_attr);
 
-        gmexpqp = (gds_mlx5_exp_qp_t *)calloc(1, sizeof(struct gds_qp));
+        gmexpqp = (gds_mlx5_exp_qp_t *)calloc(1, sizeof(gds_mlx5_exp_qp_t));
         if (!gqp) {
             gds_err("cannot allocate memory\n");
             return NULL;
@@ -113,32 +105,28 @@ gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(struct ibv_pd *pd, struct ibv_context 
 
         gmexpqp->gqp.dev_context = context;
 
-        // peer registration
-        gds_dbg("before gds_register_peer_ex\n");
-        ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
-        if (ret) {
-            gds_err("error %d in gds_register_peer_ex\n", ret);
-            goto err;
-        }
-
         gmexpqp->res_domain = gds_create_res_domain(context);
         if (gmexpqp->res_domain)
             gds_dbg("using res_domain %p\n", gmexpqp->res_domain);
         else
             gds_warn("NOT using res_domain\n");
 
-        tx_gmexpcq = gds_mlx5_exp_create_cq(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
-                              (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
-                              gmexpqp->res_domain);
+        tx_gmexpcq = gds_mlx5_exp_create_cq(
+                context, qp_attr->cap.max_send_wr, NULL, NULL, 0, peer, peer_attr,
+                (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
+                gmexpqp->res_domain
+        );
         if (!tx_gmexpcq) {
                 ret = errno;
                 gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
                 goto err;
         }
 
-        rx_gmexpcq = gds_mlx5_exp_create_cq(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
-                              (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
-                              gmexpqp->res_domain);
+        rx_gmexpcq = gds_mlx5_exp_create_cq(
+                context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, peer, peer_attr,
+                (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
+                gmexpqp->res_domain
+        );
         if (!rx_gmexpcq) {
                 ret = errno;
                 gds_err("error %d while creating RX CQ\n", ret);

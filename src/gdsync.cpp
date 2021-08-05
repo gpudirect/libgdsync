@@ -1682,16 +1682,16 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                                 gds_qp_init_attr_t *qp_attr, int gpu_id, int flags)
 {
         int ret = 0;
-        struct gds_qp *gqp = NULL;
-        struct ibv_qp *qp = NULL;
-        struct gds_cq *rx_gcq = NULL, *tx_gcq = NULL;
+        gds_mlx5_exp_qp_t *gmexpqp = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
+        gds_driver_type dtype;
         int old_errno = errno;
 
         gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", pd, context, gpu_id, flags, errno);
         assert(pd);
         assert(context);
+        assert(context->device);
         assert(qp_attr);
 
         if (flags & ~(GDS_CREATE_QP_WQ_ON_GPU|GDS_CREATE_QP_TX_CQ_ON_GPU|GDS_CREATE_QP_RX_CQ_ON_GPU|GDS_CREATE_QP_WQ_DBREC_ON_GPU)) {
@@ -1699,87 +1699,31 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                 return NULL;
         }
 
-        gqp = (struct gds_qp*)calloc(1, sizeof(struct gds_qp));
-        if (!gqp) {
-            gds_err("cannot allocate memory\n");
-            return NULL;
-        }
-
-        gqp->dev_context=context;
-
         // peer registration
         gds_dbg("before gds_register_peer_ex\n");
         ret = gds_register_peer_by_ordinal(gpu_id, &peer, &peer_attr);
         if (ret) {
-            gds_err("error %d in gds_register_peer_ex\n", ret);
-            goto err;
-        }
-
-        gqp->res_domain = gds_create_res_domain(context);
-        if (gqp->res_domain)
-            gds_dbg("using gqp->res_domain %p\n", gqp->res_domain);
-        else
-            gds_warn("NOT using gqp->res_domain\n");
-
-        tx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_send_wr, NULL, NULL, 0, gpu_id, 
-                              (flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
-                              gqp->res_domain);
-        if (!tx_gcq) {
-                ret = errno;
-                gds_err("error %d while creating TX CQ, old_errno=%d\n", ret, old_errno);
+                gds_err("error %d in gds_register_peer_ex\n", ret);
                 goto err;
         }
 
-        rx_gcq = gds_create_cq_internal(context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, gpu_id, 
-                              (flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? GDS_ALLOC_CQ_ON_GPU : GDS_ALLOC_CQ_DEFAULT, 
-                              gqp->res_domain);
-        if (!rx_gcq) {
-                ret = errno;
-                gds_err("error %d while creating RX CQ\n", ret);
+        dtype = gds_get_driver_type(context->device);
+        if (dtype != GDS_DRIVER_TYPE_MLX5_EXP) {
+                gds_err("Unsupported IB device\n");
                 goto err;
         }
 
-        // peer registration
-        qp_attr->send_cq = tx_gcq->cq;
-        qp_attr->recv_cq = rx_gcq->cq;
-        qp_attr->pd = pd;
-        qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PD;
-
-        peer->alloc_type = gds_peer::WQ;
-        peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
-        if (flags & GDS_CREATE_QP_WQ_ON_GPU) {
-                gds_err("error, QP WQ on GPU is not supported yet\n");
-                goto err;
-        }
-        if (flags & GDS_CREATE_QP_WQ_DBREC_ON_GPU) {
-                gds_warn("QP WQ DBREC on GPU\n");
-                peer->alloc_flags |= GDS_ALLOC_DBREC_ON_GPU;
-        }        
-        qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_PEER_DIRECT;
-        qp_attr->peer_direct_attrs = peer_attr;
-
-        qp = ibv_exp_create_qp(context, qp_attr);
-        if (!qp)  {
-                ret = EINVAL;
-                gds_err("error in ibv_exp_create_qp\n");
+        gmexpqp = gds_mlx5_exp_create_qp(pd, context, qp_attr, peer, peer_attr, flags);
+        if (!gmexpqp) {
+                gds_err("Error in gds_mlx5_exp_create_qp.\n");
                 goto err;
         }
 
-        gqp->qp = qp;
-        gqp->send_cq.cq = qp->send_cq;
-        gqp->send_cq.curr_offset = 0;
-        gqp->recv_cq.cq = qp->recv_cq;
-        gqp->recv_cq.curr_offset = 0;
-        gqp->dtype = GDS_DRIVER_TYPE_MLX5_EXP;
+        gds_dbg("created gds_qp=%p\n", gmexpqp->gqp);
 
-        gds_dbg("created gds_qp=%p\n", gqp);
-
-        return gqp;
+        return gmexpqp->gqp;
 
 err:
-        gds_dbg("destroying QP\n");
-        gds_destroy_qp(gqp);
-
         return NULL;
 }
 

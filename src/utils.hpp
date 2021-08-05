@@ -238,6 +238,10 @@ static inline gds_driver_type gds_get_driver_type(struct ibv_device *ibdev)
 
 //-----------------------------------------------------------------------------
 
+int gds_destroy_cq(struct gds_cq *gcq);
+
+//-----------------------------------------------------------------------------
+
 /*
  * Local variables:
  *  c-indent-level: 8
