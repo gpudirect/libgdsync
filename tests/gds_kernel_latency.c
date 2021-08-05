@@ -542,23 +542,22 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.opcode     = IBV_WR_SEND,
+		.send_flags = IBV_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
 				 .remote_qpn  = qpn,
 				 .remote_qkey = 0x11111111
 			 }
-		},
-		.comp_mask = 0
+		}
 	};
 #if 0
 	if (IBV_QPT_UD != gds_qpt) {
 		memset(&ewr, 0, sizeof(ewr));
 		ewr.num_sge = 1;
-		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-		ewr.exp_opcode = IBV_EXP_WR_SEND;
+		ewr.send_flags = IBV_SEND_SIGNALED;
+		ewr.opcode = IBV_WR_SEND;
 		ewr.wr_id = PINGPONG_SEND_WRID;
 		ewr.sg_list = &list;
 		ewr.next = NULL;
@@ -580,23 +579,22 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.opcode     = IBV_WR_SEND,
+		.send_flags = IBV_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
 				 .remote_qpn  = qpn,
 				 .remote_qkey = 0x11111111
 			 }
-		},
-		.comp_mask = 0
+		}
 	};
 	
 	if (IBV_QPT_UD != gds_qpt) {
 		memset(&ewr, 0, sizeof(ewr));
 		ewr.num_sge = 1;
-		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-		ewr.exp_opcode = IBV_EXP_WR_SEND;
+		ewr.send_flags = IBV_SEND_SIGNALED;
+		ewr.opcode = IBV_WR_SEND;
 		ewr.wr_id = PINGPONG_SEND_WRID;
 		ewr.sg_list = &list;
 		ewr.next = NULL;
