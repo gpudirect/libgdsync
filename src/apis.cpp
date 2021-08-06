@@ -51,6 +51,7 @@
 #include "utils.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
+#include "mlx5-exp.hpp"
 
 
 //-----------------------------------------------------------------------------
@@ -171,33 +172,24 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, 
+int gds_prepare_send(struct gds_qp *gqp, gds_send_wr *p_ewr, 
                      gds_send_wr **bad_ewr, 
                      gds_send_request_t *request)
 {
         int ret = 0;
-        gds_init_send_info(request);
-        assert(qp);
-        assert(qp->qp);
-        ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
-        if (ret) {
+        gds_mlx5_exp_qp_t *gmexpqp;
 
-                if (ret == ENOMEM) {
-                        // out of space error can happen too often to report
-                        gds_dbg("ENOMEM error %d in ibv_exp_post_send\n", ret);
-                } else {
-                        gds_err("error %d in ibv_exp_post_send\n", ret);
-                }
-                goto out;
-        }
-        
-        ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
-        if (ret) {
-                gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
-                //gds_wait_kernel();
-                goto out;
-        }
-out:
+        gds_init_send_info(request);
+        assert(gqp);
+        assert(gqp->qp);
+        assert(gqp->dtype == GDS_DRIVER_TYPE_MLX5_EXP);
+
+        gmexpqp = to_gds_mexp_qp(gqp);
+
+        ret = gds_mlx5_exp_prepare_send(gmexpqp, p_ewr, bad_ewr, request);
+        if (ret)
+                gds_err("Error %d in gds_mlx5_exp_prepare_send.\n", ret);
+
         return ret;
 }
 

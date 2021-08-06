@@ -1,7 +1,14 @@
+#include <unistd.h>
+#include <string.h>
+#include <assert.h>
+
 #include <infiniband/verbs.h>
 #include <infiniband/verbs_exp.h>
 
 #include <gdsync.h>
+
+#include "objs.hpp"
+#include "utils.hpp"
 
 typedef struct gds_mlx5_exp_cq {
         gds_cq_t                gcq;
@@ -35,3 +42,7 @@ gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(
 
 int gds_mlx5_exp_destroy_cq(gds_mlx5_exp_cq_t *gmexpcq);
 int gds_mlx5_exp_destroy_qp(gds_mlx5_exp_qp_t *gmexpqp);
+
+int gds_mlx5_exp_prepare_send(gds_mlx5_exp_qp_t *gmexpqp, gds_send_wr *p_ewr, 
+                     gds_send_wr **bad_ewr, 
+                     gds_send_request_t *request);
