@@ -511,16 +511,15 @@ static int pp_post_send(struct pingpong_context *ctx, uint32_t qpn)
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.opcode     = IBV_WR_SEND,
+		.send_flags = IBV_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
 				 .remote_qpn  = qpn,
 				 .remote_qkey = 0x11111111
 			 }
-		},
-		.comp_mask = 0
+		}
 	};
 	gds_send_wr *bad_ewr;
 	return gds_post_send(ctx->gds_qp, &ewr, &bad_ewr);
@@ -538,16 +537,15 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.opcode     = IBV_WR_SEND,
+		.send_flags = IBV_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
 				 .remote_qpn  = qpn,
 				 .remote_qkey = 0x11111111
 			 }
-		},
-		.comp_mask = 0
+		}
 	};
 	gds_send_wr *bad_ewr;
 	return gds_stream_queue_send(*p_gpu_stream, ctx->gds_qp, &ewr, &bad_ewr);
@@ -565,16 +563,15 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.opcode     = IBV_WR_SEND,
+		.send_flags = IBV_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
 				 .remote_qpn  = qpn,
 				 .remote_qkey = 0x11111111
 			 }
-		},
-		.comp_mask = 0
+		}
 	};
 	gds_send_wr *bad_ewr;
         //printf("gpu_post_send_on_stream\n");
@@ -655,7 +652,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         wdesc->descs[k].send = &wdesc->send_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
+                        ret = gds_prepare_wait_cq(ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
@@ -665,7 +662,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         wdesc->descs[k].wait = &wdesc->wait_tx_rq;
                         ++k;
 
-                        ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
+                        ret = gds_prepare_wait_cq(ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
                         if (ret) {
                                 retcode = -ret;
                                 break;
@@ -697,7 +694,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 break;
                         }
 
-                        ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->send_cq, 0);
+                        ret = gds_stream_wait_cq(gpu_stream_server, ctx->gds_qp->send_cq, 0);
                         if (ret) {
                                 // TODO: rollback gpu send
                                 gpu_err("error %d in gds_stream_wait_cq\n", ret);
@@ -705,7 +702,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 break;
                         }
 
-                        ret = gds_stream_wait_cq(gpu_stream_server, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                        ret = gds_stream_wait_cq(gpu_stream_server, ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
                         if (ret) {
                                 // TODO: rollback gpu send and wait send_cq
                                 gpu_err("error %d in gds_stream_wait_cq\n", ret);
