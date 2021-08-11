@@ -40,6 +40,7 @@
 //#include "mem.hpp"
 #include "objs.hpp"
 #include "utils.hpp"
+#include "mlx5-exp.hpp"
 
 #if 0
                 union { uint64_t qw; uint32_t dw[2]; } db_val;
@@ -180,107 +181,8 @@ int gds_mlx5_get_send_info(int count, const gds_send_request_t *requests, gds_ml
 
 int gds_mlx5_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request_t *request)
 {
-        int retcode = 0;
-        size_t n_ops = request->peek.entries;
-        peer_op_wr *op = request->peek.storage;
-        size_t n = 0;
-
-        memset(mlx5_i, 0, sizeof(*mlx5_i));
-
-        for (; op && n < n_ops; op = op->next, ++n) {
-                switch(op->type) {
-                case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("OP_FENCE: fence_flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
-                        uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
-                        uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
-                        uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
-                        if (fence_op == IBV_EXP_PEER_FENCE_OP_READ) {
-                                gds_dbg("nothing to do for read fences\n");
-                                break;
-                        }
-                        if (fence_from != IBV_EXP_PEER_FENCE_FROM_HCA) {
-                                gds_err("unexpected from fence\n");
-                                retcode = EINVAL;
-                                break;
-                        }
-                        gds_err("unsupported fence combination\n");
-                        retcode = EINVAL;
-                        break;
-                }
-                case IBV_EXP_PEER_OP_STORE_DWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
-                                op->wr.dword_va.offset;
-                        uint32_t data = op->wr.dword_va.data;
-                        gds_dbg("OP_STORE_DWORD dev_ptr=%" PRIx64 " data=%08x\n", (uint64_t)dev_ptr, data);
-                        if (n != 1) {
-                                gds_err("store DWORD is not 2nd op\n");
-                                retcode = EINVAL;
-                                break;
-                        }
-                        mlx5_i->flag_ptr = (uint32_t*)dev_ptr;
-                        mlx5_i->flag_value = data;
-                        break;
-                }
-                case IBV_EXP_PEER_OP_STORE_QWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
-                                op->wr.qword_va.offset;
-                        uint64_t data = op->wr.qword_va.data;
-                        gds_dbg("OP_STORE_QWORD dev_ptr=%" PRIx64 " data=%" PRIx64 "\n", (uint64_t)dev_ptr, (uint64_t)data);
-                        gds_err("unsupported QWORD op\n");
-                        retcode = EINVAL;
-                        break;
-                }
-                case IBV_EXP_PEER_OP_COPY_BLOCK: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
-                                op->wr.copy_op.offset;
-                        size_t len = op->wr.copy_op.len;
-                        void *src = op->wr.copy_op.src;
-                        gds_err("unsupported COPY_BLOCK\n");
-                        retcode = EINVAL;
-                        break;
-                }
-                case IBV_EXP_PEER_OP_POLL_AND_DWORD:
-                case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
-                case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
-                                op->wr.dword_va.offset;
-                        uint32_t data = op->wr.dword_va.data;
-
-                        gds_dbg("OP_POLL_DWORD dev_ptr=%" PRIx64 " data=%08x\n", (uint64_t)dev_ptr, data);
-
-                        mlx5_i->cqe_ptr = (uint32_t *)dev_ptr;
-                        mlx5_i->cqe_value = data;
-
-                        switch(op->type) {
-                        case IBV_EXP_PEER_OP_POLL_NOR_DWORD:
-                                // GPU SMs can always do NOR
-                                mlx5_i->cond = GDS_WAIT_COND_NOR;
-                                break;
-                        case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
-                                mlx5_i->cond = GDS_WAIT_COND_GEQ;
-                                break;
-                        case IBV_EXP_PEER_OP_POLL_AND_DWORD:
-                                mlx5_i->cond = GDS_WAIT_COND_AND;
-                                break;
-                        default:
-                                gds_err("unexpected op type\n");
-                                retcode = EINVAL;
-                                goto err;
-                        }
-                        break;
-                }
-                default:
-                        gds_err("undefined peer op type %d\n", op->type);
-                        retcode = EINVAL;
-                        break;
-                }
-        err:
-                if (retcode) {
-                        gds_err("error in fill func at entry n=%zu\n", n);
-                        break;
-                }
-        }
-        return retcode;
+        const gds_mlx5_exp_wait_request_t *gmexp_request = to_gds_mexp_wait_request(request);
+        return gds_mlx5_exp_get_wait_descs(mlx5_i, gmexp_request);
 }
 
 //-----------------------------------------------------------------------------
