@@ -1169,73 +1169,14 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static void gds_dump_ops(struct peer_op_wr *op, size_t count)
-{
-        size_t n = 0;
-        for (; op; op = op->next, ++n) {
-                gds_dbg("op[%zu] type:%d\n", n, op->type);
-                switch(op->type) {
-                case IBV_EXP_PEER_OP_FENCE: {
-                        gds_dbg("FENCE flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
-                        break;
-                }
-                case IBV_EXP_PEER_OP_STORE_DWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
-                                op->wr.dword_va.offset;
-                        gds_dbg("STORE_QWORD data:%x target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
-                                op->wr.dword_va.data, op->wr.dword_va.target_id,
-                                op->wr.dword_va.offset, dev_ptr);
-                        break;
-                }
-                case IBV_EXP_PEER_OP_STORE_QWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
-                                op->wr.qword_va.offset;
-                        gds_dbg("STORE_QWORD data:%" PRIx64 " target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
-                                op->wr.qword_va.data, op->wr.qword_va.target_id,
-                                op->wr.qword_va.offset, dev_ptr);
-                        break;
-                }
-                case IBV_EXP_PEER_OP_COPY_BLOCK: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
-                                op->wr.copy_op.offset;
-                        gds_dbg("COPY_BLOCK src:%p len:%zu target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n",
-                                op->wr.copy_op.src, op->wr.copy_op.len,
-                                op->wr.copy_op.target_id, op->wr.copy_op.offset,
-                                dev_ptr);
-                        break;
-                }
-                case IBV_EXP_PEER_OP_POLL_AND_DWORD:
-                case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
-                                op->wr.dword_va.offset;
-                        gds_dbg("%s data:%08x target_id:%" PRIx64 " offset:%zu dev_ptr=%llx\n", 
-                                (op->type==IBV_EXP_PEER_OP_POLL_AND_DWORD) ? "POLL_AND_DW" : "POLL_NOR_SDW",
-                                op->wr.dword_va.data, 
-                                op->wr.dword_va.target_id, 
-                                op->wr.dword_va.offset, 
-                                dev_ptr);
-                        break;
-                }
-                default:
-                        gds_err("undefined peer op type %d\n", op->type);
-                        break;
-                }
-        }
-
-        assert(count == n);
-}
-
-//-----------------------------------------------------------------------------
-
 void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
 {
-        for (size_t j=0; j<count; ++j) {
-                struct ibv_exp_peer_peek *peek = &request[j].peek;
-                gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%" PRIx64 " comp_mask:%08x\n", 
-                        j, peek->entries, peek->whence, peek->offset, 
-                        peek->peek_id, peek->comp_mask);
-                gds_dump_ops(peek->storage, peek->entries);
-        }
+        gds_mlx5_exp_wait_request_t *gmexp_request;
+        if (count == 0)
+                return;
+
+        gmexp_request = to_gds_mexp_wait_request(request);
+        gds_mlx5_exp_dump_wait_request(gmexp_request, count);
 }
 
 //-----------------------------------------------------------------------------

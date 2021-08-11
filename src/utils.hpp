@@ -240,6 +240,8 @@ static inline gds_driver_type gds_get_driver_type(struct ibv_device *ibdev)
 
 int gds_destroy_cq(struct gds_cq *gcq);
 
+void gds_init_ops(struct peer_op_wr *op, int count);
+
 //-----------------------------------------------------------------------------
 
 /*
