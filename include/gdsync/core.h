@@ -175,8 +175,11 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
  */
 
 typedef struct gds_wait_request {
-        struct ibv_exp_peer_peek peek;
-        struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+        gds_driver_type_t dtype;
+        uint8_t pad0[4];
+        uint8_t reserved0[40];
+        uint8_t reserved1[56 * GDS_WAIT_INFO_MAX_OPS];
+        uint8_t pad1[16];
 } gds_wait_request_t;
 
 /**
