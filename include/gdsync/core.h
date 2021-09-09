@@ -161,9 +161,13 @@ enum {
  */
 
 typedef struct gds_send_request {
-        struct ibv_exp_peer_commit commit;
-        struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+        gds_driver_type_t dtype;
+        uint8_t pad0[4];
+        uint8_t reserved0[32];
+        uint8_t reserved1[56 * GDS_SEND_INFO_MAX_OPS];
+        uint8_t pad1[24];
 } gds_send_request_t;
+static_assert(sizeof(gds_send_request_t) % 64 == 0, "gds_send_request_t must be 64-byte aligned.");
 
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
@@ -181,6 +185,7 @@ typedef struct gds_wait_request {
         uint8_t reserved1[56 * GDS_WAIT_INFO_MAX_OPS];
         uint8_t pad1[16];
 } gds_wait_request_t;
+static_assert(sizeof(gds_wait_request_t) % 64 == 0, "gds_wait_request_t must be 64-byte aligned.");
 
 /**
  * Initializes a wait request out of the next heading CQE, which is kept in
