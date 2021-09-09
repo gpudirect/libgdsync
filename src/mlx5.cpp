@@ -52,9 +52,10 @@
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_t *request)
+int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_t *_request)
 {
         int retcode = 0;
+        const gds_mlx5_exp_send_request_t *request = to_gds_mexp_send_request(_request);
         size_t n_ops = request->commit.entries;
         peer_op_wr *op = request->commit.storage;
         size_t n = 0;

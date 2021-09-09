@@ -258,7 +258,7 @@ int gds_mlx5_exp_destroy_cq(gds_mlx5_exp_cq_t *gmexpcq)
 
 int gds_mlx5_exp_prepare_send(gds_mlx5_exp_qp_t *gmexpqp, gds_send_wr *p_ewr, 
                      gds_send_wr **bad_ewr, 
-                     gds_send_request_t *request)
+                     gds_mlx5_exp_send_request_t *request)
 {
         int ret = 0;
         ret = ibv_post_send(gmexpqp->gqp.qp, p_ewr, bad_ewr);
@@ -280,6 +280,31 @@ int gds_mlx5_exp_prepare_send(gds_mlx5_exp_qp_t *gmexpqp, gds_send_wr *p_ewr,
         }
 out:
         return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+void gds_mlx5_exp_init_send_info(gds_mlx5_exp_send_request_t *info)
+{
+        gds_dbg("send_request=%p\n", info);
+
+        info->commit.storage = info->wr;
+        info->commit.entries = sizeof(info->wr)/sizeof(info->wr[0]);
+        gds_init_ops(info->commit.storage, info->commit.entries);
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_exp_post_send_ops(gds_peer *peer, gds_mlx5_exp_send_request_t *info, gds_op_list_t &ops)
+{
+        return gds_post_ops(peer, info->commit.entries, info->commit.storage, ops, 0);
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_exp_post_send_ops_on_cpu(gds_mlx5_exp_send_request_t *info, int flags)
+{
+        return gds_post_ops_on_cpu(info->commit.entries, info->commit.storage, flags);
 }
 
 //-----------------------------------------------------------------------------
@@ -561,4 +586,31 @@ int gds_mlx5_exp_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_mlx5_exp
                 }
         }
         return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_exp_rollback_qp(gds_mlx5_exp_qp_t *gmexpqp, gds_mlx5_exp_send_request_t *send_info)
+{
+        struct ibv_exp_rollback_ctx rollback;
+        int ret = 0;
+        enum ibv_exp_rollback_flags flag = IBV_EXP_ROLLBACK_ABORT_LATE;
+
+        assert(gmexpqp);
+        assert(gmexpqp->gqp.qp);
+        assert(send_info);
+
+        /* from ibv_exp_peer_commit call */
+        rollback.rollback_id = send_info->commit.rollback_id;
+        /* from ibv_exp_rollback_flag */
+        rollback.flags = flag;
+        /* Reserved for future expensions, must be 0 */
+        rollback.comp_mask = 0;
+        gds_warn("Need to rollback WQE %lx\n", rollback.rollback_id);
+        ret = ibv_exp_rollback_qp(gmexpqp->gqp.qp, &rollback);
+        if (ret)
+                gds_err("error %d in ibv_exp_rollback_qp\n", ret);
+
+out:
+        return ret;
 }

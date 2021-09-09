@@ -997,8 +997,9 @@ int gds_post_pokes(CUstream stream, int count, gds_send_request_t *info, uint32_
         }
 
         for (int j=0; j<count; j++) {
+                gds_mlx5_exp_send_request_t *gmexp_sreq = to_gds_mexp_send_request(&info[j]);
                 gds_dbg("peer_commit:%d\n", j);
-                retcode = gds_post_ops(peer, info[j].commit.entries, info[j].commit.storage, ops, 0);
+                retcode = gds_mlx5_exp_post_send_ops(peer, gmexp_sreq, ops);
                 if (retcode) {
                         goto out;
                 }
@@ -1151,8 +1152,9 @@ int gds_post_pokes_on_cpu(int count, gds_send_request_t *info, uint32_t *dw, uin
         assert(info);
 
         for (int j=0; j<count; j++) {
+                gds_mlx5_exp_send_request_t *gmexp_sreq = to_gds_mexp_send_request(&info[j]);
                 gds_dbg("peer_commit:%d idx=%d\n", j, idx);
-                retcode = gds_post_ops_on_cpu(info[j].commit.entries, info[j].commit.storage);
+                retcode = gds_mlx5_exp_post_send_ops_on_cpu(gmexp_sreq);
                 if (retcode) {
                         goto out;
                 }

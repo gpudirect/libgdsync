@@ -68,12 +68,15 @@ void gds_init_ops(struct peer_op_wr *op, int count)
 
 static void gds_init_send_info(gds_send_request_t *info)
 {
+        gds_mlx5_exp_send_request_t *gmexp_info;
         gds_dbg("send_request=%p\n", info);
         memset(info, 0, sizeof(*info));
 
-        info->commit.storage = info->wr;
-        info->commit.entries = sizeof(info->wr)/sizeof(info->wr[0]);
-        gds_init_ops(info->commit.storage, info->commit.entries);
+        info->dtype = GDS_DRIVER_TYPE_MLX5_EXP;
+
+        gmexp_info = to_gds_mexp_send_request(info);
+
+        gds_mlx5_exp_init_send_info(gmexp_info);
 }
 
 //-----------------------------------------------------------------------------
@@ -93,37 +96,18 @@ static void gds_init_wait_request(gds_wait_request_t *request, uint32_t offset)
 
 //-----------------------------------------------------------------------------
 
-static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, enum ibv_exp_rollback_flags flag)
+static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t *send_info)
 {
-        struct ibv_exp_rollback_ctx rollback;
-        int ret=0;
+        gds_mlx5_exp_qp_t *gmexpqp;
+        gds_mlx5_exp_send_request_t *gmexp_sreq;
 
         assert(qp);
-        assert(qp->qp);
         assert(send_info);
-        if(
-                        flag != IBV_EXP_ROLLBACK_ABORT_UNCOMMITED && 
-                        flag != IBV_EXP_ROLLBACK_ABORT_LATE
-          )
-        {
-                gds_err("erroneous ibv_exp_rollback_flags flag input value\n");
-                ret=EINVAL;
-                goto out;
-        } 
 
-        /* from ibv_exp_peer_commit call */
-        rollback.rollback_id = send_info->commit.rollback_id;
-        /* from ibv_exp_rollback_flag */
-        rollback.flags = flag;
-        /* Reserved for future expensions, must be 0 */
-        rollback.comp_mask = 0;
-        gds_warn("Need to rollback WQE %lx\n", rollback.rollback_id);
-        ret = ibv_exp_rollback_qp(qp->qp, &rollback);
-        if(ret)
-                gds_err("error %d in ibv_exp_rollback_qp\n", ret);
+        gmexpqp = to_gds_mexp_qp(qp);
+        gmexp_sreq = to_gds_mexp_send_request(send_info);
 
-out:
-        return ret;
+        return gds_mlx5_exp_rollback_qp(gmexpqp, gmexp_sreq);
 }
 
 //-----------------------------------------------------------------------------
@@ -141,7 +125,7 @@ int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
         ret = gds_post_pokes_on_cpu(1, &send_info, NULL, 0);
         if (ret) {
                 gds_err("error %d in gds_post_pokes_on_cpu\n", ret);
-                ret_roll = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+                ret_roll = gds_rollback_qp(qp, &send_info);
                 if (ret_roll) {
                         gds_err("error %d in gds_rollback_qp\n", ret_roll);
                 }
@@ -180,6 +164,7 @@ int gds_prepare_send(struct gds_qp *gqp, gds_send_wr *p_ewr,
 {
         int ret = 0;
         gds_mlx5_exp_qp_t *gmexpqp;
+        gds_mlx5_exp_send_request_t *sreq;
 
         gds_init_send_info(request);
         assert(gqp);
@@ -187,8 +172,9 @@ int gds_prepare_send(struct gds_qp *gqp, gds_send_wr *p_ewr,
         assert(gqp->dtype == GDS_DRIVER_TYPE_MLX5_EXP);
 
         gmexpqp = to_gds_mexp_qp(gqp);
+        sreq = to_gds_mexp_send_request(request);
 
-        ret = gds_mlx5_exp_prepare_send(gmexpqp, p_ewr, bad_ewr, request);
+        ret = gds_mlx5_exp_prepare_send(gmexpqp, p_ewr, bad_ewr, sreq);
         if (ret)
                 gds_err("Error %d in gds_mlx5_exp_prepare_send.\n", ret);
 
@@ -522,7 +508,7 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
                 gds_descriptor_t *desc = descs + i;
                 switch(desc->tag) {
                 case GDS_TAG_SEND:
-                        n_mem_ops += desc->send->commit.entries + 2; // extra space, ugly
+                        n_mem_ops += gds_mlx5_exp_get_num_send_request_entries(to_gds_mexp_send_request(desc->send)) + 2; // extra space, ugly
                         break;
                 case GDS_TAG_WAIT:
                         n_mem_ops += gds_mlx5_exp_get_num_wait_request_entries(to_gds_mexp_wait_request(desc->wait)) + 2; // ditto
@@ -584,8 +570,8 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 gds_descriptor_t *desc = descs + i;
                 switch(desc->tag) {
                 case GDS_TAG_SEND: {
-                        gds_send_request_t *sreq = desc->send;
-                        retcode = gds_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
+                        gds_mlx5_exp_send_request_t *sreq = to_gds_mexp_send_request(desc->send);
+                        retcode = gds_mlx5_exp_post_send_ops(peer, sreq, params);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
@@ -662,8 +648,8 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                 switch(desc->tag) {
                 case GDS_TAG_SEND: {
                         gds_dbg("desc[%zu] SEND\n", i);
-                        gds_send_request_t *sreq = desc->send;
-                        retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
+                        gds_mlx5_exp_send_request_t *sreq = to_gds_mexp_send_request(desc->send);
+                        retcode = gds_mlx5_exp_post_send_ops_on_cpu(sreq, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
                                 ret = retcode;
