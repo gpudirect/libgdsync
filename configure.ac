@@ -190,7 +190,8 @@ dnl Checks for Verbs support
 AC_CHECK_LIB(ibverbs, ibv_get_device_list, [],
     AC_MSG_ERROR([ibv_get_device_list() not found.  libgdsync requires libibverbs.]))
 
-AC_CHECK_LIB(ibverbs, ibv_exp_create_qp, [have_exp_verbs=1])
+dnl ibv_exp_create_qp is an inline function. So, we check for exp_cmd instead.
+AC_CHECK_LIB(ibverbs, ibv_exp_cmd_create_qp, [have_exp_verbs=1])
 AC_CHECK_HEADER([infiniband/peer_ops.h], [have_peer_ops=1], [],
 [[
 #include <infiniband/peer_ops.h>
@@ -198,7 +199,7 @@ AC_CHECK_HEADER([infiniband/peer_ops.h], [have_peer_ops=1], [],
 
 if test "x$have_exp_verbs" != "x" && test "x$have_peer_ops" != "x"; then
     AC_DEFINE([HAVE_EXP_VERBS], [1], [Define if exp-verbs exists.])
-    $enable_exp_verbs=1
+    enable_exp_verbs=1
 else
     AC_MSG_WARN([This version of libgdsync cannot be used with out exp-verbs.])
 fi
