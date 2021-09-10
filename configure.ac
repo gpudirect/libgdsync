@@ -93,23 +93,52 @@ else
     AC_SUBST(LIBGDSTOOLS)
 fi
 
-AC_ARG_WITH([mpi],
-    AC_HELP_STRING([--with-mpi], [ Set path to mpi installation ]))
-if test x$with_mpi = x || test x$with_mpi = xno; then
+AC_ARG_WITH([spectrum-mpi],
+    AC_HELP_STRING([--with-spectrum-mpi], [ Set path to Spectrum MPI installation ]))
+if test x$with_spectrum_mpi = x || test x$with_spectrum_mpi = xno; then
     # assuming system location
     mpi_home=/usr
-    MPICC=$with_home/bin/mpicc
-    MPICXX=$with_home/bin/mpic++
+    MPICC=/bin/mpicc
+    MPICXX=/bin/mpic++
+    MPILDFLAGS="-lmpi_ibm"
 else
-    if test -d $with_mpi; then
-        mpi_home=$with_mpi
+    if test -d $with_spectrum_mpi; then
+        mpi_home=$with_spectrum_mpi
         MPICC=${mpi_home}/bin/mpicc
         MPICXX=${mpi_home}/bin/mpic++
         CPPFLAGS="$CPPFLAGS -I${mpi_home}/include"
         LDFLAGS="$LDFLAGS -L${mpi_home}/lib -L${mpi_home}/lib64"
+        MPILDFLAGS="-lmpi_ibm"
     else
         echo "MPI dir does not exist"
     fi
+fi
+
+AC_ARG_WITH([mpi],
+    AC_HELP_STRING([--with-mpi], [ Set path to MPI installation ]))
+if test x$with_spectrum_mpi = x || test x$with_spectrum_mpi == xno; then
+    if test x$with_mpi = x || test x$with_mpi = xno; then
+        # assuming system location
+        mpi_home=/usr
+        MPICC=/bin/mpicc
+        MPICXX=/bin/mpic++
+        MPILDFLAGS="-lmpi"
+    else
+        if test -d $with_mpi; then
+            mpi_home=$with_mpi
+            MPICC=${mpi_home}/bin/mpicc
+            MPICXX=${mpi_home}/bin/mpic++
+            CPPFLAGS="$CPPFLAGS -I${mpi_home}/include"
+            LDFLAGS="$LDFLAGS -L${mpi_home}/lib -L${mpi_home}/lib64"
+            MPILDFLAGS="-lmpi"
+        else
+            echo "MPI dir does not exist"
+        fi
+    fi
+fi
+
+if test x$with_spectrum_mpi != x && test x$with_spectrum_mpi != xno && test x$with_mpi != x && test x$with_mpi != xno; then
+    AC_MSG_ERROR([--with-mpi and --with-spectrum-mpi are mutually exclusive.])
 fi
 
 dnl Specify CUDA Location
@@ -186,6 +215,7 @@ AC_MSG_NOTICE([Setting MPI_PATH = ${mpi_home} ])
 AC_SUBST( MPI_PATH, [${mpi_home} ])
 AC_SUBST( MPICC, [${MPICC} ])
 AC_SUBST( MPICXX, [${MPICXX} ])
+AC_SUBST( MPILDFLAGS, [${MPILDFLAGS} ])
 
 CPPFLAGS="$CPPFLAGS -I$CUDA_DRV_PATH/include -I$CUDA_PATH/include"
 LDFLAGS="$LDFLAGS -L$CUDA_DRV_PATH/lib64 -L$CUDA_DRV_PATH/lib -L$CUDA_PATH/lib64 -L$CUDA_PATH/lib"
