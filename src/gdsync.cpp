@@ -1226,7 +1226,7 @@ int gds_stream_post_wait_cq_multi(CUstream stream, int count, gds_wait_request_t
 
 // If NULL returned then buffer will be allocated in system memory
 // by ibverbs driver.
-static struct ibv_exp_peer_buf *gds_buf_alloc(ibv_exp_peer_buf_alloc_attr *attr)
+static gds_peer_buf_t *gds_buf_alloc(gds_peer_buf_alloc_attr_t *attr)
 {
         assert(attr);
         gds_peer *peer = peer_from_id(attr->peer_id);
@@ -1238,7 +1238,7 @@ static struct ibv_exp_peer_buf *gds_buf_alloc(ibv_exp_peer_buf_alloc_attr *attr)
         return peer->buf_alloc(peer->alloc_type, attr->length, attr->dir, attr->alignment, peer->alloc_flags);
 }
 
-static int gds_buf_release(struct ibv_exp_peer_buf *pb)
+static int gds_buf_release(gds_peer_buf_t *pb)
 {
         gds_dbg("freeing pb=%p\n", pb);
         gds_buf *buf = static_cast<gds_buf*>(pb);
@@ -1247,14 +1247,14 @@ static int gds_buf_release(struct ibv_exp_peer_buf *pb)
         return 0;
 }
 
-static uint64_t gds_register_va(void *start, size_t length, uint64_t peer_id, struct ibv_exp_peer_buf *pb)
+static uint64_t gds_register_va(void *start, size_t length, uint64_t peer_id, gds_peer_buf_t *pb)
 {
         gds_peer *peer = peer_from_id(peer_id);
         gds_range *range = NULL;
 
         gds_dbg("start=%p length=%zu peer_id=%" PRIx64 " peer_buf=%p\n", start, length, peer_id, pb);
 
-        if (IBV_EXP_PEER_IOMEMORY == pb) {
+        if (GDS_PEER_IOMEMORY == pb) {
                 // register as IOMEM
                 range = peer->register_range(start, length, GDS_MEMORY_IO);
         }

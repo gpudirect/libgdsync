@@ -53,7 +53,8 @@ gds_mlx5_exp_cq_t *gds_mlx5_exp_create_cq(
 
         attr.comp_mask = IBV_EXP_CQ_INIT_ATTR_PEER_DIRECT;
         attr.flags = 0; // see ibv_exp_cq_create_flags
-        attr.peer_direct_attrs = peer_attr;
+        static_assert(sizeof(gds_peer_attr) == sizeof(struct ibv_exp_peer_direct_attr));
+        attr.peer_direct_attrs = (struct ibv_exp_peer_direct_attr *)(peer_attr);
         if (res_domain) {
             gds_dbg("using peer->res_domain %p for CQ\n", res_domain);
             attr.res_domain = res_domain;
@@ -145,7 +146,8 @@ gds_mlx5_exp_qp_t *gds_mlx5_exp_create_qp(
         exp_qp_attr.recv_cq = rx_gmexpcq->gcq.cq;
         exp_qp_attr.pd = pd;
         exp_qp_attr.comp_mask = IBV_EXP_QP_INIT_ATTR_PD | IBV_EXP_QP_INIT_ATTR_PEER_DIRECT;
-        exp_qp_attr.peer_direct_attrs = peer_attr;
+        static_assert(sizeof(gds_peer_attr) == sizeof(struct ibv_exp_peer_direct_attr));
+        exp_qp_attr.peer_direct_attrs = (struct ibv_exp_peer_direct_attr *)peer_attr;
         exp_qp_attr.qp_type = qp_attr->qp_type;
 
         assert(sizeof(exp_qp_attr.cap) == sizeof(qp_attr->cap));
