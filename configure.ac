@@ -190,11 +190,20 @@ dnl Checks for Verbs support
 AC_CHECK_LIB(ibverbs, ibv_get_device_list, [],
     AC_MSG_ERROR([ibv_get_device_list() not found.  libgdsync requires libibverbs.]))
 
-AC_CHECK_LIB(ibverbs, ibv_exp_create_qp,
-    AC_MSG_ERROR([ibv_exp_create_qp not found. libgdsync requires verbs extension support.]))
+AC_CHECK_LIB(ibverbs, ibv_exp_create_qp, [have_exp_verbs=1])
+AC_CHECK_HEADER([infiniband/peer_ops.h], [have_peer_ops=1], [],
+[[
+#include <infiniband/peer_ops.h>
+]])
 
-AC_CHECK_HEADER(infiniband/peer_ops.h, [],
-    AC_MSG_ERROR([<infiniband/peer_ops.h> not found.  libgdsync requires verbs peer-direct support.]))
+if test "x$have_exp_verbs" != "x" && test "x$have_peer_ops" != "x"; then
+    AC_DEFINE([HAVE_EXP_VERBS], [1], [Define if exp-verbs exists.])
+    $enable_exp_verbs=1
+else
+    AC_MSG_WARN([This version of libgdsync cannot be used with out exp-verbs.])
+fi
+AM_CONDITIONAL([COMPILE_EXP_VERBS], [test "x$enable_exp_verbs" != "x"])
+
 AC_HEADER_STDC
 
 dnl Checks for typedefs, structures, and compiler characteristics.
