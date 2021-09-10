@@ -41,6 +41,7 @@
 #include "objs.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
+#include "mlx5-exp.hpp"
 
 //-----------------------------------------------------------------------------
 
@@ -1233,12 +1234,13 @@ static void gds_dump_ops(struct peer_op_wr *op, size_t count)
 
 void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
 {
-        for (size_t j=0; j<count; ++j) {
-                struct ibv_exp_peer_peek *peek = &request[j].peek;
-                gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%"PRIx64" comp_mask:%08x\n", 
-                        j, peek->entries, peek->whence, peek->offset, 
-                        peek->peek_id, peek->comp_mask);
-                gds_dump_ops(peek->storage, peek->entries);
+        for (size_t j = 0; j < count; ++j) {
+                gds_mlx5_exp_wait_request_t *gmexp_request;
+                if (count == 0)
+                        return;
+
+                gmexp_request = to_gds_mexp_wait_request(&request[j]);
+                gds_mlx5_exp_dump_wait_request(gmexp_request, j);
         }
 }
 
@@ -1315,7 +1317,7 @@ static int gds_buf_release(struct ibv_peer_buf *pb)
         return 0;
 }
 
-static uint64_t gds_register_va(void *start, size_t length, uint64_t peer_id, struct ibv_exp_peer_buf *pb)
+static uint64_t gds_register_va(void *start, size_t length, uint64_t peer_id, gds_peer_buf_t *pb)
 {
         gds_peer *peer = peer_from_id(peer_id);
         gds_range *range = NULL;
