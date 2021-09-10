@@ -28,7 +28,6 @@
 #pragma once
 
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
 
 
 #ifdef USE_PROFILE

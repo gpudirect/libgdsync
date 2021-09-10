@@ -11,7 +11,6 @@
 #include <assert.h>
 #include <limits.h>
 
-#include <infiniband/verbs_exp.h>
 #include <gdsync.h>
 #include <gdsync/tools.h>
 #include <gdrapi.h>
