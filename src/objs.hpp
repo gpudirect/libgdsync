@@ -27,9 +27,6 @@
 
 #pragma once
 
-#include <infiniband/verbs_exp.h>
-#include <infiniband/peer_ops.h>
-
 static const size_t max_gpus = 16;
 
 /**

@@ -4,6 +4,7 @@
 
 #include <infiniband/verbs.h>
 #include <infiniband/verbs_exp.h>
+#include <infiniband/peer_ops.h>
 
 #include <gdsync.h>
 #include <gdsync/mlx5.h>
