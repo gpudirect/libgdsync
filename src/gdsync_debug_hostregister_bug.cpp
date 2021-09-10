@@ -704,11 +704,11 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                 switch(op->type) {
                 case IBV_PEER_OP_FENCE: {
                         gds_dbg("OP_FENCE: fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
-                        uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
-                        uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
-                        uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
+                        uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
+                        uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
+                        uint32_t fence_mem = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_MEM_SYS|GDS_PEER_FENCE_MEM_PEER));
 
-                        if (fence_op == IBV_EXP_PEER_FENCE_OP_READ) {
+                        if (fence_op == GDS_PEER_FENCE_OP_READ) {
                                 gds_dbg("nothing to do for read fences\n");
                                 //retcode = EINVAL;
                                 break;
@@ -727,17 +727,17 @@ static int gds_post_ops(size_t n_ops, struct peer_op_wr *op, CUstreamBatchMemOpP
                                         //retcode = 0;
                                 }
                                 else {
-                                        if (fence_from != IBV_EXP_PEER_FENCE_FROM_HCA) {
+                                        if (fence_from != GDS_PEER_FENCE_FROM_HCA) {
                                                 gds_err("unexpected from fence\n");
                                                 retcode = EINVAL;
                                                 break;
                                         }
                                         int flags = 0;
-                                        if (fence_mem == IBV_EXP_PEER_FENCE_MEM_PEER) {
+                                        if (fence_mem == GDS_PEER_FENCE_MEM_PEER) {
                                                 gds_dbg("using light membar\n");
                                                 flags = GDS_MEMBAR_DEFAULT;
                                         }
-                                        else if (fence_mem == IBV_EXP_PEER_FENCE_MEM_SYS) {
+                                        else if (fence_mem == GDS_PEER_FENCE_MEM_SYS) {
                                                 gds_dbg("using heavy membar\n");
                                                 flags = GDS_MEMBAR_SYS;
                                         }
@@ -973,26 +973,26 @@ static int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op)
                 switch(op->type) {
                 case IBV_PEER_OP_FENCE: {
                         gds_dbg("fence_flags=%"PRIu64"\n", op->wr.fence.fence_flags);
-                        uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
-                        uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
-                        uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
+                        uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
+                        uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
+                        uint32_t fence_mem = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_MEM_SYS|GDS_PEER_FENCE_MEM_PEER));
 
-                        if (fence_op == IBV_EXP_PEER_FENCE_OP_READ) {
+                        if (fence_op == GDS_PEER_FENCE_OP_READ) {
                                 gds_warnc(1, "nothing to do for read fences\n");
                                 //retcode = EINVAL;
                                 break;
                         }
                         else {
-                                if (fence_from != IBV_EXP_PEER_FENCE_FROM_HCA) {
+                                if (fence_from != GDS_PEER_FENCE_FROM_HCA) {
                                         gds_err("unexpected from %08x fence, expected FROM_HCA\n", fence_from);
                                         retcode = EINVAL;
                                         break;
                                 }
-                                if (fence_mem == IBV_EXP_PEER_FENCE_MEM_PEER) {
+                                if (fence_mem == GDS_PEER_FENCE_MEM_PEER) {
                                         gds_dbg("using light membar\n");
                                         wmb();
                                 }
-                                else if (fence_mem == IBV_EXP_PEER_FENCE_MEM_SYS) {
+                                else if (fence_mem == GDS_PEER_FENCE_MEM_SYS) {
                                         gds_dbg("using heavy membar\n");
                                         wmb();
                                 }
@@ -1322,7 +1322,7 @@ static uint64_t gds_register_va(void *start, size_t length, uint64_t peer_id, st
 
         gds_dbg("start=%p length=%zu peer_id=%"PRIx64" peer_buf=%p\n", start, length, peer_id, pb);
 
-        if (IBV_EXP_PEER_IOMEMORY == pb) {
+        if (GDS_PEER_IOMEMORY == pb) {
                 // register as IOMEM
                 range = peer->register_range(start, length, GDS_MEMORY_IO);
         }
@@ -1375,25 +1375,25 @@ static void gds_init_peer_attr(gds_peer_attr *attr, gds_peer *peer)
         attr->register_va = gds_register_va;
         attr->unregister_va = gds_unregister_va;
 
-        attr->caps = ( IBV_EXP_PEER_OP_STORE_DWORD_CAP    | 
-                       IBV_EXP_PEER_OP_STORE_QWORD_CAP    | 
-                       IBV_EXP_PEER_OP_FENCE_CAP          | 
-                       IBV_EXP_PEER_OP_POLL_AND_DWORD_CAP );
+        attr->caps = ( GDS_PEER_OP_STORE_DWORD_CAP    | 
+                       GDS_PEER_OP_STORE_QWORD_CAP    | 
+                       GDS_PEER_OP_FENCE_CAP          | 
+                       GDS_PEER_OP_POLL_AND_DWORD_CAP );
 
         if (gpu_does_support_nor(peer))
-                attr->caps |= IBV_EXP_PEER_OP_POLL_NOR_DWORD_CAP;
+                attr->caps |= GDS_PEER_OP_POLL_NOR_DWORD_CAP;
         else
-                attr->caps |= IBV_EXP_PEER_OP_POLL_GEQ_DWORD_CAP;
+                attr->caps |= GDS_PEER_OP_POLL_GEQ_DWORD_CAP;
 
         if (gds_enable_inlcpy()) {
-                attr->caps |= IBV_EXP_PEER_OP_COPY_BLOCK_CAP;
+                attr->caps |= GDS_PEER_OP_COPY_BLOCK_CAP;
         }
         else if (gds_enable_write64() || gds_simulate_write64()) {
-                attr->caps |= IBV_EXP_PEER_OP_STORE_QWORD_CAP;
+                attr->caps |= GDS_PEER_OP_STORE_QWORD_CAP;
         }
         gds_dbg("caps=%016lx\n", attr->caps);
         attr->peer_dma_op_map_len = GDS_GPU_MAX_INLINE_SIZE;
-        attr->comp_mask = IBV_EXP_PEER_DIRECT_VERSION;
+        attr->comp_mask = GDS_PEER_DIRECT_VERSION;
         attr->version = 1;
 
         gds_dbg("peer_attr: peer_id=%"PRIx64"\n", attr->peer_id);
@@ -1536,13 +1536,13 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context, gds
         // the CQE without updating the tracking variables
         if (flags & GDS_CREATE_QP_GPU_INVALIDATE_RX_CQ) {
                 gds_warn("IGNORE_RQ_OVERFLOW\n");
-                qp_attr->exp_create_flags |= IBV_EXP_QP_CREATE_IGNORE_RQ_OVERFLOW;
-                qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS;
+                qp_attr->exp_create_flags |= GDS_QP_CREATE_IGNORE_RQ_OVERFLOW;
+                qp_attr->comp_mask |= GDS_QP_INIT_ATTR_CREATE_FLAGS;
         }
         if (flags & GDS_CREATE_QP_GPU_INVALIDATE_TX_CQ) {
                 gds_warn("IGNORE_SQ_OVERFLOW\n");
-                qp_attr->exp_create_flags |= IBV_EXP_QP_CREATE_IGNORE_SQ_OVERFLOW;
-                qp_attr->comp_mask |= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS;
+                qp_attr->exp_create_flags |= GDS_QP_CREATE_IGNORE_SQ_OVERFLOW;
+                qp_attr->comp_mask |= GDS_QP_INIT_ATTR_CREATE_FLAGS;
         }
 
         gds_dbg("before gds_register_peer_ex\n");
