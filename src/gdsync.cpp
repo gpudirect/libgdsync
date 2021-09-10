@@ -1173,12 +1173,14 @@ out:
 
 void gds_dump_wait_request(gds_wait_request_t *request, size_t count)
 {
-        gds_mlx5_exp_wait_request_t *gmexp_request;
-        if (count == 0)
-                return;
+        for (size_t j = 0; j < count; ++j) {
+                gds_mlx5_exp_wait_request_t *gmexp_request;
+                if (count == 0)
+                        return;
 
-        gmexp_request = to_gds_mexp_wait_request(request);
-        gds_mlx5_exp_dump_wait_request(gmexp_request, count);
+                gmexp_request = to_gds_mexp_wait_request(&request[j]);
+                gds_mlx5_exp_dump_wait_request(gmexp_request, j);
+        }
 }
 
 //-----------------------------------------------------------------------------

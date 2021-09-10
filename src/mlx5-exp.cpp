@@ -381,15 +381,13 @@ static void gds_mlx5_exp_dump_ops(struct peer_op_wr *op, size_t count)
 
 //-----------------------------------------------------------------------------
 
-void gds_mlx5_exp_dump_wait_request(gds_mlx5_exp_wait_request_t *request, size_t count)
+void gds_mlx5_exp_dump_wait_request(gds_mlx5_exp_wait_request_t *request, size_t idx)
 {
-        for (size_t j = 0; j < count; ++j) {
-                struct ibv_exp_peer_peek *peek = &request[j].peek;
-                gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%" PRIx64 " comp_mask:%08x\n", 
-                        j, peek->entries, peek->whence, peek->offset, 
-                        peek->peek_id, peek->comp_mask);
-                gds_mlx5_exp_dump_ops(peek->storage, peek->entries);
-        }
+        struct ibv_exp_peer_peek *peek = &request->peek;
+        gds_dbg("req[%zu] entries:%u whence:%u offset:%u peek_id:%" PRIx64 " comp_mask:%08x\n", 
+                idx, peek->entries, peek->whence, peek->offset, 
+                peek->peek_id, peek->comp_mask);
+        gds_mlx5_exp_dump_ops(peek->storage, peek->entries);
 }
 
 //-----------------------------------------------------------------------------
