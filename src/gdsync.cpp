@@ -33,6 +33,9 @@
 #include <string.h>
 #include <assert.h>
 
+#include <infiniband/verbs_exp.h>
+#include <infiniband/peer_ops.h>
+
 #include <gdsync.h>
 #include <gdsync/tools.h>
 
