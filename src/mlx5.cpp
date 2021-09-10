@@ -64,25 +64,25 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
 
         for (; op && n < n_ops; op = op->next, ++n) {
                 switch(op->type) {
-                case IBV_EXP_PEER_OP_FENCE: {
+                case GDS_PEER_OP_FENCE: {
                         gds_dbg("OP_FENCE: fence_flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
-                        uint32_t fence_op = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_OP_READ|IBV_EXP_PEER_FENCE_OP_WRITE));
-                        uint32_t fence_from = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_FROM_CPU|IBV_EXP_PEER_FENCE_FROM_HCA));
-                        uint32_t fence_mem = (op->wr.fence.fence_flags & (IBV_EXP_PEER_FENCE_MEM_SYS|IBV_EXP_PEER_FENCE_MEM_PEER));
-                        if (fence_op == IBV_EXP_PEER_FENCE_OP_READ) {
+                        uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
+                        uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
+                        uint32_t fence_mem = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_MEM_SYS|GDS_PEER_FENCE_MEM_PEER));
+                        if (fence_op == GDS_PEER_FENCE_OP_READ) {
                                 gds_dbg("nothing to do for read fences\n");
                                 break;
                         }
-                        if (fence_from != IBV_EXP_PEER_FENCE_FROM_HCA) {
+                        if (fence_from != GDS_PEER_FENCE_FROM_HCA) {
                                 gds_err("unexpected from fence\n");
                                 retcode = EINVAL;
                                 break;
                         }
-                        if (fence_mem == IBV_EXP_PEER_FENCE_MEM_PEER) {
+                        if (fence_mem == GDS_PEER_FENCE_MEM_PEER) {
                                 gds_dbg("using light membar\n");
                                 mlx5_i->membar = 1;
                         }
-                        else if (fence_mem == IBV_EXP_PEER_FENCE_MEM_SYS) {
+                        else if (fence_mem == GDS_PEER_FENCE_MEM_SYS) {
                                 gds_dbg("using heavy membar\n");
                                 mlx5_i->membar_full = 1;
                         }
@@ -93,7 +93,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         }
                         break;
                 }
-                case IBV_EXP_PEER_OP_STORE_DWORD: {
+                case GDS_PEER_OP_STORE_DWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
                                 op->wr.dword_va.offset;
                         uint32_t data = op->wr.dword_va.data;
@@ -107,7 +107,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         mlx5_i->dbrec_value = data;
                         break;
                 }
-                case IBV_EXP_PEER_OP_STORE_QWORD: {
+                case GDS_PEER_OP_STORE_QWORD: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
                                 op->wr.qword_va.offset;
                         uint64_t data = op->wr.qword_va.data;
@@ -121,7 +121,7 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         mlx5_i->db_value = data;
                         break;
                 }
-                case IBV_EXP_PEER_OP_COPY_BLOCK: {
+                case GDS_PEER_OP_COPY_BLOCK: {
                         CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
                                 op->wr.copy_op.offset;
                         size_t len = op->wr.copy_op.len;
@@ -136,9 +136,9 @@ int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request
                         mlx5_i->db_value = *(uint64_t*)src; 
                         break;
                 }
-                case IBV_EXP_PEER_OP_POLL_AND_DWORD:
-                case IBV_EXP_PEER_OP_POLL_GEQ_DWORD:
-                case IBV_EXP_PEER_OP_POLL_NOR_DWORD: {
+                case GDS_PEER_OP_POLL_AND_DWORD:
+                case GDS_PEER_OP_POLL_GEQ_DWORD:
+                case GDS_PEER_OP_POLL_NOR_DWORD: {
                         gds_err("unexpected polling op in send request\n");
                         retcode = EINVAL;
                         break;
