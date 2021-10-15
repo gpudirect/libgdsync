@@ -27,6 +27,10 @@
 
 #pragma once
 
+#include <assert.h>
+#include <gdsync.h>
+#include <gdsync/mlx5.h>
+
 typedef struct gds_transport {
         int  (*create_qp)(struct ibv_pd *pd, struct ibv_context *context, gds_qp_init_attr_t *qp_attr, gds_peer *peer, gds_peer_attr *peer_attr, int flags, gds_qp_t **gqp);
         int  (*destroy_qp)(gds_qp_t *gqp);
@@ -34,8 +38,9 @@ typedef struct gds_transport {
 
         void (*init_send_info)(gds_send_request_t *request);
         int  (*post_send_ops)(gds_peer *peer, gds_send_request_t *request, gds_op_list_t &ops);
-        int  (*post_send_ops_on_cpu)(gds_send_request_t *request, int flags = 0);
+        int  (*post_send_ops_on_cpu)(gds_send_request_t *request, int flags);
         int  (*prepare_send)(gds_qp_t *gqp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
+        int  (*get_send_descs)(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_t *_request);
         uint32_t (*get_num_send_request_entries)(gds_send_request_t *request);
 
         void (*init_wait_request)(gds_wait_request_t *request, uint32_t offset);
@@ -45,14 +50,31 @@ typedef struct gds_transport {
         int  (*get_wait_descs)(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_request_t *request);
         uint32_t (*get_num_wait_request_entries)(gds_wait_request_t *request);
 
-        int  (*prepare_wait_cq)(gds_cq_t *gcq, gds_wait_request_t *request, in flags);
-        int  (*append_wait_cq)(gds_cq_t *gcq, gds_wait_request_t *request, in flags);
+        int  (*prepare_wait_cq)(gds_cq_t *gcq, gds_wait_request_t *request, int flags);
+        int  (*append_wait_cq)(gds_wait_request_t *request, uint32_t *dw, uint32_t val);
         int  (*abort_wait_cq)(gds_cq_t *gcq, gds_wait_request_t *request);
 } gds_transport_t;
 
 extern gds_transport_t *gds_main_transport;
 
-int gds_transport_mlx5_exp_init(gds_transport_t *transport);
+int gds_transport_mlx5_exp_init(gds_transport_t **transport);
+
+static inline int gds_transport_init()
+{
+        int status = 0;
+        if (!gds_main_transport) {
+                gds_transport_t *t = NULL;
+                status = gds_transport_mlx5_exp_init(&t);
+                if (status) {
+                        gds_err("error in gds_transport_mlx5_exp_init\n");
+                        goto out;
+                }
+                assert(t);
+                gds_main_transport = t;
+        }
+out:
+        return status;
+}
 
 /*
  * Local variables:

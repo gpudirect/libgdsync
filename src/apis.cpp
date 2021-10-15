@@ -50,63 +50,36 @@
 #include "utils.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
-#include "mlx5-exp.hpp"
-
-
-//-----------------------------------------------------------------------------
-
-void gds_init_ops(struct peer_op_wr *op, int count)
-{
-        int i = count;
-        while (--i)
-                op[i-1].next = &op[i];
-        op[count-1].next = NULL;
-}
+#include "transport.hpp"
 
 //-----------------------------------------------------------------------------
 
 static void gds_init_send_info(gds_send_request_t *info)
 {
-        gds_mlx5_exp_send_request_t *gmexp_info;
         gds_dbg("send_request=%p\n", info);
         memset(info, 0, sizeof(*info));
 
-        info->dtype = GDS_DRIVER_TYPE_MLX5_EXP;
-
-        gmexp_info = to_gds_mexp_send_request(info);
-
-        gds_mlx5_exp_init_send_info(gmexp_info);
+        gds_main_transport->init_send_info(info);
 }
 
 //-----------------------------------------------------------------------------
 
 static void gds_init_wait_request(gds_wait_request_t *request, uint32_t offset)
 {
-        gds_mlx5_exp_wait_request_t *gmexp_request;
         gds_dbg("wait_request=%p offset=%08x\n", request, offset);
         memset(request, 0, sizeof(*request));
 
-        request->dtype = GDS_DRIVER_TYPE_MLX5_EXP;
-
-        gmexp_request = to_gds_mexp_wait_request(request);
-
-        gds_mlx5_exp_init_wait_request(gmexp_request, offset);
+        gds_main_transport->init_wait_request(request, offset);
 }
 
 //-----------------------------------------------------------------------------
 
 static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t *send_info)
 {
-        gds_mlx5_exp_qp_t *gmexpqp;
-        gds_mlx5_exp_send_request_t *gmexp_sreq;
-
         assert(qp);
         assert(send_info);
 
-        gmexpqp = to_gds_mexp_qp(qp);
-        gmexp_sreq = to_gds_mexp_send_request(send_info);
-
-        return gds_mlx5_exp_rollback_qp(gmexpqp, gmexp_sreq);
+        return gds_main_transport->rollback_qp(qp, send_info);
 }
 
 //-----------------------------------------------------------------------------
@@ -162,20 +135,14 @@ int gds_prepare_send(struct gds_qp *gqp, gds_send_wr *p_ewr,
                      gds_send_request_t *request)
 {
         int ret = 0;
-        gds_mlx5_exp_qp_t *gmexpqp;
-        gds_mlx5_exp_send_request_t *sreq;
 
         gds_init_send_info(request);
         assert(gqp);
         assert(gqp->qp);
-        assert(gqp->dtype == GDS_DRIVER_TYPE_MLX5_EXP);
 
-        gmexpqp = to_gds_mexp_qp(gqp);
-        sreq = to_gds_mexp_send_request(request);
-
-        ret = gds_mlx5_exp_prepare_send(gmexpqp, p_ewr, bad_ewr, sreq);
+        ret = gds_main_transport->prepare_send(gqp, p_ewr, bad_ewr, request);
         if (ret)
-                gds_err("Error %d in gds_mlx5_exp_prepare_send.\n", ret);
+                gds_err("Error %d in prepare_send.\n", ret);
 
         return ret;
 }
@@ -260,9 +227,6 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
 
 int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
 {
-        gds_mlx5_exp_cq_t *gmexpcq;
-        gds_mlx5_exp_wait_request_t *gmexp_request;
-
         if (flags != 0) {
                 gds_err("invalid flags != 0\n");
                 return EINVAL;
@@ -270,19 +234,23 @@ int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flag
 
         gds_init_wait_request(request, cq->curr_offset++);
 
-        gmexpcq = to_gds_mexp_cq(cq);
-        gmexp_request = to_gds_mexp_wait_request(request);
-
-        return gds_mlx5_exp_prepare_wait_cq(gmexpcq, gmexp_request, flags);
+        return gds_main_transport->prepare_wait_cq(cq, request, flags);
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val)
 {
-        gds_mlx5_exp_wait_request_t *gmexp_request = to_gds_mexp_wait_request(request);
+        int ret = gds_transport_init();
+        if (!ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
+        }
 
-        return gds_mlx5_exp_append_wait_cq(gmexp_request, dw, val);
+        ret = gds_main_transport->append_wait_cq(request, dw, val);
+
+out:
+        return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -303,16 +271,10 @@ int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *
 
 static int gds_abort_wait_cq(struct gds_cq *cq, gds_wait_request_t *request)
 {
-        gds_mlx5_exp_cq_t *gmexpcq;
-        gds_mlx5_exp_wait_request_t *gmexp_request;
-
         assert(cq);
         assert(request);
 
-        gmexpcq = to_gds_mexp_cq(cq);
-        gmexp_request = to_gds_mexp_wait_request(request);
-
-        return gds_mlx5_exp_abort_wait_cq(gmexpcq, gmexp_request);
+        return gds_main_transport->abort_wait_cq(cq, request);
 }
 
 //-----------------------------------------------------------------------------
@@ -503,14 +465,21 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
         int ret = 0;
         n_mem_ops = 0;
         size_t i;
-        for(i = 0; i < n_descs; ++i) {
+
+        ret = gds_transport_init();
+        if (!ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
+        }
+
+        for (i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
-                switch(desc->tag) {
+                switch (desc->tag) {
                 case GDS_TAG_SEND:
-                        n_mem_ops += gds_mlx5_exp_get_num_send_request_entries(to_gds_mexp_send_request(desc->send)) + 2; // extra space, ugly
+                        n_mem_ops += gds_main_transport->get_num_send_request_entries(desc->send) + 2; // extra space, ugly
                         break;
                 case GDS_TAG_WAIT:
-                        n_mem_ops += gds_mlx5_exp_get_num_wait_request_entries(to_gds_mexp_wait_request(desc->wait)) + 2; // ditto
+                        n_mem_ops += gds_main_transport->get_num_wait_request_entries(desc->wait) + 2; // ditto
                         break;
                 case GDS_TAG_WAIT_VALUE32:
                 case GDS_TAG_WRITE_VALUE32:
@@ -522,6 +491,8 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
                         ret = EINVAL;
                 }
         }
+
+out:
         return ret;
 }
 
@@ -538,6 +509,11 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         gds_peer *peer = NULL;
         gds_op_list_t params;
 
+        ret = gds_transport_init();
+        if (!ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
+        }
 
         ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
         if (ret) {
@@ -565,12 +541,11 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 return EINVAL;
         }
 
-        for(i = 0; i < n_descs; ++i) {
+        for (i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
-                switch(desc->tag) {
+                switch (desc->tag) {
                 case GDS_TAG_SEND: {
-                        gds_mlx5_exp_send_request_t *sreq = to_gds_mexp_send_request(desc->send);
-                        retcode = gds_mlx5_exp_post_send_ops(peer, sreq, params);
+                        retcode = gds_main_transport->post_send_ops(peer, desc->send, params);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
@@ -579,15 +554,14 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 }
                 case GDS_TAG_WAIT: {
-                        gds_mlx5_exp_wait_request_t *wreq = to_gds_mexp_wait_request(desc->wait);
                         int flags = 0;
                         if (move_flush && i != last_wait) {
                                 gds_dbg("discarding FLUSH!\n");
                                 flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
                         }
-                        retcode = gds_mlx5_exp_stream_post_wait_descriptor(peer, wreq, params, flags);
+                        retcode = gds_main_transport->stream_post_wait_descriptor(peer, desc->wait, params, flags);
                         if (retcode) {
-                                gds_err("error %d in gds_mlx5_exp_stream_post_wait_descriptor\n", retcode);
+                                gds_err("error %d in stream_post_wait_descriptor\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
@@ -642,13 +616,19 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
         size_t i;
         int ret = 0;
         int retcode = 0;
+
+        ret = gds_transport_init();
+        if (!ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
+        }
+
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
                 switch(desc->tag) {
                 case GDS_TAG_SEND: {
                         gds_dbg("desc[%zu] SEND\n", i);
-                        gds_mlx5_exp_send_request_t *sreq = to_gds_mexp_send_request(desc->send);
-                        retcode = gds_mlx5_exp_post_send_ops_on_cpu(sreq, flags);
+                        retcode = gds_main_transport->post_send_ops_on_cpu(desc->send, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
                                 ret = retcode;
@@ -658,10 +638,9 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                 }
                 case GDS_TAG_WAIT: {
                         gds_dbg("desc[%zu] WAIT\n", i);
-                        gds_mlx5_exp_wait_request_t *wreq = to_gds_mexp_wait_request(desc->wait);
-                        retcode = gds_mlx5_exp_post_wait_descriptor(wreq, flags);
+                        retcode = gds_main_transport->post_wait_descriptor(desc->wait, flags);
                         if (retcode) {
-                                gds_err("error %d in gds_mlx5_exp_post_wait_descriptor\n", retcode);
+                                gds_err("error %d in post_wait_descriptor\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }

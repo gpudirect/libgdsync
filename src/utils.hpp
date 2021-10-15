@@ -191,6 +191,10 @@ typedef enum gds_alloc_qp_flags {
 
 #include <vector>
 
+// TODO: use correct value
+// TODO: make it dependent upon the particular GPU
+const size_t GDS_GPU_MAX_INLINE_SIZE = 256;
+
 typedef std::vector<CUstreamBatchMemOpParams> gds_op_list_t;
 
 struct gds_cq *gds_create_cq(struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector, int gpu_id, gds_alloc_cq_flags_t flags);
@@ -205,9 +209,13 @@ struct gds_peer;
 
 int gds_fill_membar(gds_peer *peer, gds_op_list_t &param, int flags);
 int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &param, void *ptr, const void *data, size_t n_bytes, int flags);
+int gds_fill_inlcpy(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, const void *data, size_t n_bytes, int flags);
 int gds_fill_poke(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t value, int flags);
+int gds_fill_poke(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, uint32_t value, int flags);
 int gds_fill_poke64(gds_peer *peer, gds_op_list_t &param, uint64_t *ptr, uint64_t value, int flags);
+int gds_fill_poke64(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr addr, uint64_t value, int flags);
 int gds_fill_poll(gds_peer *peer, gds_op_list_t &param, uint32_t *ptr, uint32_t magic, int cond_flag, int flags);
+int gds_fill_poll(gds_peer *peer, gds_op_list_t &ops, CUdeviceptr ptr, uint32_t magic, int cond_flag, int flags);
 
 int gds_stream_batch_ops(gds_peer *peer, CUstream stream, gds_op_list_t &params, int flags);
 
@@ -216,9 +224,10 @@ enum gds_post_ops_flags {
 };
 
 struct gds_peer;
-int gds_post_ops(gds_peer *peer, size_t n_ops, struct peer_op_wr *op, gds_op_list_t &params, int post_flags = 0);
-int gds_post_ops_on_cpu(size_t n_descs, struct peer_op_wr *op, int post_flags = 0);
 gds_peer *peer_from_stream(CUstream stream);
+
+bool gds_simulate_write64();
+void gds_enable_barrier_for_inlcpy(CUstreamBatchMemOpParams *param);
 
 //-----------------------------------------------------------------------------
 
@@ -235,12 +244,6 @@ static inline gds_driver_type gds_get_driver_type(struct ibv_device *ibdev)
                 return GDS_DRIVER_TYPE_MLX5_EXP;
         return GDS_DRIVER_TYPE_UNSUPPORTED;
 }
-
-//-----------------------------------------------------------------------------
-
-int gds_destroy_cq(struct gds_cq *gcq);
-
-void gds_init_ops(struct peer_op_wr *op, int count);
 
 //-----------------------------------------------------------------------------
 

@@ -29,8 +29,8 @@ src_libgdsync_la_LDFLAGS = -version-info @VERSION_INFO@
 noinst_HEADERS = src/mem.hpp src/memmgr.hpp src/objs.hpp src/rangeset.hpp src/utils.hpp src/archutils.h src/mlnxutils.h 
 
 if COMPILE_EXP_VERBS
-src_libgdsync_la_SOURCES += src/mlx5-exp.cpp 
-noinst_HEADERS += src/mlx5-exp.hpp
+src_libgdsync_la_SOURCES += src/transports/mlx5-exp/mlx5-exp.cpp 
+noinst_HEADERS += src/transports/mlx5-exp/mlx5-exp.hpp
 endif
 
 # if enabled at configure time
