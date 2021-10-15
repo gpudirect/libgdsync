@@ -4,6 +4,7 @@
 
 #include "mlx5-exp.hpp"
 #include "utils.hpp"
+#include "transport.hpp"
 
 static ibv_exp_res_domain *gds_mlx5_exp_create_res_domain(struct ibv_context *context)
 {
@@ -614,3 +615,32 @@ int gds_mlx5_exp_rollback_qp(gds_mlx5_exp_qp_t *gmexpqp, gds_mlx5_exp_send_reque
 out:
         return ret;
 }
+
+//-----------------------------------------------------------------------------
+
+int gds_transport_mlx5_exp_init(gds_transport_t *transport)
+{
+        transport->create_qp = gds_mlx5_exp_create_qp;
+        transport->destroy_qp = gds_mlx5_exp_destroy_qp;
+        transport->rollback_qp = gds_mlx5_exp_rollback_qp;
+
+        transport->init_send_info = gds_mlx5_exp_init_send_info;
+        transport->post_send_ops = gds_mlx5_exp_post_send_ops;
+        transport->post_send_ops_on_cpu = gds_mlx5_exp_post_send_ops_on_cpu;
+        transport->prepare_send = gds_mlx5_exp_prepare_send;
+        transport->get_num_send_request_entries = gds_mlx5_exp_get_num_send_request_entries;
+
+        transport->init_wait_request = gds_mlx5_exp_init_wait_request;
+        transport->dump_wait_request = gds_mlx5_exp_dump_wait_request;
+        transport->stream_post_wait_descriptor = gds_mlx5_exp_stream_post_wait_descriptor;
+        transport->post_wait_descriptor = gds_mlx5_exp_post_wait_descriptor;
+        transport->get_wait_descs = gds_mlx5_exp_get_wait_descs;
+        transport->get_num_wait_request_entries = gds_mlx5_exp_get_num_send_request_entries;
+
+        transport->prepare_wait_cq = gds_mlx5_exp_prepare_wait_cq;
+        transport->append_wait_cq = gds_mlx5_exp_append_wait_cq;
+        transport->abort_wait_cq = gds_mlx5_exp_abort_wait_cq;
+
+        return 0;
+}
+
