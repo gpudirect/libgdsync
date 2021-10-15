@@ -57,17 +57,9 @@ enum gds_create_qp_flags {
 typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
 typedef struct ibv_send_wr gds_send_wr;
 
-typedef enum gds_driver_type {
-        GDS_DRIVER_TYPE_UNSUPPORTED = 0,
-        GDS_DRIVER_TYPE_MLX5_EXP,
-        GDS_DRIVER_TYPE_MLX5_DV,
-        GDS_DRIVER_TYPE_MLX5_DEVX
-} gds_driver_type_t;
-
 typedef struct gds_cq {
         struct ibv_cq *cq;
         uint32_t curr_offset;
-        gds_driver_type_t dtype;
 } gds_cq_t;
 
 typedef struct gds_qp {
@@ -75,7 +67,6 @@ typedef struct gds_qp {
         struct gds_cq *send_cq;
         struct gds_cq *recv_cq;
         struct ibv_context *dev_context;
-        gds_driver_type_t dtype;
 } gds_qp_t;
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
@@ -161,11 +152,9 @@ enum {
  */
 
 typedef struct gds_send_request {
-        gds_driver_type_t dtype;
-        uint8_t pad0[4];
         uint8_t reserved0[32];
         uint8_t reserved1[56 * GDS_SEND_INFO_MAX_OPS];
-        uint8_t pad1[24];
+        uint8_t pad0[32];
 } gds_send_request_t;
 static_assert(sizeof(gds_send_request_t) % 64 == 0, "gds_send_request_t must be 64-byte aligned.");
 
@@ -179,11 +168,9 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
  */
 
 typedef struct gds_wait_request {
-        gds_driver_type_t dtype;
-        uint8_t pad0[4];
         uint8_t reserved0[40];
         uint8_t reserved1[56 * GDS_WAIT_INFO_MAX_OPS];
-        uint8_t pad1[16];
+        uint8_t pad0[24];
 } gds_wait_request_t;
 static_assert(sizeof(gds_wait_request_t) % 64 == 0, "gds_wait_request_t must be 64-byte aligned.");
 

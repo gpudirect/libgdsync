@@ -231,22 +231,6 @@ void gds_enable_barrier_for_inlcpy(CUstreamBatchMemOpParams *param);
 
 //-----------------------------------------------------------------------------
 
-/* \brief: Get the underlying driver associated with the ibdev.
- *
- */
-static inline gds_driver_type gds_get_driver_type(struct ibv_device *ibdev)
-{
-        const char *dev_name = ibv_get_device_name(ibdev);
-
-        // Heuristically guess the driver by the device name.
-        // Until we find a better way to do so...
-        if (strstr(dev_name, "mlx5") != NULL)
-                return GDS_DRIVER_TYPE_MLX5_EXP;
-        return GDS_DRIVER_TYPE_UNSUPPORTED;
-}
-
-//-----------------------------------------------------------------------------
-
 /*
  * Local variables:
  *  c-indent-level: 8

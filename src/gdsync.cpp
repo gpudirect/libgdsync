@@ -1245,7 +1245,6 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
         gds_qp_t *gqp = NULL;
         gds_peer *peer = NULL;
         gds_peer_attr *peer_attr = NULL;
-        gds_driver_type dtype;
         int old_errno = errno;
 
         gds_dbg("pd=%p context=%p gpu_id=%d flags=%08x current errno=%d\n", pd, context, gpu_id, flags, errno);

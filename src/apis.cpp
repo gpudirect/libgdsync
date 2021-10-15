@@ -242,7 +242,7 @@ int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flag
 int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val)
 {
         int ret = gds_transport_init();
-        if (!ret) {
+        if (ret) {
                 gds_err("error in gds_transport_init\n");
                 goto out;
         }
@@ -467,7 +467,7 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
         size_t i;
 
         ret = gds_transport_init();
-        if (!ret) {
+        if (ret) {
                 gds_err("error in gds_transport_init\n");
                 goto out;
         }
@@ -510,7 +510,7 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         gds_op_list_t params;
 
         ret = gds_transport_init();
-        if (!ret) {
+        if (ret) {
                 gds_err("error in gds_transport_init\n");
                 goto out;
         }
@@ -618,7 +618,7 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
         int retcode = 0;
 
         ret = gds_transport_init();
-        if (!ret) {
+        if (ret) {
                 gds_err("error in gds_transport_init\n");
                 goto out;
         }

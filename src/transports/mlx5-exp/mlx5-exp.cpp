@@ -573,8 +573,6 @@ gds_mlx5_exp_cq_t *gds_mlx5_exp_create_cq(
             return NULL;
         }
 
-        gmexpcq->gcq.dtype = GDS_DRIVER_TYPE_MLX5_EXP;
-
         return gmexpcq;
 }
 
@@ -588,8 +586,6 @@ int gds_mlx5_exp_destroy_cq(gds_mlx5_exp_cq_t *gmexpcq)
         if (!gmexpcq) 
                 return retcode;
         
-        assert(gmexpcq->gcq.dtype == GDS_DRIVER_TYPE_MLX5_EXP);
-
         if (gmexpcq->gcq.cq) {
                 ret = ibv_destroy_cq(gmexpcq->gcq.cq);
                 if (ret) {
@@ -617,8 +613,6 @@ int gds_mlx5_exp_destroy_qp(gds_qp_t *gqp)
                 return retcode;
 
         gds_mlx5_exp_qp_t *gmexpqp = to_gds_mexp_qp(gqp);
-
-        assert(gmexpqp->gqp.dtype == GDS_DRIVER_TYPE_MLX5_EXP);
 
         if (gmexpqp->gqp.qp) {
                 ret = ibv_destroy_qp(gmexpqp->gqp.qp);
@@ -683,7 +677,6 @@ int gds_mlx5_exp_create_qp(
                 gds_err("cannot allocate memory\n");
                 goto err;
         }
-        gmexpqp->gqp.dtype = GDS_DRIVER_TYPE_MLX5_EXP;
 
         gmexpqp->gqp.dev_context = context;
 
