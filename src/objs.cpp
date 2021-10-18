@@ -39,7 +39,6 @@
 using namespace std;
 
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"
@@ -71,7 +70,7 @@ gds_buf *gds_peer::buf_alloc_cq(size_t length, uint32_t dir, uint32_t alignment,
 {
         gds_buf *buf = NULL;
         switch (dir) {
-        case (IBV_EXP_PEER_DIRECTION_FROM_HCA|IBV_EXP_PEER_DIRECTION_TO_PEER|IBV_EXP_PEER_DIRECTION_TO_CPU):
+        case (GDS_PEER_DIRECTION_FROM_HCA|GDS_PEER_DIRECTION_TO_PEER|GDS_PEER_DIRECTION_TO_CPU):
                 // CQ buf
                 if (GDS_ALLOC_CQ_ON_GPU == (flags & GDS_ALLOC_CQ_MASK)) {
                         gds_dbg("allocating CQ on GPU mem\n");
@@ -80,14 +79,14 @@ gds_buf *gds_peer::buf_alloc_cq(size_t length, uint32_t dir, uint32_t alignment,
                         gds_dbg("allocating CQ on Host mem\n");
                 }
                 break;
-        case (IBV_EXP_PEER_DIRECTION_FROM_PEER|IBV_EXP_PEER_DIRECTION_TO_CPU):
+        case (GDS_PEER_DIRECTION_FROM_PEER|GDS_PEER_DIRECTION_TO_CPU):
                 // CQ peer buf, helper buffer
                 // on SYSMEM for the near future
                 // GPU does a store to the 'busy' field as part of the peek_cq task
                 // CPU polls on that field
                 gds_dbg("allocating CQ peer buf on Host mem\n");
                 break;
-        case (IBV_EXP_PEER_DIRECTION_FROM_PEER|IBV_EXP_PEER_DIRECTION_TO_HCA):
+        case (GDS_PEER_DIRECTION_FROM_PEER|GDS_PEER_DIRECTION_TO_HCA):
                 gds_dbg("allocating CQ dbrec on Host mem\n");
                 break;
         default:
@@ -101,7 +100,7 @@ gds_buf *gds_peer::buf_alloc_wq(size_t length, uint32_t dir, uint32_t alignment,
 {
         gds_buf *buf = NULL;
         switch (dir) {
-        case IBV_EXP_PEER_DIRECTION_FROM_PEER|IBV_EXP_PEER_DIRECTION_TO_HCA:
+        case GDS_PEER_DIRECTION_FROM_PEER|GDS_PEER_DIRECTION_TO_HCA:
                 // dbrec
                 if (GDS_ALLOC_DBREC_ON_GPU == (flags & GDS_ALLOC_DBREC_MASK)) {
                         gds_dbg("allocating DBREC on GPU mem\n");
