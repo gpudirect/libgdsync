@@ -201,7 +201,7 @@ if test "x$have_exp_verbs" != "x" && test "x$have_peer_ops" != "x"; then
     AC_DEFINE([HAVE_EXP_VERBS], [1], [Define if exp-verbs exists.])
     enable_exp_verbs=1
 else
-    AC_MSG_WARN([This version of libgdsync cannot be used with out exp-verbs.])
+    AC_MSG_WARN([This version of libgdsync cannot be used without exp-verbs.])
 fi
 AM_CONDITIONAL([COMPILE_EXP_VERBS], [test "x$enable_exp_verbs" != "x"])
 
