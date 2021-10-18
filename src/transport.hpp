@@ -29,6 +29,7 @@
 
 #include <config.h>
 #include <assert.h>
+#include <errno.h>
 #include <gdsync.h>
 #include <gdsync/mlx5.h>
 
@@ -77,7 +78,7 @@ static inline int gds_transport_init()
                 }
                 assert(t);
                 #else
-                status = ENOTSUPP;
+                status = ENOTSUP;
                 goto out;
                 #endif
                 gds_main_transport = t;

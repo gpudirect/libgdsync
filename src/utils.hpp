@@ -31,6 +31,7 @@
 #warning "__STDC_FORMAT_MACROS should be defined to pull definition of PRIx64, etc"
 #endif
 #include <inttypes.h> // to pull PRIx64
+#include <stdio.h>
 
 // internal assert function
 
