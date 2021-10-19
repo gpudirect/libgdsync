@@ -886,7 +886,7 @@ static void usage(const char *argv0)
 	printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
 	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
 	printf("  -T, --time-gds-ops        evaluate time needed to execute gds operations using cuda events\n");
-	printf("  -k, --qp-kind             select IB transport kind used by GDS QPs. (-K 1) for UD, (-K 2) for RC\n");
+	printf("  -k, --qp-kind             select IB transport kind used by GDS QPs. (-k 1) for UD, (-k 2) for RC\n");
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
 	printf("  -E, --gpu-mem             allocate GPU intead of CPU memory buffers\n");
 	printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
