@@ -62,7 +62,7 @@ extern gds_transport_t *gds_main_transport;
 #if HAVE_EXP_VERBS
 int gds_transport_mlx5_exp_init(gds_transport_t **transport);
 #else
-#warning "This library requires exp-verbs."
+int gds_transport_mlx5_dv_init(gds_transport_t **transport);
 #endif
 
 static inline int gds_transport_init()
@@ -72,15 +72,14 @@ static inline int gds_transport_init()
                 gds_transport_t *t = NULL;
                 #if HAVE_EXP_VERBS
                 status = gds_transport_mlx5_exp_init(&t);
+                #else
+                status = gds_transport_mlx5_dv_init(&t);
+                #endif
                 if (status) {
-                        gds_err("error in gds_transport_mlx5_exp_init\n");
+                        gds_err("error in gds_transport_init\n");
                         goto out;
                 }
                 assert(t);
-                #else
-                status = ENOTSUP;
-                goto out;
-                #endif
                 gds_main_transport = t;
         }
 out:

@@ -242,6 +242,7 @@ struct gds_peer {
         unsigned max_batch_size;
         gds_peer_attr attr;
         task_queue *tq;
+        void *opaque;
 
         enum obj_type { NONE, CQ, WQ, N_IBV_OBJS } alloc_type;
         // This field works as a ugly run-time parameters passing
@@ -259,7 +260,7 @@ struct gds_peer {
         // unregister all kinds of memory
         void unregister(gds_range *range);
 
-        gds_buf *alloc(size_t length, uint32_t alignment);
+        gds_buf *alloc(size_t length, uint32_t alignment, gds_memory_type_t mem_type);
         gds_buf *buf_alloc_cq(size_t length, uint32_t dir, uint32_t alignment, int flags);
         gds_buf *buf_alloc_wq(size_t length, uint32_t dir, uint32_t alignment, int flags);
         gds_buf *buf_alloc(obj_type type, size_t length, uint32_t dir, uint32_t alignment, int flags);

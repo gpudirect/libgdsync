@@ -32,6 +32,27 @@
 #endif
 #include <inttypes.h> // to pull PRIx64
 #include <stdio.h>
+#include <stddef.h>
+#include <math.h>
+
+#ifndef typeof
+#define typeof __typeof__
+#endif
+
+#ifndef container_of
+#define container_of(ptr, type, member) ({                      \
+        void *__mptr = (void *)(ptr);                           \
+        ((type *)((uintptr_t)__mptr - offsetof(type, member))); })
+
+#endif
+
+#ifndef MIN
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+#endif
+
+#ifndef MAX
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#endif
 
 // internal assert function
 
@@ -76,6 +97,23 @@ static inline T gds_atomic_get(T *ptr)
 }
 
 #define ROUND_UP(V,SIZE) (((V)+(SIZE)-1)/(SIZE)*(SIZE))
+
+#define GDS_ROUND_UP_POW2(_n) \
+        ({ \
+                 typeof(_n) pow2; \
+                 GDS_ASSERT((_n) >= 1); \
+                 for (pow2 = 1; pow2 < (_n); pow2 <<= 1); \
+                 pow2; \
+        })
+
+#define GDS_ROUND_UP_POW2_OR_0(_n) \
+        ( ((_n) == 0) ? 0 : GDS_ROUND_UP_POW2(_n) )
+
+#define GDS_ILOG2(_n)   \
+        ((typeof(_n))ceil(log2((double)(_n))))
+
+#define GDS_ILOG2_OR0(_n)   \
+        ( ((_n) == 0) ? 0 : GDS_ILOG2(_n) )
 
 //-----------------------------------------------------------------------------
 
@@ -177,7 +215,11 @@ static inline uint32_t gds_qword_hi(uint64_t v) {
 typedef enum gds_alloc_cq_flags {
         GDS_ALLOC_CQ_DEFAULT = 0, // default on Host memory
         GDS_ALLOC_CQ_ON_GPU  = 1<<0,
-        GDS_ALLOC_CQ_MASK    = 1<<0
+        GDS_ALLOC_CQ_MASK    = 1<<0,
+
+        GDS_ALLOC_CQ_DBREC_DEFAULT = 0x0<<2, // default on Host memory
+        GDS_ALLOC_CQ_DBREC_ON_GPU  = 0x1<<2,
+        GDS_ALLOC_CQ_DBREC_MASK    = 0x1<<2        
 } gds_alloc_cq_flags_t;
 
 typedef enum gds_alloc_qp_flags {
@@ -185,9 +227,9 @@ typedef enum gds_alloc_qp_flags {
         GDS_ALLOC_WQ_ON_GPU     = 1,
         GDS_ALLOC_WQ_MASK       = 1<<0,
 
-        GDS_ALLOC_DBREC_DEFAULT = 0, // default on Host memory
-        GDS_ALLOC_DBREC_ON_GPU  = 1<<4,
-        GDS_ALLOC_DBREC_MASK    = 1<<4        
+        GDS_ALLOC_WQ_DBREC_DEFAULT = 0x0<<2, // default on Host memory
+        GDS_ALLOC_WQ_DBREC_ON_GPU  = 0x1<<2,
+        GDS_ALLOC_WQ_DBREC_MASK    = 0x1<<2        
 } gds_alloc_qp_flags_t;
 
 #include <vector>
