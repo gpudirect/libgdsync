@@ -51,6 +51,10 @@
 
 //-----------------------------------------------------------------------------
 
+/**
+ * Create a CQ using DirectVerbs.
+ * @params pd parent_domain with GPU memory allocation support.
+ */
 static int gds_mlx5_dv_create_cq(
         struct ibv_context *context, int cqe,
         void *cq_context, struct ibv_comp_channel *channel,
@@ -305,6 +309,188 @@ static void gds_mlx5_dv_destroy_cq(gds_mlx5_dv_cq_t *mcq)
 
 //-----------------------------------------------------------------------------
 
+static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
+                        size_t alignment, uint64_t resource_type)
+{
+        assert(pd_context);
+
+        gds_peer_attr *peer_attr = (gds_peer_attr *)pd_context;
+        gds_peer *peer = peer_from_id(peer_attr->peer_id);
+        uint32_t dir = 0;
+        uint64_t range_id;
+        gds_buf *buf = NULL;
+        void *ptr = NULL;
+
+        gds_dbg("pd_mem_alloc: pd=%p, pd_context=%p, size=%zu, alignment=%zu, resource_type=0x%lx\n",
+                pd, pd_context, size, alignment, resource_type);
+
+        // Prevent incorrect setting of alloc type
+        assert(!((resource_type == MLX5DV_RES_TYPE_QP || resource_type == MLX5DV_RES_TYPE_SRQ) && peer->alloc_type != gds_peer::WQ));
+        assert(!(resource_type == MLX5DV_RES_TYPE_CQ && peer->alloc_type != gds_peer::CQ));
+        assert(!(resource_type == MLX5DV_RES_TYPE_DBR && peer->alloc_type != gds_peer::WQ && peer->alloc_type != gds_peer::CQ));
+
+        if (peer->alloc_type == gds_peer::WQ)
+                dir = GDS_PEER_DIRECTION_FROM_PEER | GDS_PEER_DIRECTION_TO_HCA;
+        else if (peer->alloc_type == gds_peer::CQ)
+                dir = GDS_PEER_DIRECTION_FROM_HCA | GDS_PEER_DIRECTION_TO_PEER | GDS_PEER_DIRECTION_TO_CPU;
+        else {
+                gds_dbg("encountered unsupported alloc_type\n");
+                return IBV_ALLOCATOR_USE_DEFAULT;
+        }
+
+        if (resource_type == MLX5DV_RES_TYPE_QP || resource_type == MLX5DV_RES_TYPE_SRQ || resource_type == MLX5DV_RES_TYPE_DBR || resource_type == MLX5DV_RES_TYPE_CQ) {
+                buf = peer->buf_alloc(peer->alloc_type, size, dir, (uint32_t)alignment, peer->alloc_flags);
+        }
+        else
+                gds_dbg("request allocation with unsupported resource_type\n");
+
+        if (!buf) {
+                gds_dbg("alloc on host\n");
+                return IBV_ALLOCATOR_USE_DEFAULT;
+        }
+        else {
+                gds_dbg("alloc on GPU\n");
+                ptr = buf->addr;
+        }
+
+        if ((range_id = peer_attr->register_va(ptr, size, peer_attr->peer_id, buf)) == 0) {
+                gds_err("error in register_va\n");
+                peer->free(buf);
+                return IBV_ALLOCATOR_USE_DEFAULT;
+        }
+
+        // peer->opaque should be set
+        assert(peer->opaque);
+
+        if (peer->alloc_type == gds_peer::WQ) {
+                gds_mlx5_dv_qp_peer_t *mqp_peer = (gds_mlx5_dv_qp_peer_t *)peer->opaque;
+                if (resource_type == MLX5DV_RES_TYPE_QP || resource_type == MLX5DV_RES_TYPE_SRQ) {
+                        // BUG: Will be overrided if use with IBV_QPT_RAW_PACKET or MLX5_QP_FLAGS_USE_UNDERLAY
+                        mqp_peer->wq.va_id = range_id;
+                        mqp_peer->wq.size = size;
+                        mqp_peer->wq.gbuf = buf;
+                }
+                else if (resource_type == MLX5DV_RES_TYPE_DBR) {
+                        mqp_peer->dbr.va_id = range_id;
+                        mqp_peer->dbr.size = size;
+                        mqp_peer->dbr.gbuf = buf;
+                }
+                else
+                        gds_err("Unsupported resource_type\n");
+        }
+        else if (peer->alloc_type == gds_peer::CQ) {
+                gds_mlx5_dv_cq_peer_t *mcq_peer = (gds_mlx5_dv_cq_peer_t *)peer->opaque;
+                if (resource_type == MLX5DV_RES_TYPE_CQ) {
+                        mcq_peer->buf.va_id = range_id;
+                        mcq_peer->buf.size = size;
+                        mcq_peer->buf.gbuf = buf;
+                }
+                else if (resource_type == MLX5DV_RES_TYPE_DBR) {
+                        mcq_peer->dbr.va_id = range_id;
+                        mcq_peer->dbr.size = size;
+                        mcq_peer->dbr.gbuf = buf;
+                }
+                else
+                        gds_err("Unsupported resource_type\n");
+        }
+        else
+                gds_err("Unsupported peer->alloc_type\n");
+
+        return ptr;
+}
+
+//-----------------------------------------------------------------------------
+
+static void pd_mem_free(struct ibv_pd *pd, void *pd_context, void *ptr,
+                        uint64_t resource_type)
+{
+        gds_dbg("pd_mem_free: pd=%p, pd_context=%p, ptr=%p, resource_type=0x%lx\n",
+                pd, pd_context, ptr, resource_type);
+
+        assert(pd_context);
+
+        gds_peer_attr *peer_attr = (gds_peer_attr *)pd_context;
+        gds_peer *peer = peer_from_id(peer_attr->peer_id);
+
+        // Prevent incorrect setting of alloc type
+        assert(!(resource_type == MLX5DV_RES_TYPE_QP && peer->alloc_type != gds_peer::WQ));
+        assert(!(resource_type == MLX5DV_RES_TYPE_CQ && peer->alloc_type != gds_peer::CQ));
+        assert(!(resource_type == MLX5DV_RES_TYPE_DBR && peer->alloc_type != gds_peer::WQ && peer->alloc_type != gds_peer::CQ));
+
+        assert(peer->opaque);
+
+        if (peer->alloc_type == gds_peer::WQ) {
+                gds_mlx5_dv_qp_peer_t *mqp_peer = (gds_mlx5_dv_qp_peer_t *)peer->opaque;
+                if (resource_type == MLX5DV_RES_TYPE_QP && mqp_peer->wq.gbuf) {
+                        if (mqp_peer->wq.va_id) {
+                                peer_attr->unregister_va(mqp_peer->wq.va_id, peer_attr->peer_id);
+                                mqp_peer->wq.va_id = 0;
+                        }
+                        peer->free(mqp_peer->wq.gbuf);
+                        mqp_peer->wq.gbuf = NULL;
+                }
+                else if (resource_type == MLX5DV_RES_TYPE_DBR && mqp_peer->dbr.gbuf) {
+                        if (mqp_peer->dbr.va_id) {
+                                peer_attr->unregister_va(mqp_peer->dbr.va_id, peer_attr->peer_id);
+                                mqp_peer->dbr.va_id = 0;
+                        }
+                        peer->free(mqp_peer->dbr.gbuf);
+                        mqp_peer->dbr.gbuf = NULL;
+                }
+        }
+        else if (peer->alloc_type == gds_peer::CQ) {
+                gds_mlx5_dv_cq_peer_t *mcq_peer = (gds_mlx5_dv_cq_peer_t *)peer->opaque;
+                if (resource_type == MLX5DV_RES_TYPE_CQ && mcq_peer->buf.gbuf) {
+                        if (mcq_peer->buf.va_id) {
+                                peer_attr->unregister_va(mcq_peer->buf.va_id, peer_attr->peer_id);
+                                mcq_peer->buf.va_id = 0;
+                        }
+                        peer->free(mcq_peer->buf.gbuf);
+                        mcq_peer->buf.gbuf = NULL;
+                }
+                else if (resource_type == MLX5DV_RES_TYPE_DBR && mcq_peer->dbr.gbuf) {
+                        if (mcq_peer->dbr.va_id) {
+                                peer_attr->unregister_va(mcq_peer->dbr.va_id, peer_attr->peer_id);
+                                mcq_peer->dbr.va_id = 0;
+                        }
+                        peer->free(mcq_peer->dbr.gbuf);
+                        mcq_peer->dbr.gbuf = NULL;
+                }
+        }
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_mlx5_dv_alloc_parent_domain(struct ibv_pd *p_pd, struct ibv_context *ibctx, gds_peer_attr *peer_attr, struct ibv_pd **out_pd)
+{
+        int ret = 0;
+
+        struct ibv_parent_domain_init_attr pd_init_attr;
+        struct ibv_pd *pd = NULL;
+        gds_peer *peer = peer_from_id(peer_attr->peer_id);
+
+        memset(&pd_init_attr, 0, sizeof(ibv_parent_domain_init_attr));
+        pd_init_attr.pd = p_pd;
+        pd_init_attr.comp_mask = IBV_PARENT_DOMAIN_INIT_ATTR_ALLOCATORS | IBV_PARENT_DOMAIN_INIT_ATTR_PD_CONTEXT;
+        pd_init_attr.alloc = pd_mem_alloc;
+        pd_init_attr.free = pd_mem_free;
+        pd_init_attr.pd_context = peer_attr;
+
+        pd = ibv_alloc_parent_domain(ibctx, &pd_init_attr);
+        if (!pd) {
+                gds_err("error in ibv_alloc_parent_domain\n");
+                ret = EINVAL;
+                goto out;
+        }
+
+        *out_pd = pd;
+
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_mlx5_dv_create_qp(
         struct ibv_pd *pd, struct ibv_context *context, gds_qp_init_attr_t *qp_attr, 
         gds_peer *peer, gds_peer_attr *peer_attr, int flags, gds_qp_t **gqp
@@ -314,6 +500,8 @@ int gds_mlx5_dv_create_qp(
 
         gds_mlx5_dv_qp_t *mdqp = NULL;
         struct ibv_qp *ibqp = NULL;
+
+        struct ibv_pd *parent_domain = NULL;
 
         gds_mlx5_dv_cq_t *tx_mcq = NULL;
         gds_mlx5_dv_cq_t *rx_mcq = NULL;
@@ -417,8 +605,14 @@ int gds_mlx5_dv_create_qp(
                 goto out;
         }
 
+        status = gds_mlx5_dv_alloc_parent_domain(pd, context, peer_attr, &parent_domain);
+        if (status) {
+                gds_err("Error in gds_mlx5_dv_alloc_parent_domain\n");
+                goto out;
+        }
+
         status = gds_mlx5_dv_create_cq(
-                context, qp_attr->cap.max_send_wr, NULL, NULL, 0, pd, peer_attr, 
+                context, qp_attr->cap.max_send_wr, NULL, NULL, 0, parent_domain, peer_attr, 
                 (gds_alloc_cq_flags_t)((flags & GDS_CREATE_QP_TX_CQ_ON_GPU) ? (GDS_ALLOC_CQ_ON_GPU | GDS_ALLOC_CQ_DBREC_ON_GPU) : (GDS_ALLOC_CQ_DEFAULT | GDS_ALLOC_CQ_DBREC_DEFAULT)),
                 &tx_mcq
         );
@@ -428,7 +622,7 @@ int gds_mlx5_dv_create_qp(
         }
 
         status = gds_mlx5_dv_create_cq(
-                context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, pd, peer_attr, 
+                context, qp_attr->cap.max_recv_wr, NULL, NULL, 0, parent_domain, peer_attr, 
                 (gds_alloc_cq_flags_t)((flags & GDS_CREATE_QP_RX_CQ_ON_GPU) ? (GDS_ALLOC_CQ_ON_GPU | GDS_ALLOC_CQ_DBREC_ON_GPU) : (GDS_ALLOC_CQ_DEFAULT | GDS_ALLOC_CQ_DBREC_DEFAULT)),
                 &rx_mcq
         );
@@ -519,9 +713,9 @@ int gds_mlx5_dv_create_qp(
                 goto out;
         }
 
-        wq_umem = mlx5dv_devx_umem_reg(context, wq_buf->addr, wq_buf_size, 0);
+        wq_umem = mlx5dv_devx_umem_reg(context, wq_buf->addr, wq_buf_size, IBV_ACCESS_LOCAL_WRITE);
         if (!wq_umem) {
-                gds_err("Error in mlx5dv_devx_umem_regfor WQ\n");
+                gds_err("Error in mlx5dv_devx_umem_reg for WQ\n");
                 status = ENOMEM;
                 goto out;
         }
@@ -544,7 +738,7 @@ int gds_mlx5_dv_create_qp(
                 goto out;
         }
 
-        dbr_umem = mlx5dv_devx_umem_reg(context, dbr_buf->addr, dbr_buf_size, 0);
+        dbr_umem = mlx5dv_devx_umem_reg(context, dbr_buf->addr, dbr_buf_size, IBV_ACCESS_LOCAL_WRITE);
         if (!dbr_umem) {
                 gds_err("Error in mlx5dv_devx_umem_reg for DBR\n");
                 status = ENOMEM;
@@ -647,6 +841,8 @@ int gds_mlx5_dv_create_qp(
         mdqp->gqp.send_cq = &tx_mcq->gcq;
         mdqp->gqp.recv_cq = &rx_mcq->gcq;
 
+        mdqp->parent_domain = parent_domain;
+
         ibqp->context = context;
         ibqp->pd = pd;
         ibqp->send_cq = tx_mcq->gcq.cq;
@@ -702,6 +898,9 @@ out:
 
                 if (tx_mcq)
                         gds_mlx5_dv_destroy_cq(tx_mcq);
+
+                if (parent_domain)
+                        ibv_dealloc_pd(parent_domain);
 
                 if (ibqp)
                         free(ibqp);
@@ -1072,6 +1271,9 @@ int gds_mlx5_dv_destroy_qp(gds_qp_t *gqp)
 
         if (mdqp->bf_uar)
                 mlx5dv_devx_free_uar(mdqp->bf_uar);
+
+        if (mdqp->parent_domain)
+                ibv_dealloc_pd(mdqp->parent_domain);
 
         if (mqp_peer)
                 free(mqp_peer);

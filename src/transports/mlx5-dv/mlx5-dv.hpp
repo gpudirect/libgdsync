@@ -182,6 +182,8 @@ typedef struct gds_mlx5_dv_qp {
         struct ibv_port_attr            port_attr;
 
         gds_peer_attr                  *peer_attr;
+
+        struct ibv_pd                  *parent_domain;
 } gds_mlx5_dv_qp_t;
 
 //-----------------------------------------------------------------------------
