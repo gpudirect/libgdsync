@@ -989,15 +989,23 @@ out:
 
 //-----------------------------------------------------------------------------
 
-void gds_mlx5_dv_destroy_qp(gds_mlx5_dv_qp_t *mdqp)
+int gds_mlx5_dv_destroy_qp(gds_qp_t *gqp)
 {
         int status = 0;
 
-        gds_peer *peer = NULL;
-        gds_mlx5_dv_qp_peer_t *mqp_peer = mdqp->qp_peer;
+        gds_mlx5_dv_qp_t *mdqp;
 
-        assert(mdqp);
+        gds_peer *peer = NULL;
+        gds_mlx5_dv_qp_peer_t *mqp_peer;
+
+        if (!gqp)
+                return status;
+
+        mdqp = to_gds_mdv_qp(gqp);
+
         assert(mdqp->devx_qp);
+
+        mqp_peer = mdqp->qp_peer;
 
         if (mqp_peer) {
                 gds_peer_attr *peer_attr = mqp_peer->peer_attr;
@@ -1081,8 +1089,8 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         }
 
         t->create_qp = gds_mlx5_dv_create_qp;
+        t->destroy_qp = gds_mlx5_dv_destroy_qp;
         #if 0
-        t->destroy_qp = gds_mlx5_exp_destroy_qp;
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
         t->init_send_info = gds_mlx5_exp_init_send_info;
