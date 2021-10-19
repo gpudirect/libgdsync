@@ -761,6 +761,12 @@ err:
         return ret;
 }
 
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_exp_modify_qp(gds_qp_t *gqp, struct ibv_qp_attr *attr, int attr_mask)
+{
+        return ibv_modify_qp(gqp->qp, attr, attr_mask);
+}
 
 //-----------------------------------------------------------------------------
 
@@ -1231,6 +1237,7 @@ int gds_transport_mlx5_exp_init(gds_transport_t **transport)
 
         t->create_qp = gds_mlx5_exp_create_qp;
         t->destroy_qp = gds_mlx5_exp_destroy_qp;
+        t->modify_qp = gds_mlx5_exp_modify_qp;
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
         t->init_send_info = gds_mlx5_exp_init_send_info;

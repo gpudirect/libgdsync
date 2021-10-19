@@ -304,7 +304,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 			.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE
 		};
 
-		if (ibv_modify_qp(ctx->qp, &attr,
+		if (gds_modify_qp(ctx->gds_qp, &attr,
 				  IBV_QP_STATE              |
 				  IBV_QP_PKEY_INDEX         |
 				  IBV_QP_PORT               |
@@ -1245,7 +1245,7 @@ int main(int argc, char *argv[])
                         .qp_state		= IBV_QPS_RTR
                 };
 
-                if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
+                if (gds_modify_qp(ctx->gds_qp, &attr, IBV_QP_STATE)) {
                         gpu_err("Failed to modify QP to RTR\n");
                         return 1;
                 }
@@ -1255,7 +1255,7 @@ int main(int argc, char *argv[])
                 attr.qp_state	    = IBV_QPS_RTS;
                 attr.sq_psn	    = my_dest.psn;
 
-                if (ibv_modify_qp(ctx->qp, &attr,
+                if (gds_modify_qp(ctx->gds_qp, &attr,
                                   IBV_QP_STATE              |
                                   IBV_QP_SQ_PSN)) {
                         gpu_err("Failed to modify QP to RTS\n");
@@ -1300,7 +1300,7 @@ int main(int argc, char *argv[])
 			.ah_attr.port_num       = ib_port
                 };
 
-                if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU
+                if (gds_modify_qp(ctx->gds_qp, &attr, (IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU
 						   | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN
 						   | IBV_QP_MIN_RNR_TIMER | IBV_QP_MAX_DEST_RD_ATOMIC))) {
                         gpu_err("Failed to modify QP to RTR\n");
@@ -1315,7 +1315,7 @@ int main(int argc, char *argv[])
 		attr.rnr_retry      = 7;
 		attr.max_rd_atomic  = 1;
 
-		if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT
+		if (gds_modify_qp(ctx->gds_qp, &attr, (IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT
 						     | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY
 						   | IBV_QP_MAX_QP_RD_ATOMIC))) {
                         gpu_err("Failed to modify QP to RTS\n");

@@ -955,12 +955,18 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_mlx5_dv_modify_qp(gds_mlx5_dv_qp_t *mdqp, struct ibv_qp_attr *attr, int attr_mask)
+int gds_mlx5_dv_modify_qp(gds_qp_t *gqp, struct ibv_qp_attr *attr, int attr_mask)
 {
         int status = 0;
 
-        assert(mdqp);
+        gds_mlx5_dv_qp_t *mdqp;
+
+        assert(gqp);
         assert(attr);
+
+        mdqp = to_gds_mdv_qp(gqp);
+
+        assert(mdqp->gqp.qp);
 
         if (!(attr_mask & IBV_QP_STATE)) {
                 gds_err("IBV_QP_STATE is required.\n");
@@ -1090,6 +1096,7 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 
         t->create_qp = gds_mlx5_dv_create_qp;
         t->destroy_qp = gds_mlx5_dv_destroy_qp;
+        t->modify_qp = gds_mlx5_dv_modify_qp;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 

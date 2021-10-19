@@ -138,7 +138,7 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 		.qp_state		= IBV_QPS_RTR
 	};
 
-	if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
+	if (gds_modify_qp(ctx->gds_qp, &attr, IBV_QP_STATE)) {
 		fprintf(stderr, "Failed to modify QP to RTR\n");
 		return 1;
 	}
@@ -146,7 +146,7 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 	attr.qp_state	    = IBV_QPS_RTS;
 	attr.sq_psn	    = my_psn;
 
-	if (ibv_modify_qp(ctx->qp, &attr,
+	if (gds_modify_qp(ctx->gds_qp, &attr,
 			  IBV_QP_STATE              |
 			  IBV_QP_SQ_PSN)) {
 		fprintf(stderr, "Failed to modify QP to RTS\n");
@@ -357,7 +357,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 			.qkey            = 0x11111111
 		};
 
-		if (ibv_modify_qp(ctx->qp, &attr,
+		if (gds_modify_qp(ctx->gds_qp, &attr,
 				  IBV_QP_STATE              |
 				  IBV_QP_PKEY_INDEX         |
 				  IBV_QP_PORT               |

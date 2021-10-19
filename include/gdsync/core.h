@@ -74,7 +74,6 @@ typedef struct gds_qp {
  * Peer QPs require dedicated send and recv CQs, e.g. cannot (easily)
  * use SRQ.
  */
-
 struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                              gds_qp_init_attr_t *qp_init_attr,
                              int gpu_id, int flags);
@@ -84,6 +83,12 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
  * The associated CQs are destroyed as well.
  */
 int gds_destroy_qp(struct gds_qp *qp);
+
+/* \brief: Modify a peer-enabled QP
+ *
+ * Similar to ibv_modify_qp.
+ */
+int gds_modify_qp(gds_qp_t *gqp, struct ibv_qp_attr *attr, int attr_mask);
 
 /* \brief: CPU-synchronous post send for peer QPs
  *

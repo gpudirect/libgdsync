@@ -36,6 +36,7 @@
 typedef struct gds_transport {
         int  (*create_qp)(struct ibv_pd *pd, struct ibv_context *context, gds_qp_init_attr_t *qp_attr, gds_peer *peer, gds_peer_attr *peer_attr, int flags, gds_qp_t **gqp);
         int  (*destroy_qp)(gds_qp_t *gqp);
+        int  (*modify_qp)(gds_qp_t *gqp, struct ibv_qp_attr *attr, int attr_mask);
         int  (*rollback_qp)(gds_qp_t *gqp, gds_send_request_t *request);
 
         void (*init_send_info)(gds_send_request_t *request);

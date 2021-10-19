@@ -1303,6 +1303,20 @@ int gds_destroy_qp(struct gds_qp *gqp)
 
 //-----------------------------------------------------------------------------
 
+int gds_modify_qp(gds_qp_t *gqp, struct ibv_qp_attr *attr, int attr_mask)
+{
+        int ret = 0;
+        
+        if (!gqp || !attr) 
+                return EINVAL;
+
+        ret = gds_main_transport->modify_qp(gqp, attr, attr_mask);
+
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_query_param(gds_param_t param, int *value)
 {
         int ret = 0;
