@@ -334,11 +334,6 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
                 .qp_type = IBV_QPT_UD,
         };
 	
-	//why?
-        if (my_rank == 1) {
-                printf("sleeping 2s\n");
-                sleep(2);
-        }
         ctx->gds_qp = gds_create_qp(ctx->pd, ctx->context, &attr, gpu_id, gds_flags);
 
         if (!ctx->gds_qp) {

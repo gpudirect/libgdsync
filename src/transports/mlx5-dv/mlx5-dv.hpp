@@ -60,7 +60,8 @@
 
 enum {
         GDS_MLX5_DV_QPC_ST_RC   = 0x0,
-        GDS_MLX5_DV_QPC_ST_DCI  = 0x5
+        GDS_MLX5_DV_QPC_ST_UC   = 0x1,
+        GDS_MLX5_DV_QPC_ST_UD   = 0x2
 };
 
 enum {
@@ -144,8 +145,7 @@ typedef struct gds_mlx5_dv_qp_peer {
 typedef enum gds_mlx5_dv_qp_type {
         GDS_MLX5_DV_QP_TYPE_UNKNOWN = 0,
         GDS_MLX5_DV_QP_TYPE_RC,
-        GDS_MLX5_DV_QP_TYPE_DCT,
-        GDS_MLX5_DV_QP_TYPE_DCI
+        GDS_MLX5_DV_QP_TYPE_UD
 } gds_mlx5_dv_qp_type_t;
 
 typedef struct gds_mlx5_dv_qp {
@@ -154,8 +154,6 @@ typedef struct gds_mlx5_dv_qp {
 
         struct mlx5dv_devx_obj         *devx_qp;
 
-        bool                            is_internal_srq;
-        struct mlx5dv_srq               dvsrq;
         gds_mlx5_dv_qp_peer_t          *qp_peer;
 
         uint8_t                         sl;

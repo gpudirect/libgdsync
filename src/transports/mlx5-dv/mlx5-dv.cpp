@@ -540,12 +540,11 @@ int gds_mlx5_dv_create_qp(
         void *qpc;
 
         gds_mlx5_dv_qp_peer_t *mqp_peer = NULL;
-        struct ibv_srq *srq = NULL;
-        bool is_internal_srq = false;
 
         struct mlx5dv_devx_obj *devx_obj = NULL;
 
         uint32_t qpn;
+        uint32_t st_val;
 
         gds_mlx5_dv_qp_type_t gmlx_qpt = GDS_MLX5_DV_QP_TYPE_UNKNOWN;
 
@@ -555,14 +554,14 @@ int gds_mlx5_dv_create_qp(
         assert(peer);
         assert(peer_attr);
         
-        srq = qp_attr->srq;
-
-        if (qp_attr->qp_type == IBV_QPT_RC)
+        if (qp_attr->qp_type == IBV_QPT_RC) {
                 gmlx_qpt = GDS_MLX5_DV_QP_TYPE_RC;
-        #if 0
-        else if (qp_attr->qp_type == IBV_QPT_DRIVER)
-                gmlx_qpt = (qp_attr->dc_init_attr.dc_type == MLX5DV_DCTYPE_DCT) ? GDS_MLX5_QP_TYPE_DCT : GDS_MLX5_QP_TYPE_DCI;
-        #endif
+                st_val = GDS_MLX5_DV_QPC_ST_RC;
+        }
+        else if (qp_attr->qp_type == IBV_QPT_UD) {
+                gmlx_qpt = GDS_MLX5_DV_QP_TYPE_UD;
+                st_val = GDS_MLX5_DV_QPC_ST_UD;
+        }
 
         if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_UNKNOWN) {
                 gds_err("The requested QP type is not supported.\n");
@@ -570,22 +569,9 @@ int gds_mlx5_dv_create_qp(
                 goto out;
         }
 
-        if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_DCT) {
-                gds_err("DCT QP type is not supported.\n");
-                status = EINVAL;
-                goto out;
-        }
-
         if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_RC) {
                 if (qp_attr->cap.max_send_sge != 1 || qp_attr->cap.max_recv_sge != 1) {
                         gds_err("Both cap.max_send_sge and cap.max_recv_sge must be 1.\n");
-                        status = EINVAL;
-                        goto out;
-                }
-        }
-        else if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_DCI) {
-                if (qp_attr->cap.max_send_sge != 1) {
-                        gds_err("cap.max_send_sge must be 1.\n");
                         status = EINVAL;
                         goto out;
                 }
@@ -643,36 +629,6 @@ int gds_mlx5_dv_create_qp(
                 goto out;
 	}
 
-        srq = qp_attr->srq;
-        if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_DCI && !srq) {
-                struct ibv_srq_init_attr srq_init_attr = {0,};
-                srq_init_attr.attr.max_wr = qp_attr->cap.max_recv_wr;
-                srq_init_attr.attr.max_sge = qp_attr->cap.max_recv_sge;
-
-                mqp_peer = (gds_mlx5_dv_qp_peer_t *)calloc(1, sizeof(gds_mlx5_dv_qp_peer_t));
-                if (!mqp_peer) {
-                        gds_err("Cannot allocate memory for mqp_peer.\n");
-                        status = ENOMEM;
-                        goto out;
-                }
-                mqp_peer->peer_attr = peer_attr;
-
-                peer->alloc_type = gds_peer::WQ;
-                peer->alloc_flags = flags;
-                // mqp_peer will be filled if we do allocation on device.
-                // pd_mem_alloc is responsible for the registration.
-                peer->opaque = mqp_peer;
-
-                srq = ibv_create_srq(pd, &srq_init_attr);
-                if (!srq) {
-                        status = errno;
-                        gds_err("Error in ibv_create_srq with errno=%d.\n", errno);
-                        goto out;
-                }
-                qp_attr->srq = srq;
-                is_internal_srq = true;
-        }
-
         log_bf_reg_size = DEVX_GET(query_hca_cap_out, cmd_cap_out, capability.cmd_hca_cap.log_bf_reg_size);
 
         // The size of 1st + 2nd half (as when we use alternating DB)
@@ -701,7 +657,7 @@ int gds_mlx5_dv_create_qp(
         // In GPUVerbs, we use at most 4 16-byte elements.
         wqe_size = MLX5_SEND_WQE_BB;      // 64 bytes
         max_tx = GDS_ROUND_UP_POW2_OR_0(qp_attr->cap.max_send_wr);
-        max_rx = (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_RC) ? GDS_ROUND_UP_POW2_OR_0(qp_attr->cap.max_recv_wr) : 0;
+        max_rx = GDS_ROUND_UP_POW2_OR_0(qp_attr->cap.max_recv_wr);
         wq_buf_size = (max_tx + max_rx) * wqe_size;
 
         // Allocate WQ buffer.
@@ -756,12 +712,6 @@ int gds_mlx5_dv_create_qp(
         dv_obj.pd.in = pd;
         dv_obj.pd.out = &dvpd;
         dv_obj_type = MLX5DV_OBJ_PD;
-        if (srq) {
-                dv_obj.srq.in = srq;
-                dv_obj.srq.out = &mdqp->dvsrq;
-                mdqp->dvsrq.comp_mask = MLX5DV_SRQ_MASK_SRQN;
-                dv_obj_type |= MLX5DV_OBJ_SRQ;
-        }
         status = mlx5dv_init_obj(&dv_obj, dv_obj_type);
         if (status) {
                 gds_err("Error in mlx5dv_init_obj\n");
@@ -772,35 +722,26 @@ int gds_mlx5_dv_create_qp(
         DEVX_SET(create_qp_in, cmd_in, wq_umem_id, wq_umem->umem_id);   // WQ buffer
 
         qpc = DEVX_ADDR_OF(create_qp_in, cmd_in, qpc);
-        DEVX_SET(qpc, qpc, st, (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_RC) ? GDS_MLX5_DV_QPC_ST_RC : GDS_MLX5_DV_QPC_ST_DCI);
+        DEVX_SET(qpc, qpc, st, st_val);
         DEVX_SET(qpc, qpc, pm_state, MLX5_QPC_PM_STATE_MIGRATED);
         DEVX_SET(qpc, qpc, pd, dvpd.pdn);
         DEVX_SET(qpc, qpc, uar_page, uar->page_id);     // BF register
-        if (srq) {
-                if (!(mdqp->dvsrq.comp_mask & MLX5DV_SRQ_MASK_SRQN)) {
-                        status = EIO;
-                        gds_err("mlx5dv_init_obj does not return SRQ number!\n");
-                        goto out;
-                }
-                DEVX_SET(qpc, qpc, rq_type, GDS_MLX5_DV_QPC_RQ_TYPE_SRQ);
-                DEVX_SET(qpc, qpc, srqn_rmpn_xrqn, mdqp->dvsrq.srqn);
-        }
-        else {
-                DEVX_SET(qpc, qpc, rq_type, GDS_MLX5_DV_QPC_RQ_TYPE_REGULAR);
-                DEVX_SET(qpc, qpc, srqn_rmpn_xrqn, 0);
-        }
+        DEVX_SET(qpc, qpc, rq_type, GDS_MLX5_DV_QPC_RQ_TYPE_REGULAR);
+        DEVX_SET(qpc, qpc, srqn_rmpn_xrqn, 0);
         DEVX_SET(qpc, qpc, cqn_snd, tx_mcq->dvcq.cqn);
         DEVX_SET(qpc, qpc, cqn_rcv, rx_mcq->dvcq.cqn);
         DEVX_SET(qpc, qpc, log_sq_size, GDS_ILOG2_OR0(max_tx));
-        DEVX_SET(qpc, qpc, cs_req, 0);  // Disable CS Request
+        if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_RC)
+                DEVX_SET(qpc, qpc, cs_req, 0);  // Disable CS Request
         DEVX_SET(qpc, qpc, cs_res, 0);  // Disable CS Respond
+        if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_UD)
+                DEVX_SET(qpc, qpc, cgs, 0);     // GRH is always scattered to the beginning of the receive buffer.
         DEVX_SET(qpc, qpc, dbr_umem_valid, 0x1); // Enable dbr_umem_id
         DEVX_SET64(qpc, qpc, dbr_addr, 0); // Offset 0 of dbr_umem_id (behavior changed because of dbr_umem_valid)
         DEVX_SET(qpc, qpc, dbr_umem_id, dbr_umem->umem_id); // DBR buffer
         DEVX_SET(qpc, qpc, user_index, 0);
         DEVX_SET(qpc, qpc, page_offset, 0);
-        if (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_RC)
-                DEVX_SET(qpc, qpc, log_rq_size, GDS_ILOG2_OR0(max_rx));
+        DEVX_SET(qpc, qpc, log_rq_size, GDS_ILOG2_OR0(max_rx));
 
         devx_obj = mlx5dv_devx_obj_create(context, cmd_in, sizeof(cmd_in), cmd_out, sizeof(cmd_out));
         if (!devx_obj) {
@@ -814,7 +755,6 @@ int gds_mlx5_dv_create_qp(
         mdqp->devx_qp = devx_obj;
         mdqp->qp_type = gmlx_qpt;
 
-        mdqp->is_internal_srq = is_internal_srq;
         mdqp->qp_peer = mqp_peer;
 
         mdqp->wq_buf = wq_buf;
@@ -847,8 +787,6 @@ int gds_mlx5_dv_create_qp(
         ibqp->pd = pd;
         ibqp->send_cq = tx_mcq->gcq.cq;
         ibqp->recv_cq = rx_mcq->gcq.cq;
-        if (srq)
-                ibqp->srq = srq;
         ibqp->qp_num = qpn;
         ibqp->state = IBV_QPS_RESET;
         ibqp->qp_type = qp_attr->qp_type;
@@ -886,9 +824,6 @@ out:
 
                 if (uar)
                         mlx5dv_devx_free_uar(uar);
-
-                if (is_internal_srq && srq)
-                        ibv_destroy_srq(srq);
 
                 if (mqp_peer)
                         free(mqp_peer);
@@ -1224,9 +1159,6 @@ int gds_mlx5_dv_destroy_qp(gds_qp_t *gqp)
         status = mlx5dv_devx_obj_destroy(mdqp->devx_qp);
         if (status)
                 gds_err("Error in mlx5dv_devx_obj_destroy for QP.\n");
-
-        if (mdqp->is_internal_srq && mdqp->gqp.qp->srq)
-                ibv_destroy_srq(mdqp->gqp.qp->srq);
 
         if (mdqp->gqp.send_cq) {
                 gds_mlx5_dv_destroy_cq(to_gds_mdv_cq(mdqp->gqp.send_cq));
