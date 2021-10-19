@@ -304,7 +304,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev, int size,
 			.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE
 		};
 
-		if (ibv_modify_qp(ctx->qp, &attr,
+		if (gds_modify_qp(ctx->gds_qp, &attr,
 				  IBV_QP_STATE              |
 				  IBV_QP_PKEY_INDEX         |
 				  IBV_QP_PORT               |
@@ -495,7 +495,7 @@ static int pp_wait_cq(struct pingpong_context *ctx, int is_client)
 {
         int ret;
         if (ctx->peersync) {
-                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                ret = gds_stream_wait_cq(gpu_stream, ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
         } else {
                 if (is_client) {
                         do {
@@ -542,23 +542,22 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.opcode     = IBV_WR_SEND,
+		.send_flags = IBV_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
 				 .remote_qpn  = qpn,
 				 .remote_qkey = 0x11111111
 			 }
-		},
-		.comp_mask = 0
+		}
 	};
 #if 0
 	if (IBV_QPT_UD != gds_qpt) {
 		memset(&ewr, 0, sizeof(ewr));
 		ewr.num_sge = 1;
-		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-		ewr.exp_opcode = IBV_EXP_WR_SEND;
+		ewr.send_flags = IBV_SEND_SIGNALED;
+		ewr.opcode = IBV_WR_SEND;
 		ewr.wr_id = PINGPONG_SEND_WRID;
 		ewr.sg_list = &list;
 		ewr.next = NULL;
@@ -580,23 +579,22 @@ static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_s
 		.wr_id	    = PINGPONG_SEND_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
-		.exp_opcode = IBV_EXP_WR_SEND,
-		.exp_send_flags = IBV_EXP_SEND_SIGNALED,
+		.opcode     = IBV_WR_SEND,
+		.send_flags = IBV_SEND_SIGNALED,
 		.wr         = {
 			.ud = {
 				 .ah          = ctx->ah,
 				 .remote_qpn  = qpn,
 				 .remote_qkey = 0x11111111
 			 }
-		},
-		.comp_mask = 0
+		}
 	};
 	
 	if (IBV_QPT_UD != gds_qpt) {
 		memset(&ewr, 0, sizeof(ewr));
 		ewr.num_sge = 1;
-		ewr.exp_send_flags = IBV_EXP_SEND_SIGNALED;
-		ewr.exp_opcode = IBV_EXP_WR_SEND;
+		ewr.send_flags = IBV_SEND_SIGNALED;
+		ewr.opcode = IBV_WR_SEND;
 		ewr.wr_id = PINGPONG_SEND_WRID;
 		ewr.sg_list = &list;
 		ewr.next = NULL;
@@ -676,7 +674,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 wdesc->descs[k].tag = GDS_TAG_SEND;
                                 wdesc->descs[k].send = &wdesc->send_rq;
                                 ++k;
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
+                                ret = gds_prepare_wait_cq(ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
                                 if (ret) {
                                         retcode = -ret;
                                         break;
@@ -685,7 +683,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 wdesc->descs[k].tag = GDS_TAG_WAIT;
                                 wdesc->descs[k].wait = &wdesc->wait_tx_rq;
                                 ++k;
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
+                                ret = gds_prepare_wait_cq(ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
                                 if (ret) {
                                         retcode = -ret;
                                         break;
@@ -715,14 +713,14 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                         retcode = -ret;
                                         break;
                                 }
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->send_cq, 0);
+                                ret = gds_stream_wait_cq(gpu_stream, ctx->gds_qp->send_cq, 0);
                                 if (ret) {
                                         // TODO: rollback gpu send
                                         gpu_err("error %d in gds_stream_wait_cq\n", ret);
                                         retcode = -ret;
                                         break;
                                 }
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                                ret = gds_stream_wait_cq(gpu_stream, ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
                                 if (ret) {
                                         // TODO: rollback gpu send and wait send_cq
                                         gpu_err("[%d] error %d in gds_stream_wait_cq\n", my_rank, ret);
@@ -751,7 +749,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                         if (ctx->use_desc_apis) {
                                 work_desc_t *wdesc = calloc(1, sizeof(*wdesc));
                                 int k = 0;
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
+                                ret = gds_prepare_wait_cq(ctx->gds_qp->recv_cq, &wdesc->wait_rx_rq, 0);
                                 if (ret) {
                                         retcode = -ret;
                                         break;
@@ -773,7 +771,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                         CUCHECK(cuStreamAddCallback(gpu_stream, post_work_cb, wdesc, 0));
                                 }
                         } else if (ctx->peersync) {
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
+                                ret = gds_stream_wait_cq(gpu_stream, ctx->gds_qp->recv_cq, ctx->consume_rx_cqe);
                                 if (ret) {
                                         // TODO: rollback gpu send and wait send_cq
                                         gpu_err("error %d in gds_stream_wait_cq\n", ret);
@@ -806,7 +804,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                 wdesc->descs[k].tag = GDS_TAG_SEND;
                                 wdesc->descs[k].send = &wdesc->send_rq;
                                 ++k;
-                                ret = gds_prepare_wait_cq(&ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
+                                ret = gds_prepare_wait_cq(ctx->gds_qp->send_cq, &wdesc->wait_tx_rq, 0);
                                 if (ret) {
                                         retcode = -ret;
                                         break;
@@ -835,7 +833,7 @@ static int pp_post_work(struct pingpong_context *ctx, int n_posts, int rcnt, uin
                                         retcode = -ret;
                                         break;
                                 }
-                                ret = gds_stream_wait_cq(gpu_stream, &ctx->gds_qp->send_cq, 0);
+                                ret = gds_stream_wait_cq(gpu_stream, ctx->gds_qp->send_cq, 0);
                                 if (ret) {
                                         // TODO: rollback gpu send
                                         gpu_err("error %d in gds_stream_wait_cq\n", ret);
@@ -888,7 +886,7 @@ static void usage(const char *argv0)
 	printf("  -U, --peersync-desc-apis  use batched descriptor APIs (default disabled)\n");
 	printf("  -Q, --consume-rx-cqe      enable GPU consumes RX CQE support (default disabled)\n");
 	printf("  -T, --time-gds-ops        evaluate time needed to execute gds operations using cuda events\n");
-	printf("  -k, --qp-kind             select IB transport kind used by GDS QPs. (-K 1) for UD, (-K 2) for RC\n");
+	printf("  -k, --qp-kind             select IB transport kind used by GDS QPs. (-k 1) for UD, (-k 2) for RC\n");
 	printf("  -M, --gpu-sched-mode      set CUDA context sched mode, default (A)UTO, (S)PIN, (Y)IELD, (B)LOCKING\n");
 	printf("  -E, --gpu-mem             allocate GPU intead of CPU memory buffers\n");
 	printf("  -K, --skip-kernel-launch  no GPU kernel computations, only communications\n");
@@ -1247,7 +1245,7 @@ int main(int argc, char *argv[])
                         .qp_state		= IBV_QPS_RTR
                 };
 
-                if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
+                if (gds_modify_qp(ctx->gds_qp, &attr, IBV_QP_STATE)) {
                         gpu_err("Failed to modify QP to RTR\n");
                         return 1;
                 }
@@ -1257,7 +1255,7 @@ int main(int argc, char *argv[])
                 attr.qp_state	    = IBV_QPS_RTS;
                 attr.sq_psn	    = my_dest.psn;
 
-                if (ibv_modify_qp(ctx->qp, &attr,
+                if (gds_modify_qp(ctx->gds_qp, &attr,
                                   IBV_QP_STATE              |
                                   IBV_QP_SQ_PSN)) {
                         gpu_err("Failed to modify QP to RTS\n");
@@ -1302,7 +1300,7 @@ int main(int argc, char *argv[])
 			.ah_attr.port_num       = ib_port
                 };
 
-                if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU
+                if (gds_modify_qp(ctx->gds_qp, &attr, (IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU
 						   | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN
 						   | IBV_QP_MIN_RNR_TIMER | IBV_QP_MAX_DEST_RD_ATOMIC))) {
                         gpu_err("Failed to modify QP to RTR\n");
@@ -1317,7 +1315,7 @@ int main(int argc, char *argv[])
 		attr.rnr_retry      = 7;
 		attr.max_rd_atomic  = 1;
 
-		if (ibv_modify_qp(ctx->qp, &attr, (IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT
+		if (gds_modify_qp(ctx->gds_qp, &attr, (IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT
 						     | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY
 						   | IBV_QP_MAX_QP_RD_ATOMIC))) {
                         gpu_err("Failed to modify QP to RTS\n");

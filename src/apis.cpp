@@ -40,7 +40,6 @@
 //using namespace std;
 
 //#include <cuda.h>
-//#include <infiniband/verbs_exp.h>
 //#include <gdrapi.h>
 
 #include "gdsync.h"
@@ -51,17 +50,7 @@
 #include "utils.hpp"
 #include "archutils.h"
 #include "mlnxutils.h"
-
-
-//-----------------------------------------------------------------------------
-
-static void gds_init_ops(struct peer_op_wr *op, int count)
-{
-        int i = count;
-        while (--i)
-                op[i-1].next = &op[i];
-        op[count-1].next = NULL;
-}
+#include "transport.hpp"
 
 //-----------------------------------------------------------------------------
 
@@ -70,9 +59,7 @@ static void gds_init_send_info(gds_send_request_t *info)
         gds_dbg("send_request=%p\n", info);
         memset(info, 0, sizeof(*info));
 
-        info->commit.storage = info->wr;
-        info->commit.entries = sizeof(info->wr)/sizeof(info->wr[0]);
-        gds_init_ops(info->commit.storage, info->commit.entries);
+        gds_main_transport->init_send_info(info);
 }
 
 //-----------------------------------------------------------------------------
@@ -81,46 +68,18 @@ static void gds_init_wait_request(gds_wait_request_t *request, uint32_t offset)
 {
         gds_dbg("wait_request=%p offset=%08x\n", request, offset);
         memset(request, 0, sizeof(*request));
-        request->peek.storage = request->wr;
-        request->peek.entries = sizeof(request->wr)/sizeof(request->wr[0]);
-        request->peek.whence = IBV_EXP_PEER_PEEK_ABSOLUTE;
-        request->peek.offset = offset;
-        gds_init_ops(request->peek.storage, request->peek.entries);
+
+        gds_main_transport->init_wait_request(request, offset);
 }
 
 //-----------------------------------------------------------------------------
 
-static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t * send_info, enum ibv_exp_rollback_flags flag)
+static int gds_rollback_qp(struct gds_qp *qp, gds_send_request_t *send_info)
 {
-        struct ibv_exp_rollback_ctx rollback;
-        int ret=0;
-
         assert(qp);
-        assert(qp->qp);
         assert(send_info);
-        if(
-                        flag != IBV_EXP_ROLLBACK_ABORT_UNCOMMITED && 
-                        flag != IBV_EXP_ROLLBACK_ABORT_LATE
-          )
-        {
-                gds_err("erroneous ibv_exp_rollback_flags flag input value\n");
-                ret=EINVAL;
-                goto out;
-        } 
 
-        /* from ibv_exp_peer_commit call */
-        rollback.rollback_id = send_info->commit.rollback_id;
-        /* from ibv_exp_rollback_flag */
-        rollback.flags = flag;
-        /* Reserved for future expensions, must be 0 */
-        rollback.comp_mask = 0;
-        gds_warn("Need to rollback WQE %lx\n", rollback.rollback_id);
-        ret = ibv_exp_rollback_qp(qp->qp, &rollback);
-        if(ret)
-                gds_err("error %d in ibv_exp_rollback_qp\n", ret);
-
-out:
-        return ret;
+        return gds_main_transport->rollback_qp(qp, send_info);
 }
 
 //-----------------------------------------------------------------------------
@@ -138,7 +97,7 @@ int gds_post_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr)
         ret = gds_post_pokes_on_cpu(1, &send_info, NULL, 0);
         if (ret) {
                 gds_err("error %d in gds_post_pokes_on_cpu\n", ret);
-                ret_roll = gds_rollback_qp(qp, &send_info, IBV_EXP_ROLLBACK_ABORT_LATE);
+                ret_roll = gds_rollback_qp(qp, &send_info);
                 if (ret_roll) {
                         gds_err("error %d in gds_rollback_qp\n", ret_roll);
                 }
@@ -171,33 +130,20 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, 
+int gds_prepare_send(struct gds_qp *gqp, gds_send_wr *p_ewr, 
                      gds_send_wr **bad_ewr, 
                      gds_send_request_t *request)
 {
         int ret = 0;
-        gds_init_send_info(request);
-        assert(qp);
-        assert(qp->qp);
-        ret = ibv_exp_post_send(qp->qp, p_ewr, bad_ewr);
-        if (ret) {
 
-                if (ret == ENOMEM) {
-                        // out of space error can happen too often to report
-                        gds_dbg("ENOMEM error %d in ibv_exp_post_send\n", ret);
-                } else {
-                        gds_err("error %d in ibv_exp_post_send\n", ret);
-                }
-                goto out;
-        }
-        
-        ret = ibv_exp_peer_commit_qp(qp->qp, &request->commit);
-        if (ret) {
-                gds_err("error %d in ibv_exp_peer_commit_qp\n", ret);
-                //gds_wait_kernel();
-                goto out;
-        }
-out:
+        gds_init_send_info(request);
+        assert(gqp);
+        assert(gqp->qp);
+
+        ret = gds_main_transport->prepare_send(gqp, p_ewr, bad_ewr, request);
+        if (ret)
+                gds_err("Error %d in prepare_send.\n", ret);
+
         return ret;
 }
 
@@ -281,7 +227,6 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
 
 int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags)
 {
-        int retcode = 0;
         if (flags != 0) {
                 gds_err("invalid flags != 0\n");
                 return EINVAL;
@@ -289,50 +234,22 @@ int gds_prepare_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flag
 
         gds_init_wait_request(request, cq->curr_offset++);
 
-        retcode = ibv_exp_peer_peek_cq(cq->cq, &request->peek);
-        if (retcode == -ENOSPC) {
-                // TODO: handle too few entries
-                gds_err("not enough ops in peer_peek_cq\n");
-                goto out;
-        } else if (retcode) {
-                gds_err("error %d in peer_peek_cq\n", retcode);
-                goto out;
-        }
-        //gds_dump_wait_request(request, 1);
-        out:
-	       return retcode;
+        return gds_main_transport->prepare_wait_cq(cq, request, flags);
 }
 
 //-----------------------------------------------------------------------------
 
 int gds_append_wait_cq(gds_wait_request_t *request, uint32_t *dw, uint32_t val)
 {
-        int ret = 0;
-        unsigned MAX_NUM_ENTRIES = sizeof(request->wr)/sizeof(request->wr[0]);
-        unsigned n = request->peek.entries;
-        struct peer_op_wr *wr = request->peek.storage;
-
-        if (n + 1 > MAX_NUM_ENTRIES) {
-            gds_err("no space left to stuff a poke\n");
-            ret = ENOMEM;
-            goto out;
+        int ret = gds_transport_init();
+        if (ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
         }
 
-        // at least 1 op
-        assert(n);
-        assert(wr);
+        ret = gds_main_transport->append_wait_cq(request, dw, val);
 
-        for (; n; --n) wr = wr->next;
-        assert(wr);
-
-        wr->type = IBV_EXP_PEER_OP_STORE_DWORD;
-        wr->wr.dword_va.data = val;
-        wr->wr.dword_va.target_id = 0; // direct mapping, offset IS the address
-        wr->wr.dword_va.offset = (ptrdiff_t)(dw-(uint32_t*)0);
-
-        ++request->peek.entries;
-
-        out:
+out:
         return ret;
 }
 
@@ -356,10 +273,8 @@ static int gds_abort_wait_cq(struct gds_cq *cq, gds_wait_request_t *request)
 {
         assert(cq);
         assert(request);
-        struct ibv_exp_peer_abort_peek abort_ctx;
-        abort_ctx.peek_id = request->peek.peek_id;
-        abort_ctx.comp_mask = 0;
-        return ibv_exp_peer_abort_peek_cq(cq->cq, &abort_ctx);
+
+        return gds_main_transport->abort_wait_cq(cq, request);
 }
 
 //-----------------------------------------------------------------------------
@@ -550,14 +465,21 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
         int ret = 0;
         n_mem_ops = 0;
         size_t i;
-        for(i = 0; i < n_descs; ++i) {
+
+        ret = gds_transport_init();
+        if (ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
+        }
+
+        for (i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
-                switch(desc->tag) {
+                switch (desc->tag) {
                 case GDS_TAG_SEND:
-                        n_mem_ops += desc->send->commit.entries + 2; // extra space, ugly
+                        n_mem_ops += gds_main_transport->get_num_send_request_entries(desc->send) + 2; // extra space, ugly
                         break;
                 case GDS_TAG_WAIT:
-                        n_mem_ops += desc->wait->peek.entries + 2; // ditto
+                        n_mem_ops += gds_main_transport->get_num_wait_request_entries(desc->wait) + 2; // ditto
                         break;
                 case GDS_TAG_WAIT_VALUE32:
                 case GDS_TAG_WRITE_VALUE32:
@@ -569,6 +491,8 @@ static int calc_n_mem_ops(size_t n_descs, gds_descriptor_t *descs, size_t &n_mem
                         ret = EINVAL;
                 }
         }
+
+out:
         return ret;
 }
 
@@ -585,6 +509,11 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
         gds_peer *peer = NULL;
         gds_op_list_t params;
 
+        ret = gds_transport_init();
+        if (ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
+        }
 
         ret = calc_n_mem_ops(n_descs, descs, n_mem_ops);
         if (ret) {
@@ -612,12 +541,11 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                 return EINVAL;
         }
 
-        for(i = 0; i < n_descs; ++i) {
+        for (i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
-                switch(desc->tag) {
+                switch (desc->tag) {
                 case GDS_TAG_SEND: {
-                        gds_send_request_t *sreq = desc->send;
-                        retcode = gds_post_ops(peer, sreq->commit.entries, sreq->commit.storage, params);
+                        retcode = gds_main_transport->post_send_ops(peer, desc->send, params);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops\n", retcode);
                                 ret = retcode;
@@ -626,15 +554,14 @@ int gds_stream_post_descriptors(CUstream stream, size_t n_descs, gds_descriptor_
                         break;
                 }
                 case GDS_TAG_WAIT: {
-                        gds_wait_request_t *wreq = desc->wait;
                         int flags = 0;
                         if (move_flush && i != last_wait) {
                                 gds_dbg("discarding FLUSH!\n");
                                 flags = GDS_POST_OPS_DISCARD_WAIT_FLUSH;
                         }
-                        retcode = gds_post_ops(peer, wreq->peek.entries, wreq->peek.storage, params, flags);
+                        retcode = gds_main_transport->stream_post_wait_descriptor(peer, desc->wait, params, flags);
                         if (retcode) {
-                                gds_err("error %d in gds_post_ops\n", retcode);
+                                gds_err("error %d in stream_post_wait_descriptor\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
@@ -689,13 +616,19 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
         size_t i;
         int ret = 0;
         int retcode = 0;
+
+        ret = gds_transport_init();
+        if (ret) {
+                gds_err("error in gds_transport_init\n");
+                goto out;
+        }
+
         for(i = 0; i < n_descs; ++i) {
                 gds_descriptor_t *desc = descs + i;
                 switch(desc->tag) {
                 case GDS_TAG_SEND: {
                         gds_dbg("desc[%zu] SEND\n", i);
-                        gds_send_request_t *sreq = desc->send;
-                        retcode = gds_post_ops_on_cpu(sreq->commit.entries, sreq->commit.storage, flags);
+                        retcode = gds_main_transport->post_send_ops_on_cpu(desc->send, flags);
                         if (retcode) {
                                 gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
                                 ret = retcode;
@@ -705,10 +638,9 @@ int gds_post_descriptors(size_t n_descs, gds_descriptor_t *descs, int flags)
                 }
                 case GDS_TAG_WAIT: {
                         gds_dbg("desc[%zu] WAIT\n", i);
-                        gds_wait_request_t *wreq = desc->wait;
-                        retcode = gds_post_ops_on_cpu(wreq->peek.entries, wreq->peek.storage, flags);
+                        retcode = gds_main_transport->post_wait_descriptor(desc->wait, flags);
                         if (retcode) {
-                                gds_err("error %d in gds_post_ops_on_cpu\n", retcode);
+                                gds_err("error %d in post_wait_descriptor\n", retcode);
                                 ret = retcode;
                                 goto out;
                         }
