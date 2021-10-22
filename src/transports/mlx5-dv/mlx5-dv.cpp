@@ -932,18 +932,18 @@ static int gds_mlx5_dv_modify_qp_init2rtr(gds_mlx5_dv_qp_t *mdqp, struct ibv_qp_
                         status = EINVAL;
                         goto out;
                 }
-        }
 
-        if (!(attr_mask & IBV_QP_PATH_MTU)) {
-                gds_err("IBV_QP_PATH_MTU is required.\n");
-                status = EINVAL;
-                goto out;
-        }
+                if (!(attr_mask & IBV_QP_PATH_MTU)) {
+                        gds_err("IBV_QP_PATH_MTU is required.\n");
+                        status = EINVAL;
+                        goto out;
+                }
 
-        if (!(attr_mask & IBV_QP_AV)) {
-                gds_err("IBV_QP_AV is required.\n");
-                status = EINVAL;
-                goto out;
+                if (!(attr_mask & IBV_QP_AV)) {
+                        gds_err("IBV_QP_AV is required.\n");
+                        status = EINVAL;
+                        goto out;
+                }
         }
 
         if (mdqp->port_attr.link_layer != IBV_LINK_LAYER_INFINIBAND) {
@@ -964,7 +964,9 @@ static int gds_mlx5_dv_modify_qp_init2rtr(gds_mlx5_dv_qp_t *mdqp, struct ibv_qp_
         DEVX_SET(init2rtr_qp_in, cmd_in, qpn, mdqp->gqp.qp->qp_num);
 
         qpc = DEVX_ADDR_OF(init2rtr_qp_in, cmd_in, qpc);
-        DEVX_SET(qpc, qpc, mtu, attr->path_mtu);
+        if (attr_mask & IBV_QP_PATH_MTU)
+                DEVX_SET(qpc, qpc, mtu, attr->path_mtu);
+
         DEVX_SET(qpc, qpc, log_msg_max, GDS_MLX5_DV_LOG_MAX_MSG_SIZE);
 
         if (attr_mask & IBV_QP_DEST_QPN)
@@ -1024,28 +1026,30 @@ static int gds_mlx5_dv_modify_qp_rtr2rts(gds_mlx5_dv_qp_t *mdqp, struct ibv_qp_a
                 goto out;
         }
 
-        if (!(attr_mask & IBV_QP_MAX_QP_RD_ATOMIC)) {
-                gds_err("IBV_QP_MAX_QP_RD_ATOMIC is required.\n");
-                status = EINVAL;
-                goto out;
-        }
+        if (mdqp->qp_type == GDS_MLX5_DV_QP_TYPE_RC) {
+                if (!(attr_mask & IBV_QP_MAX_QP_RD_ATOMIC)) {
+                        gds_err("IBV_QP_MAX_QP_RD_ATOMIC is required.\n");
+                        status = EINVAL;
+                        goto out;
+                }
 
-        if (!(attr_mask & IBV_QP_RETRY_CNT)) {
-                gds_err("IBV_QP_RETRY_CNT is required.\n");
-                status = EINVAL;
-                goto out;
-        }
+                if (!(attr_mask & IBV_QP_RETRY_CNT)) {
+                        gds_err("IBV_QP_RETRY_CNT is required.\n");
+                        status = EINVAL;
+                        goto out;
+                }
 
-        if (!(attr_mask & IBV_QP_RNR_RETRY)) {
-                gds_err("IBV_QP_RNR_RETRY is required.\n");
-                status = EINVAL;
-                goto out;
-        }
+                if (!(attr_mask & IBV_QP_RNR_RETRY)) {
+                        gds_err("IBV_QP_RNR_RETRY is required.\n");
+                        status = EINVAL;
+                        goto out;
+                }
 
-        if (!(attr_mask & IBV_QP_TIMEOUT)) {
-                gds_err("IBV_QP_TIMEOUT is required.\n");
-                status = EINVAL;
-                goto out;
+                if (!(attr_mask & IBV_QP_TIMEOUT)) {
+                        gds_err("IBV_QP_TIMEOUT is required.\n");
+                        status = EINVAL;
+                        goto out;
+                }
         }
 
         if (!(attr_mask & IBV_QP_SQ_PSN)) {
@@ -1059,12 +1063,21 @@ static int gds_mlx5_dv_modify_qp_rtr2rts(gds_mlx5_dv_qp_t *mdqp, struct ibv_qp_a
         DEVX_SET(rtr2rts_qp_in, cmd_in, qpn, mdqp->gqp.qp->qp_num);
 
         qpc = DEVX_ADDR_OF(rtr2rts_qp_in, cmd_in, qpc);
-        DEVX_SET(qpc, qpc, log_sra_max, GDS_ILOG2_OR0(attr->max_rd_atomic));
-        DEVX_SET(qpc, qpc, retry_count, attr->retry_cnt);
-        DEVX_SET(qpc, qpc, rnr_retry, attr->rnr_retry);
+
+        if (attr_mask & IBV_QP_MAX_QP_RD_ATOMIC)
+                DEVX_SET(qpc, qpc, log_sra_max, GDS_ILOG2_OR0(attr->max_rd_atomic));
+
+        if (attr_mask & IBV_QP_RETRY_CNT)
+                DEVX_SET(qpc, qpc, retry_count, attr->retry_cnt);
+
+        if (attr_mask & IBV_QP_RNR_RETRY)
+                DEVX_SET(qpc, qpc, rnr_retry, attr->rnr_retry);
+
         DEVX_SET(qpc, qpc, next_send_psn, attr->sq_psn);
         DEVX_SET(qpc, qpc, log_ack_req_freq, GDS_MLX5_DV_LOG_ACK_REQ_FREQ);
-        DEVX_SET(qpc, qpc, primary_address_path.ack_timeout, attr->timeout);
+
+        if (attr_mask & IBV_QP_TIMEOUT)
+                DEVX_SET(qpc, qpc, primary_address_path.ack_timeout, attr->timeout);
 
         status = mlx5dv_devx_obj_modify(mdqp->devx_qp, cmd_in, sizeof(cmd_in), cmd_out, sizeof(cmd_out));
         if (status) {
