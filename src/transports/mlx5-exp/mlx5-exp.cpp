@@ -710,14 +710,14 @@ int gds_mlx5_exp_create_qp(
         
         // peer registration
         peer->alloc_type = gds_peer::WQ;
-        peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_DBREC_DEFAULT;
+        peer->alloc_flags = GDS_ALLOC_WQ_DEFAULT | GDS_ALLOC_WQ_DBREC_DEFAULT;
         if (flags & GDS_CREATE_QP_WQ_ON_GPU) {
                 gds_err("error, QP WQ on GPU is not supported yet\n");
                 goto err;
         }
         if (flags & GDS_CREATE_QP_WQ_DBREC_ON_GPU) {
                 gds_warn("QP WQ DBREC on GPU\n");
-                peer->alloc_flags |= GDS_ALLOC_DBREC_ON_GPU;
+                peer->alloc_flags |= GDS_ALLOC_WQ_DBREC_ON_GPU;
         }        
 
         exp_qp_attr.send_cq = tx_gmexpcq->gcq.cq;
