@@ -40,7 +40,6 @@
 using namespace std;
 
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"
@@ -373,7 +372,7 @@ int gds_free_mapped_memory(gds_mem_desc_t *desc)
 //#define ROUND_TO_GDR_GPU_PAGE(V) ROUND_TO(V, GDR_GPU_PAGE_SIZE)
 
 // allocate GPU memory with a GDR mapping (CPU can dereference it)
-int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle, bool has_cpu_mapping)
+int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, gds_memory_type_t mem_type, bool has_cpu_mapping, void **phandle)
 {
         int ret = 0;
         // assume GPUs are the only peers!!!
@@ -426,7 +425,7 @@ int gds_peer_malloc_ex(int peer_id, uint64_t peer_data, void **host_addr, CUdevi
                 goto out;
         }
 
-        ret = gds_alloc_mapped_memory(desc, size, GDS_MEMORY_GPU);
+        ret = gds_alloc_mapped_memory(desc, size, mem_type);
         if (ret) {
                 gds_err("error %d while allocating mapped GPU buffers\n", ret);
                 goto out;
@@ -448,9 +447,9 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_peer_malloc(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, void **phandle)
+int gds_peer_malloc(int peer_id, uint64_t peer_data, void **host_addr, CUdeviceptr *peer_addr, size_t req_size, gds_memory_type_t mem_type, void **phandle)
 {
-        return gds_peer_malloc_ex(peer_id, peer_data, host_addr, peer_addr, req_size, phandle, true);
+        return gds_peer_malloc_ex(peer_id, peer_data, host_addr, peer_addr, req_size, mem_type, true, phandle);
 }
 
 //-----------------------------------------------------------------------------

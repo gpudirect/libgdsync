@@ -45,3 +45,6 @@ libtool
 # Debug files
 *.dSYM/
 *.su
+
+# Editor files
+*.swp
