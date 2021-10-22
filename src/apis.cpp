@@ -115,12 +115,13 @@ int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr 
 {
         int ret = 0;
 
-        gds_dbg("qp=%p wr=%p\n", qp, wr);
         assert(qp);
-        assert(qp->qp);
-        ret = ibv_post_recv(qp->qp, wr, bad_wr);
+        assert(wr);
+        assert(bad_wr);
+        gds_dbg("qp=%p wr=%p\n", qp, wr);
+        ret = gds_main_transport->post_recv(qp, wr, bad_wr);
         if (ret) {
-                gds_err("error %d in ibv_post_recv\n", ret);
+                gds_err("error %d in post_recv\n", ret);
                 goto out;
         }
 

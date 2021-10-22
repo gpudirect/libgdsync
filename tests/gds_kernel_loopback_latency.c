@@ -487,7 +487,7 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 	int i;
         gpu_dbg("posting %d recvs\n", n);
 	for (i = 0; i < n; ++i)
-		if (ibv_post_recv(ctx->qp, &wr, &bad_wr))
+		if (gds_post_recv(ctx->gds_qp, &wr, &bad_wr))
 			break;
         gpu_dbg("posted %d recvs\n", i);
 	return i;

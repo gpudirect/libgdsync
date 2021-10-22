@@ -101,7 +101,8 @@ int gds_post_send(struct gds_qp *qp, gds_send_wr *wr, gds_send_wr **bad_wr);
 /* \brief: CPU-synchronous post recv for peer QPs
  *
  * Notes:
- * - there is no GPU-synchronous version of this because there is not a use case for it.
+ * - There is no GPU-synchronous version of this because there is not a use case for it.
+ * - It is required for portability. For example, ibv_post_recv does not work with dv transport.
  */
 int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
 
