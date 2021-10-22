@@ -1225,6 +1225,18 @@ uint32_t gds_mlx5_exp_get_num_send_request_entries(gds_send_request_t *request) 
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_exp_post_recv(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
+{
+        assert(gqp);
+        assert(gqp->qp);
+        assert(wr);
+        assert(bad_wr);
+
+        return ibv_post_recv(gqp->qp, wr, bad_wr);
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_exp_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1246,6 +1258,8 @@ int gds_transport_mlx5_exp_init(gds_transport_t **transport)
         t->prepare_send = gds_mlx5_exp_prepare_send;
         t->get_send_descs = gds_mlx5_exp_get_send_descs;
         t->get_num_send_request_entries = gds_mlx5_exp_get_num_send_request_entries;
+
+        t->post_recv = gds_mlx5_exp_post_recv;
 
         t->init_wait_request = gds_mlx5_exp_init_wait_request;
         t->dump_wait_request = gds_mlx5_exp_dump_wait_request;
