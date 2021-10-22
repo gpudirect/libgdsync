@@ -107,8 +107,9 @@ typedef struct gds_mlx5_dv_cq_peer {
 
 typedef struct gds_mlx5_dv_wq {
         uint64_t       *wrid;
-        uint64_t       *wqe_head;
-        unsigned int    wqe_cnt;
+        void           *buf;    // SQ and RQ point to different regions.
+        __be32         *dbrec;
+        unsigned int    cnt;
         uint64_t        head;
         uint64_t        tail;
 } gds_mlx5_dv_wq_t;
@@ -120,27 +121,6 @@ typedef struct gds_mlx5_dv_cq {
         gds_mlx5_dv_wq_t               *wq;
         gds_mlx5_dv_cq_peer_t          *cq_peer;
 } gds_mlx5_dv_cq_t;
-
-typedef struct gds_mlx5_dv_qp_peer {
-        gds_peer_attr *peer_attr;
-        uint32_t scur_post;
-
-        struct {
-                uint64_t va_id;
-                size_t size;
-                gds_buf *gbuf;
-        } wq;
-
-        struct {
-                uint64_t va_id;
-                size_t size;
-                gds_buf *gbuf;
-        } dbr;
-
-        struct {
-                uint64_t va_id;
-        } bf;
-} gds_mlx5_dv_qp_peer_t;
 
 typedef enum gds_mlx5_dv_qp_type {
         GDS_MLX5_DV_QP_TYPE_UNKNOWN = 0,
@@ -154,19 +134,17 @@ typedef struct gds_mlx5_dv_qp {
 
         struct mlx5dv_devx_obj         *devx_qp;
 
-        gds_mlx5_dv_qp_peer_t          *qp_peer;
-
         uint8_t                         sl;
 
         gds_buf                        *wq_buf;
         struct mlx5dv_devx_umem        *wq_umem;
         uint64_t                        wq_va_id;
 
-        size_t                          sq_cnt;
-        size_t                          rq_cnt;
-
         off_t                           sq_buf_offset;
         off_t                           rq_buf_offset;
+
+        gds_mlx5_dv_wq_t                sq_wq;
+        gds_mlx5_dv_wq_t                rq_wq;
 
         gds_buf                        *dbr_buf;
         struct mlx5dv_devx_umem        *dbr_umem;

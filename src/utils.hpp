@@ -46,6 +46,18 @@
 
 #endif
 
+#ifndef ACCESS_ONCE
+    #define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
+#endif
+
+#ifndef READ_ONCE
+    #define READ_ONCE(x) ACCESS_ONCE(x)
+#endif
+
+#ifndef WRITE_ONCE
+    #define WRITE_ONCE(x, v) (ACCESS_ONCE(x) = (v))
+#endif
+
 #ifndef MIN
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #endif

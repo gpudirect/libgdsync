@@ -56,6 +56,8 @@ typedef struct gds_transport {
         int  (*prepare_wait_cq)(gds_cq_t *gcq, gds_wait_request_t *request, int flags);
         int  (*append_wait_cq)(gds_wait_request_t *request, uint32_t *dw, uint32_t val);
         int  (*abort_wait_cq)(gds_cq_t *gcq, gds_wait_request_t *request);
+
+	int  (*post_recv)(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
 } gds_transport_t;
 
 extern gds_transport_t *gds_main_transport;

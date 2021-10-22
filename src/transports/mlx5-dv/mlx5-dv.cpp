@@ -254,9 +254,6 @@ static void gds_mlx5_dv_destroy_cq(gds_mlx5_dv_cq_t *mcq)
         int status = 0;
         gds_mlx5_dv_cq_peer_t *mcq_peer = mcq->cq_peer;
 
-        if (mcq->wq)
-                mcq->wq = NULL;
-
         if (mcq_peer && mcq_peer->pdata.peek_table) {
                 free(mcq_peer->pdata.peek_table);
                 mcq_peer->pdata.peek_table = NULL;
@@ -325,20 +322,17 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
                 pd, pd_context, size, alignment, resource_type);
 
         // Prevent incorrect setting of alloc type
-        assert(!((resource_type == MLX5DV_RES_TYPE_QP || resource_type == MLX5DV_RES_TYPE_SRQ) && peer->alloc_type != gds_peer::WQ));
         assert(!(resource_type == MLX5DV_RES_TYPE_CQ && peer->alloc_type != gds_peer::CQ));
-        assert(!(resource_type == MLX5DV_RES_TYPE_DBR && peer->alloc_type != gds_peer::WQ && peer->alloc_type != gds_peer::CQ));
+        assert(!(resource_type == MLX5DV_RES_TYPE_DBR && peer->alloc_type != gds_peer::CQ));
 
-        if (peer->alloc_type == gds_peer::WQ)
-                dir = GDS_PEER_DIRECTION_FROM_PEER | GDS_PEER_DIRECTION_TO_HCA;
-        else if (peer->alloc_type == gds_peer::CQ)
+        if (peer->alloc_type == gds_peer::CQ)
                 dir = GDS_PEER_DIRECTION_FROM_HCA | GDS_PEER_DIRECTION_TO_PEER | GDS_PEER_DIRECTION_TO_CPU;
         else {
                 gds_dbg("encountered unsupported alloc_type\n");
                 return IBV_ALLOCATOR_USE_DEFAULT;
         }
 
-        if (resource_type == MLX5DV_RES_TYPE_QP || resource_type == MLX5DV_RES_TYPE_SRQ || resource_type == MLX5DV_RES_TYPE_DBR || resource_type == MLX5DV_RES_TYPE_CQ) {
+        if (resource_type == MLX5DV_RES_TYPE_DBR || resource_type == MLX5DV_RES_TYPE_CQ) {
                 buf = peer->buf_alloc(peer->alloc_type, size, dir, (uint32_t)alignment, peer->alloc_flags);
         }
         else
@@ -362,23 +356,7 @@ static void *pd_mem_alloc(struct ibv_pd *pd, void *pd_context, size_t size,
         // peer->opaque should be set
         assert(peer->opaque);
 
-        if (peer->alloc_type == gds_peer::WQ) {
-                gds_mlx5_dv_qp_peer_t *mqp_peer = (gds_mlx5_dv_qp_peer_t *)peer->opaque;
-                if (resource_type == MLX5DV_RES_TYPE_QP || resource_type == MLX5DV_RES_TYPE_SRQ) {
-                        // BUG: Will be overrided if use with IBV_QPT_RAW_PACKET or MLX5_QP_FLAGS_USE_UNDERLAY
-                        mqp_peer->wq.va_id = range_id;
-                        mqp_peer->wq.size = size;
-                        mqp_peer->wq.gbuf = buf;
-                }
-                else if (resource_type == MLX5DV_RES_TYPE_DBR) {
-                        mqp_peer->dbr.va_id = range_id;
-                        mqp_peer->dbr.size = size;
-                        mqp_peer->dbr.gbuf = buf;
-                }
-                else
-                        gds_err("Unsupported resource_type\n");
-        }
-        else if (peer->alloc_type == gds_peer::CQ) {
+        if (peer->alloc_type == gds_peer::CQ) {
                 gds_mlx5_dv_cq_peer_t *mcq_peer = (gds_mlx5_dv_cq_peer_t *)peer->opaque;
                 if (resource_type == MLX5DV_RES_TYPE_CQ) {
                         mcq_peer->buf.va_id = range_id;
@@ -413,32 +391,12 @@ static void pd_mem_free(struct ibv_pd *pd, void *pd_context, void *ptr,
         gds_peer *peer = peer_from_id(peer_attr->peer_id);
 
         // Prevent incorrect setting of alloc type
-        assert(!(resource_type == MLX5DV_RES_TYPE_QP && peer->alloc_type != gds_peer::WQ));
         assert(!(resource_type == MLX5DV_RES_TYPE_CQ && peer->alloc_type != gds_peer::CQ));
-        assert(!(resource_type == MLX5DV_RES_TYPE_DBR && peer->alloc_type != gds_peer::WQ && peer->alloc_type != gds_peer::CQ));
+        assert(!(resource_type == MLX5DV_RES_TYPE_DBR && peer->alloc_type != gds_peer::CQ));
 
         assert(peer->opaque);
 
-        if (peer->alloc_type == gds_peer::WQ) {
-                gds_mlx5_dv_qp_peer_t *mqp_peer = (gds_mlx5_dv_qp_peer_t *)peer->opaque;
-                if (resource_type == MLX5DV_RES_TYPE_QP && mqp_peer->wq.gbuf) {
-                        if (mqp_peer->wq.va_id) {
-                                peer_attr->unregister_va(mqp_peer->wq.va_id, peer_attr->peer_id);
-                                mqp_peer->wq.va_id = 0;
-                        }
-                        peer->free(mqp_peer->wq.gbuf);
-                        mqp_peer->wq.gbuf = NULL;
-                }
-                else if (resource_type == MLX5DV_RES_TYPE_DBR && mqp_peer->dbr.gbuf) {
-                        if (mqp_peer->dbr.va_id) {
-                                peer_attr->unregister_va(mqp_peer->dbr.va_id, peer_attr->peer_id);
-                                mqp_peer->dbr.va_id = 0;
-                        }
-                        peer->free(mqp_peer->dbr.gbuf);
-                        mqp_peer->dbr.gbuf = NULL;
-                }
-        }
-        else if (peer->alloc_type == gds_peer::CQ) {
+        if (peer->alloc_type == gds_peer::CQ) {
                 gds_mlx5_dv_cq_peer_t *mcq_peer = (gds_mlx5_dv_cq_peer_t *)peer->opaque;
                 if (resource_type == MLX5DV_RES_TYPE_CQ && mcq_peer->buf.gbuf) {
                         if (mcq_peer->buf.va_id) {
@@ -513,8 +471,8 @@ int gds_mlx5_dv_create_qp(
         uint8_t log_bf_reg_size;
         size_t bf_reg_size;
 
-        int max_tx;
-        int max_rx;
+        unsigned int max_tx;
+        unsigned int max_rx;
 
         size_t wqe_size;
         struct mlx5dv_devx_umem *wq_umem = NULL;
@@ -539,12 +497,15 @@ int gds_mlx5_dv_create_qp(
 
         void *qpc;
 
-        gds_mlx5_dv_qp_peer_t *mqp_peer = NULL;
-
         struct mlx5dv_devx_obj *devx_obj = NULL;
 
         uint32_t qpn;
         uint32_t st_val;
+
+        off_t sq_buf_offset;
+
+        uint64_t *sq_wrid = NULL;
+        uint64_t *rq_wrid = NULL;
 
         gds_mlx5_dv_qp_type_t gmlx_qpt = GDS_MLX5_DV_QP_TYPE_UNKNOWN;
 
@@ -660,6 +621,27 @@ int gds_mlx5_dv_create_qp(
         max_rx = GDS_ROUND_UP_POW2_OR_0(qp_attr->cap.max_recv_wr);
         wq_buf_size = (max_tx + max_rx) * wqe_size;
 
+        // Assume 1 recv sge and no wq_sig
+        sq_buf_offset = MAX(max_rx * sizeof(struct mlx5_wqe_data_seg), GDS_MLX5_DV_SEND_WQE_BB);
+
+        if (max_tx > 0) {
+                sq_wrid = (uint64_t *)malloc(sizeof(uint64_t) * max_tx);
+                if (!sq_wrid) {
+                        gds_err("Error in malloc for sq_wrid\n");
+                        status = ENOMEM;
+                        goto out;
+                }
+        }
+
+        if (max_rx > 0) {
+                rq_wrid = (uint64_t *)malloc(sizeof(uint64_t) * max_rx);
+                if (!rq_wrid) {
+                        gds_err("Error in malloc for rq_wrid\n");
+                        status = ENOMEM;
+                        goto out;
+                }
+        }
+
         // Allocate WQ buffer.
         alignment = (uint32_t)((flags & GDS_ALLOC_WQ_ON_GPU) ? GDS_GPU_PAGE_SIZE : sysconf(_SC_PAGESIZE));
         wq_buf = peer->alloc(wq_buf_size, alignment, (flags & GDS_ALLOC_WQ_ON_GPU) ? GDS_MEMORY_GPU : GDS_MEMORY_HOST);
@@ -669,14 +651,14 @@ int gds_mlx5_dv_create_qp(
                 goto out;
         }
 
-        wq_umem = mlx5dv_devx_umem_reg(context, wq_buf->addr, wq_buf_size, IBV_ACCESS_LOCAL_WRITE);
+        wq_umem = mlx5dv_devx_umem_reg(context, (flags & GDS_ALLOC_WQ_ON_GPU) ? (void *)wq_buf->peer_addr : wq_buf->addr, wq_buf_size, IBV_ACCESS_LOCAL_WRITE);
         if (!wq_umem) {
                 gds_err("Error in mlx5dv_devx_umem_reg for WQ\n");
                 status = ENOMEM;
                 goto out;
         }
         
-        wq_buf_range_id = peer_attr->register_va(wq_buf->addr, wq_buf_size, peer_attr->peer_id, wq_buf);
+        wq_buf_range_id = peer_attr->register_va((flags & GDS_ALLOC_WQ_ON_GPU) ? (void *)wq_buf->peer_addr : wq_buf->addr, wq_buf_size, peer_attr->peer_id, wq_buf);
         if (!wq_buf_range_id) {
                 gds_err("Error in peer_attr->register_va for WQ\n");
                 status = ENOMEM;
@@ -694,14 +676,14 @@ int gds_mlx5_dv_create_qp(
                 goto out;
         }
 
-        dbr_umem = mlx5dv_devx_umem_reg(context, dbr_buf->addr, dbr_buf_size, IBV_ACCESS_LOCAL_WRITE);
+        dbr_umem = mlx5dv_devx_umem_reg(context, (flags & GDS_ALLOC_WQ_DBREC_ON_GPU) ? (void *)dbr_buf->peer_addr : dbr_buf->addr, dbr_buf_size, IBV_ACCESS_LOCAL_WRITE);
         if (!dbr_umem) {
                 gds_err("Error in mlx5dv_devx_umem_reg for DBR\n");
                 status = ENOMEM;
                 goto out;
         }
         
-        dbr_buf_range_id = peer_attr->register_va(dbr_buf->addr, dbr_buf_size, peer_attr->peer_id, dbr_buf);
+        dbr_buf_range_id = peer_attr->register_va((flags & GDS_ALLOC_WQ_DBREC_ON_GPU) ? (void *)dbr_buf->peer_addr : dbr_buf->addr, dbr_buf_size, peer_attr->peer_id, dbr_buf);
         if (!dbr_buf_range_id) {
                 gds_err("Error in peer_attr->register_va for DBR\n");
                 status = ENOMEM;
@@ -755,8 +737,6 @@ int gds_mlx5_dv_create_qp(
         mdqp->devx_qp = devx_obj;
         mdqp->qp_type = gmlx_qpt;
 
-        mdqp->qp_peer = mqp_peer;
-
         mdqp->wq_buf = wq_buf;
         mdqp->wq_umem = wq_umem;
         mdqp->wq_va_id = wq_buf_range_id;
@@ -769,12 +749,20 @@ int gds_mlx5_dv_create_qp(
         mdqp->bf_size = bf_reg_size / 2;
         mdqp->bf_va_id = uar_range_id;
 
-        mdqp->sq_cnt = max_tx;
-        mdqp->rq_cnt = max_rx;
-
         mdqp->rq_buf_offset = 0;
-        // Assume 1 recv sge if RC and no wq_sig
-        mdqp->sq_buf_offset = (gmlx_qpt == GDS_MLX5_DV_QP_TYPE_RC) ? MAX(max_rx * sizeof(struct mlx5_wqe_data_seg), GDS_MLX5_DV_SEND_WQE_BB) : 0;
+        mdqp->sq_buf_offset = sq_buf_offset;
+
+        mdqp->sq_wq.wrid = sq_wrid;
+        mdqp->sq_wq.buf = (void *)((uintptr_t)wq_buf->addr + sq_buf_offset);
+        mdqp->sq_wq.cnt = max_tx;
+        mdqp->rq_wq.dbrec = (__be32 *)((uintptr_t)dbr_buf->addr + sizeof(__be32));
+        tx_mcq->wq = &mdqp->sq_wq;
+
+        mdqp->rq_wq.wrid = rq_wrid;
+        mdqp->rq_wq.buf = wq_buf->addr;
+        mdqp->rq_wq.cnt = max_rx;
+        mdqp->rq_wq.dbrec = (__be32 *)dbr_buf->addr;
+        rx_mcq->wq = &mdqp->rq_wq;
 
         mdqp->peer_attr = peer_attr;
 
@@ -819,14 +807,17 @@ out:
                 if (wq_buf)
                         peer->free(wq_buf);
 
+                if (rq_wrid)
+                        free(rq_wrid);
+
+                if (sq_wrid)
+                        free(sq_wrid);
+
                 if (uar_range_id)
                         peer_attr->unregister_va(uar_range_id, peer_attr->peer_id);
 
                 if (uar)
                         mlx5dv_devx_free_uar(uar);
-
-                if (mqp_peer)
-                        free(mqp_peer);
 
                 if (rx_mcq)
                         gds_mlx5_dv_destroy_cq(rx_mcq);
@@ -1136,7 +1127,6 @@ int gds_mlx5_dv_destroy_qp(gds_qp_t *gqp)
         gds_mlx5_dv_qp_t *mdqp;
 
         gds_peer *peer = NULL;
-        gds_mlx5_dv_qp_peer_t *mqp_peer;
 
         if (!gqp)
                 return status;
@@ -1144,17 +1134,6 @@ int gds_mlx5_dv_destroy_qp(gds_qp_t *gqp)
         mdqp = to_gds_mdv_qp(gqp);
 
         assert(mdqp->devx_qp);
-
-        mqp_peer = mdqp->qp_peer;
-
-        if (mqp_peer) {
-                gds_peer_attr *peer_attr = mqp_peer->peer_attr;
-                gds_peer *peer = peer_from_id(peer_attr->peer_id);
-
-                // This may be used by ibv_destroy_qp, which eventually calls pd_mem_free.
-                peer->alloc_type = gds_peer::WQ;
-                peer->opaque = mqp_peer;
-        }
 
         status = mlx5dv_devx_obj_destroy(mdqp->devx_qp);
         if (status)
@@ -1201,19 +1180,77 @@ int gds_mlx5_dv_destroy_qp(gds_qp_t *gqp)
                 }
         }
 
+        if (mdqp->rq_wq.wrid)
+                free(mdqp->rq_wq.wrid);
+
+        if (mdqp->sq_wq.wrid)
+                free(mdqp->sq_wq.wrid);
+
         if (mdqp->bf_uar)
                 mlx5dv_devx_free_uar(mdqp->bf_uar);
 
         if (mdqp->parent_domain)
                 ibv_dealloc_pd(mdqp->parent_domain);
 
-        if (mqp_peer)
-                free(mqp_peer);
-
         if (mdqp->gqp.qp)
                 free(mdqp->gqp.qp);
         
         free(mdqp);
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_dv_post_recv(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
+{
+        int status = 0;
+        gds_mlx5_dv_qp_t *mdqp;
+        struct ibv_recv_wr *curr_wr = NULL;
+        uint64_t head, tail;
+        unsigned int cnt;
+
+        assert(gqp);
+        assert(wr);
+        assert(bad_wr);
+
+        mdqp = to_gds_mdv_qp(gqp);
+
+        assert(mdqp->rq_wq.head >= mdqp->rq_wq.tail);
+
+        curr_wr = wr;
+        head = mdqp->rq_wq.head;
+        tail = mdqp->rq_wq.tail;
+        cnt = mdqp->rq_wq.cnt;
+        while (curr_wr) {
+                struct mlx5_wqe_data_seg *seg;
+                uint16_t idx;
+                if (curr_wr->num_sge != 1 || !curr_wr->sg_list) {
+                        *bad_wr = curr_wr;
+                        status = EINVAL;
+                        gds_err("num_sge must be 1.\n");
+                        goto out;
+                }
+                if (head - tail >= cnt) {
+                        *bad_wr = curr_wr;
+                        status = ENOMEM;
+                        gds_err("No rx credit available.\n");
+                        goto out;
+                }
+                idx = head & (cnt - 1);
+                seg = (struct mlx5_wqe_data_seg *)((uintptr_t)mdqp->rq_wq.buf + (idx << GDS_MLX5_DV_RECV_WQE_SHIFT));
+                mlx5dv_set_data_seg(seg, curr_wr->sg_list->length, curr_wr->sg_list->lkey, curr_wr->sg_list->addr);
+                mdqp->rq_wq.wrid[idx] = curr_wr->wr_id;
+
+                ++head;
+                
+                curr_wr = wr->next;
+        }
+
+        wmb();
+
+        WRITE_ONCE(*mdqp->rq_wq.dbrec, htobe32(head & 0xffff));
+
+out:
+        return status;
 }
 
 //-----------------------------------------------------------------------------
@@ -1231,6 +1268,8 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->create_qp = gds_mlx5_dv_create_qp;
         t->destroy_qp = gds_mlx5_dv_destroy_qp;
         t->modify_qp = gds_mlx5_dv_modify_qp;
+
+        t->post_recv = gds_mlx5_dv_post_recv;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
