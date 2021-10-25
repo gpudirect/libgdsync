@@ -1268,6 +1268,32 @@ out:
 
 //-----------------------------------------------------------------------------
 
+static void gds_mlx5_dv_init_ops(gds_mlx5_dv_peer_op_wr *op, int count)
+{
+        int i = count;
+        while (--i)
+                op[i-1].next = &op[i];
+        op[count-1].next = NULL;
+}
+
+//-----------------------------------------------------------------------------
+
+void gds_mlx5_dv_init_send_info(gds_send_request_t *_info)
+{
+        gds_mlx5_dv_send_request_t *info;
+
+        assert(_info);
+        info = to_gds_mdv_send_request(_info);
+
+        gds_dbg("send_request=%p\n", info);
+
+        info->commit.storage = info->wr;
+        info->commit.entries = sizeof(info->wr)/sizeof(info->wr[0]);
+        gds_mlx5_dv_init_ops(info->commit.storage, info->commit.entries);
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1283,10 +1309,11 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->modify_qp = gds_mlx5_dv_modify_qp;
 
         t->post_recv = gds_mlx5_dv_post_recv;
+
+        t->init_send_info = gds_mlx5_dv_init_send_info;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
-        t->init_send_info = gds_mlx5_exp_init_send_info;
         t->post_send_ops = gds_mlx5_exp_post_send_ops;
         t->post_send_ops_on_cpu = gds_mlx5_exp_post_send_ops_on_cpu;
         t->prepare_send = gds_mlx5_exp_prepare_send;

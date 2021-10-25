@@ -243,6 +243,10 @@ static inline gds_mlx5_dv_qp_t *to_gds_mdv_qp(gds_qp_t *gqp) {
         return container_of(gqp, gds_mlx5_dv_qp_t, gqp);
 }
 
+static inline gds_mlx5_dv_send_request_t *to_gds_mdv_send_request(gds_send_request_t *gsreq) {
+        return (gds_mlx5_dv_send_request_t *)(gsreq);
+}
+
 //-----------------------------------------------------------------------------
 
 /*
