@@ -755,7 +755,7 @@ int gds_mlx5_dv_create_qp(
         mdqp->sq_wq.wrid = sq_wrid;
         mdqp->sq_wq.buf = (void *)((uintptr_t)wq_buf->addr + sq_buf_offset);
         mdqp->sq_wq.cnt = max_tx;
-        mdqp->rq_wq.dbrec = (__be32 *)((uintptr_t)dbr_buf->addr + sizeof(__be32));
+        mdqp->sq_wq.dbrec = (__be32 *)((uintptr_t)dbr_buf->addr + sizeof(__be32));
         tx_mcq->wq = &mdqp->sq_wq;
 
         mdqp->rq_wq.wrid = rq_wrid;
@@ -1293,7 +1293,7 @@ void gds_mlx5_dv_init_send_info(gds_send_request_t *_info)
 
 //-----------------------------------------------------------------------------
 
-static int gds_mlx5_dv_post_send(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_send_wr **bad_wr)
+static int gds_mlx5_dv_post_wrs(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_send_wr **bad_wr)
 {
         int status = 0;
         gds_send_wr *curr_wr = NULL;
@@ -1398,19 +1398,49 @@ static int gds_mlx5_dv_post_send(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_se
 
         wmb();
 
-        WRITE_ONCE(*mdqp->sq_wq.dbrec, htobe32(head & 0xffff));
-
-        wmb();
-
         assert(ctrl_seg);
-        // Ring DB
-        WRITE_ONCE(*(uint64_t *)mdqp->bf_uar->reg_addr, *(uint64_t *)ctrl_seg);
 
+        mdqp->peer_ctrl_seg = ctrl_seg;
         mdqp->sq_wq.head = head;
         *bad_wr = NULL;
 
 out:
         return status;
+}
+
+//-----------------------------------------------------------------------------
+
+static int gds_mlx5_dv_peer_commit_qp(gds_mlx5_dv_qp_t *mdqp, gds_mlx5_dv_peer_commit_t *commit)
+{
+        gds_mlx5_dv_peer_op_wr_t *wr = commit->storage;
+        int entries = 3;
+
+        if (commit->entries < entries)
+                return ENOSPC;
+
+        wr->type = GDS_MLX5_DV_PEER_OP_STORE_DWORD;
+        wr->wr.dword_va.data = htonl(mdqp->sq_wq.head & 0xffff);
+        wr->wr.dword_va.target_id = mdqp->dbr_va_id;
+        wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
+        wr = wr->next;
+
+        wr->type = GDS_MLX5_DV_PEER_OP_FENCE;
+        wr->wr.fence.fence_flags = GDS_MLX5_DV_PEER_FENCE_OP_WRITE | GDS_MLX5_DV_PEER_FENCE_FROM_HCA;
+        if (mdqp->dbr_buf->mem_type == GDS_MEMORY_GPU)
+                wr->wr.fence.fence_flags |= GDS_MLX5_DV_PEER_FENCE_MEM_PEER;
+        else
+                wr->wr.fence.fence_flags |= GDS_MLX5_DV_PEER_FENCE_MEM_SYS;
+        wr = wr->next;
+
+        wr->type = GDS_MLX5_DV_PEER_OP_STORE_QWORD;
+        wr->wr.qword_va.data = *(__be64 *)mdqp->peer_ctrl_seg;
+        wr->wr.qword_va.target_id = mdqp->bf_va_id;
+        wr->wr.qword_va.offset = 0;
+
+        mdqp->peer_ctrl_seg = NULL;
+        commit->entries = entries;
+
+        return 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -1430,14 +1460,14 @@ int gds_mlx5_dv_prepare_send(gds_qp_t *gqp, gds_send_wr *p_ewr,
         mdqp = to_gds_mdv_qp(gqp);
         request = to_gds_mdv_send_request(_request);
 
-        ret = gds_mlx5_dv_post_send(mdqp, p_ewr, bad_ewr);
+        ret = gds_mlx5_dv_post_wrs(mdqp, p_ewr, bad_ewr);
         if (ret) {
 
                 if (ret == ENOMEM) {
                         // out of space error can happen too often to report
-                        gds_dbg("ENOMEM error %d in gds_mlx5_dv_post_send\n", ret);
+                        gds_dbg("ENOMEM error %d in gds_mlx5_dv_post_wrs\n", ret);
                 } else {
-                        gds_err("error %d in gds_mlx5_dv_post_send\n", ret);
+                        gds_err("error %d in gds_mlx5_dv_post_wrs\n", ret);
                 }
                 goto out;
         }

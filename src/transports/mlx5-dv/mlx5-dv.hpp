@@ -158,6 +158,8 @@ typedef struct gds_mlx5_dv_qp {
         gds_peer_attr                  *peer_attr;
 
         struct ibv_pd                  *parent_domain;
+
+        struct mlx5_wqe_ctrl_seg       *peer_ctrl_seg;
 } gds_mlx5_dv_qp_t;
 
 typedef enum gds_mlx5_dv_peer_op {

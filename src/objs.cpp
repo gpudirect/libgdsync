@@ -54,7 +54,7 @@ gds_buf *gds_peer::alloc(size_t sz, uint32_t alignment, gds_memory_type_t mem_ty
 {
         // TODO: support alignment
         // TODO: handle exception here
-        gds_buf *buf = new gds_buf(this, sz);
+        gds_buf *buf = new gds_buf(this, sz, mem_type);
         if (!buf)
                 return buf;
         int ret = gds_peer_malloc(gpu_id, 0, &buf->addr, &buf->peer_addr, buf->length, mem_type, &buf->handle);

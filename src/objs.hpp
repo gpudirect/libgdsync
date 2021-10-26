@@ -197,9 +197,10 @@ struct gds_peer;
 struct gds_buf: gds_peer_buf_t {
         gds_peer   *peer;
         CUdeviceptr peer_addr;
+        gds_memory_type_t mem_type;
         void       *handle;
 
-        gds_buf(gds_peer *p, size_t sz): peer(p), peer_addr(0), handle(NULL) {
+        gds_buf(gds_peer *p, size_t sz, gds_memory_type_t mem_type): peer(p), peer_addr(0), handle(NULL), mem_type(mem_type) {
                 addr = NULL;
                 length = sz;
                 comp_mask = 0;
