@@ -134,8 +134,6 @@ typedef struct gds_mlx5_dv_qp {
 
         struct mlx5dv_devx_obj         *devx_qp;
 
-        uint8_t                         sl;
-
         gds_buf                        *wq_buf;
         struct mlx5dv_devx_umem        *wq_umem;
         uint64_t                        wq_va_id;

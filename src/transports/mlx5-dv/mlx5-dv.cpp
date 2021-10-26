@@ -75,7 +75,7 @@ static int gds_mlx5_dv_create_cq(
 
         gds_mlx5_dv_cq_peer_t *mcq_peer = NULL;
 
-        mlx5dv_obj dv_obj;
+        struct mlx5dv_obj dv_obj;
 
         gds_peer *peer = NULL;
 
@@ -485,7 +485,7 @@ int gds_mlx5_dv_create_qp(
         gds_buf *dbr_buf = NULL;
         uint64_t dbr_buf_range_id = 0;
 
-        mlx5dv_obj dv_obj;
+        struct mlx5dv_obj dv_obj;
         struct mlx5dv_pd dvpd = {0,};
         uint64_t dv_obj_type = 0;
 
@@ -1000,8 +1000,6 @@ static int gds_mlx5_dv_modify_qp_init2rtr(gds_mlx5_dv_qp_t *mdqp, struct ibv_qp_
                 goto out;
         }
 
-        mdqp->sl = attr->ah_attr.sl;
-
         mdqp->gqp.qp->state = IBV_QPS_RTR;
 
 out:
@@ -1218,8 +1216,7 @@ int gds_mlx5_dv_post_recv(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_recv
         int status = 0;
         gds_mlx5_dv_qp_t *mdqp;
         struct ibv_recv_wr *curr_wr = NULL;
-        uint64_t head, tail;
-        unsigned int cnt;
+        uint64_t head, tail, cnt;
 
         assert(gqp);
         assert(wr);
@@ -1262,6 +1259,8 @@ int gds_mlx5_dv_post_recv(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_recv
 
         WRITE_ONCE(*mdqp->rq_wq.dbrec, htobe32(head & 0xffff));
 
+        mdqp->rq_wq.head = head;
+
 out:
         return status;
 }
@@ -1294,6 +1293,167 @@ void gds_mlx5_dv_init_send_info(gds_send_request_t *_info)
 
 //-----------------------------------------------------------------------------
 
+static int gds_mlx5_dv_post_send(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_send_wr **bad_wr)
+{
+        int status = 0;
+        gds_send_wr *curr_wr = NULL;
+        uint64_t head, tail, cnt;
+        uint64_t required_nwqe;
+        uint8_t ds;
+        struct mlx5_wqe_ctrl_seg *ctrl_seg = NULL;
+
+        assert(wr);
+        assert(bad_wr);
+
+        assert(mdqp->qp_type == GDS_MLX5_DV_QP_TYPE_RC || mdqp->qp_type == GDS_MLX5_DV_QP_TYPE_UD);
+        assert(mdqp->sq_wq.head >= mdqp->sq_wq.tail);
+
+        curr_wr = wr;
+        head = mdqp->sq_wq.head;
+        tail = mdqp->sq_wq.tail;
+        cnt = mdqp->sq_wq.cnt;
+
+        required_nwqe = (mdqp->qp_type == GDS_MLX5_DV_QP_TYPE_RC) ? 1 : 2;
+        ds = (mdqp->qp_type == GDS_MLX5_DV_QP_TYPE_RC) ? 2 : 5;
+
+
+        *bad_wr = curr_wr;
+        if (cnt < required_nwqe) {
+                status = ENOMEM;
+                gds_err("Not enough tx wqe buffer.\n");
+                goto out;
+        }
+
+        while (curr_wr) {
+                uintptr_t seg;
+                struct mlx5_wqe_data_seg *data_seg;
+                uint16_t idx;
+
+                *bad_wr = curr_wr;
+                if (head - tail > cnt - required_nwqe) {
+                        status = ENOMEM;
+                        gds_err("No tx credit available.\n");
+                        goto out;
+                }
+
+                if (curr_wr->num_sge != 1 || !curr_wr->sg_list) {
+                        status = EINVAL;
+                        gds_err("num_sge must be 1.\n");
+                        goto out;
+                }
+
+                if (curr_wr->opcode != IBV_WR_SEND) {
+                        status = EINVAL;
+                        gds_err("Support only IBV_WR_SEND.\n");
+                        goto out;
+                }
+
+                if (curr_wr->send_flags != IBV_SEND_SIGNALED) {
+                        status = EINVAL;
+                        gds_err("Support only IBV_SEND_SIGNALED.\n");
+                        goto out;
+                }
+
+                idx = head & (cnt - 1);
+                seg = (uintptr_t)mdqp->sq_wq.buf + (idx << GDS_MLX5_DV_SEND_WQE_SHIFT);
+
+                ctrl_seg = (struct mlx5_wqe_ctrl_seg *)seg;
+                mlx5dv_set_ctrl_seg(ctrl_seg, (head & 0xffff), MLX5_OPCODE_SEND, 0, mdqp->gqp.qp->qp_num, MLX5_WQE_CTRL_CQ_UPDATE, ds, 0, 0);
+
+                seg += sizeof(struct mlx5_wqe_ctrl_seg);
+
+                if (mdqp->qp_type == GDS_MLX5_DV_QP_TYPE_UD) {
+                        struct mlx5dv_ah mah;
+                        struct mlx5dv_obj dv_obj;
+                        struct mlx5_wqe_datagram_seg *datagram_seg = (struct mlx5_wqe_datagram_seg *)seg;
+
+                        dv_obj.ah.in = curr_wr->wr.ud.ah;
+                        dv_obj.ah.out = &mah;
+
+                        status = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_AH);
+                        if (!status) {
+                                gds_err("Error in mlx5dv_init_obj for MLX5DV_OBJ_AH.\n");
+                                goto out;
+                        }
+                        memcpy(&datagram_seg->av, mah.av, sizeof(datagram_seg->av));
+                        datagram_seg->av.key.qkey.qkey = htobe32(curr_wr->wr.ud.remote_qkey);
+                        datagram_seg->av.dqp_dct = htobe32(curr_wr->wr.ud.remote_qpn);
+
+                        seg += sizeof(struct mlx5_wqe_datagram_seg);
+
+                        ++head;
+
+                        // Wrap around
+                        if (head & (cnt - 1))
+                                seg = (uintptr_t)mdqp->sq_wq.buf;
+                }
+
+                data_seg = (struct mlx5_wqe_data_seg *)seg;
+                mlx5dv_set_data_seg(data_seg, curr_wr->sg_list->length, curr_wr->sg_list->lkey, curr_wr->sg_list->addr);
+
+                mdqp->sq_wq.wrid[idx] = curr_wr->wr_id;
+                ++head;
+                curr_wr = wr->next;
+        }
+
+        wmb();
+
+        WRITE_ONCE(*mdqp->sq_wq.dbrec, htobe32(head & 0xffff));
+
+        wmb();
+
+        assert(ctrl_seg);
+        // Ring DB
+        WRITE_ONCE(*(uint64_t *)mdqp->bf_uar->reg_addr, *(uint64_t *)ctrl_seg);
+
+        mdqp->sq_wq.head = head;
+        *bad_wr = NULL;
+
+out:
+        return status;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_dv_prepare_send(gds_qp_t *gqp, gds_send_wr *p_ewr, 
+        gds_send_wr **bad_ewr, 
+        gds_send_request_t *_request)
+{
+        int ret = 0;
+
+        gds_mlx5_dv_qp_t *mdqp;
+        gds_mlx5_dv_send_request_t *request;
+
+        assert(gqp);
+        assert(_request);
+
+        mdqp = to_gds_mdv_qp(gqp);
+        request = to_gds_mdv_send_request(_request);
+
+        ret = gds_mlx5_dv_post_send(mdqp, p_ewr, bad_ewr);
+        if (ret) {
+
+                if (ret == ENOMEM) {
+                        // out of space error can happen too often to report
+                        gds_dbg("ENOMEM error %d in gds_mlx5_dv_post_send\n", ret);
+                } else {
+                        gds_err("error %d in gds_mlx5_dv_post_send\n", ret);
+                }
+                goto out;
+        }
+        
+        ret = gds_mlx5_dv_peer_commit_qp(mdqp, &request->commit);
+        if (ret) {
+                gds_err("error %d in gds_mlx5_dv_peer_commit_qp\n", ret);
+                goto out;
+        }
+
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1311,12 +1471,12 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->post_recv = gds_mlx5_dv_post_recv;
 
         t->init_send_info = gds_mlx5_dv_init_send_info;
+        t->prepare_send = gds_mlx5_dv_prepare_send;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
         t->post_send_ops = gds_mlx5_exp_post_send_ops;
         t->post_send_ops_on_cpu = gds_mlx5_exp_post_send_ops_on_cpu;
-        t->prepare_send = gds_mlx5_exp_prepare_send;
         t->get_send_descs = gds_mlx5_exp_get_send_descs;
         t->get_num_send_request_entries = gds_mlx5_exp_get_num_send_request_entries;
 
