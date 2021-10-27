@@ -1483,6 +1483,15 @@ out:
 
 //-----------------------------------------------------------------------------
 
+uint32_t gds_mlx5_dv_get_num_send_request_entries(gds_send_request_t *_request) {
+        gds_mlx5_dv_send_request_t *request;
+        assert(_request);
+        request = to_gds_mdv_send_request(_request);
+        return request->commit.entries;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1501,13 +1510,13 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 
         t->init_send_info = gds_mlx5_dv_init_send_info;
         t->prepare_send = gds_mlx5_dv_prepare_send;
+        t->get_num_send_request_entries = gds_mlx5_dv_get_num_send_request_entries;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
         t->post_send_ops = gds_mlx5_exp_post_send_ops;
         t->post_send_ops_on_cpu = gds_mlx5_exp_post_send_ops_on_cpu;
         t->get_send_descs = gds_mlx5_exp_get_send_descs;
-        t->get_num_send_request_entries = gds_mlx5_exp_get_num_send_request_entries;
 
         t->init_wait_request = gds_mlx5_exp_init_wait_request;
         t->dump_wait_request = gds_mlx5_exp_dump_wait_request;
