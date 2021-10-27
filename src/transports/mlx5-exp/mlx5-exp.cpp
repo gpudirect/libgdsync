@@ -451,7 +451,7 @@ int gds_mlx5_exp_post_send_ops(gds_peer *peer, gds_send_request_t *_info, gds_op
         assert(_info);
 
         info = to_gds_mexp_send_request(_info);
-        return gds_mlx5_exp_post_ops(peer, info->commit.entries, info->commit.storage, ops, 0);
+        return gds_post_ops(peer, info->commit.entries, (gds_peer_op_wr_t *)info->commit.storage, ops, 0);
 }
 
 //-----------------------------------------------------------------------------
@@ -463,7 +463,7 @@ int gds_mlx5_exp_post_send_ops_on_cpu(gds_send_request_t *_info, int flags)
         assert(_info);
 
         info = to_gds_mexp_send_request(_info);
-        return gds_mlx5_exp_post_ops_on_cpu(info->commit.entries, info->commit.storage, flags);
+        return gds_post_ops_on_cpu(info->commit.entries, (gds_peer_op_wr_t *)info->commit.storage, flags);
 }
 
 //-----------------------------------------------------------------------------
@@ -659,9 +659,9 @@ int gds_mlx5_exp_stream_post_wait_descriptor(gds_peer *peer, gds_wait_request_t 
 
         request = to_gds_mexp_wait_request(_request);
 
-        ret = gds_mlx5_exp_post_ops(peer, request->peek.entries, request->peek.storage, params, flags);
+        ret = gds_post_ops(peer, request->peek.entries, (gds_peer_op_wr_t *)request->peek.storage, params, flags);
         if (ret)
-                gds_err("error %d in gds_mlx5_exp_post_ops\n", ret);
+                gds_err("error %d in gds_post_ops\n", ret);
 
         return ret;
 }
@@ -676,9 +676,9 @@ int gds_mlx5_exp_post_wait_descriptor(gds_wait_request_t *_request, int flags)
         assert(_request);
         request = to_gds_mexp_wait_request(_request);
 
-        ret = gds_mlx5_exp_post_ops_on_cpu(request->peek.entries, request->peek.storage, flags);
+        ret = gds_post_ops_on_cpu(request->peek.entries, (gds_peer_op_wr_t *)request->peek.storage, flags);
         if (ret)
-                gds_err("error %d in gds_mlx5_exp_post_ops_on_cpu\n", ret);
+                gds_err("error %d in gds_post_ops_on_cpu\n", ret);
 
         return ret;
 }

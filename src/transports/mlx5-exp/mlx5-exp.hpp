@@ -29,6 +29,7 @@ typedef struct gds_mlx5_exp_send_request {
 } gds_mlx5_exp_send_request_t;
 static_assert(sizeof(gds_mlx5_exp_send_request_t) % 64 == 0, "gds_mlx5_exp_send_request_t must be 64-byte aligned.");
 static_assert(sizeof(gds_mlx5_exp_send_request_t) <= sizeof(gds_send_request_t), "The size of gds_mlx5_exp_send_request_t must be less than or equal to that of gds_send_request_t.");
+static_assert(sizeof(struct peer_op_wr) == sizeof(gds_peer_op_wr_t), "struct peer_op_wr and gds_peer_op_wr_t must have equal size.");
 
 typedef struct gds_mlx5_exp_wait_request {
         struct ibv_exp_peer_peek peek;
