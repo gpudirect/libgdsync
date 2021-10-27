@@ -162,62 +162,9 @@ typedef struct gds_mlx5_dv_qp {
         struct mlx5_wqe_ctrl_seg       *peer_ctrl_seg;
 } gds_mlx5_dv_qp_t;
 
-typedef enum gds_mlx5_dv_peer_op {
-        GDS_MLX5_DV_PEER_OP_RESERVED1   = 1,
-
-        GDS_MLX5_DV_PEER_OP_FENCE       = 0,
-
-        GDS_MLX5_DV_PEER_OP_STORE_DWORD = 4,
-        GDS_MLX5_DV_PEER_OP_STORE_QWORD = 2,
-        GDS_MLX5_DV_PEER_OP_COPY_BLOCK  = 3,
-
-        GDS_MLX5_DV_PEER_OP_POLL_AND_DWORD      = 12,
-        GDS_MLX5_DV_PEER_OP_POLL_NOR_DWORD      = 13,
-        GDS_MLX5_DV_PEER_OP_POLL_GEQ_DWORD      = 14,
-} gds_mlx5_dv_peer_op_t;
-
-typedef enum gds_mlx5_dv_peer_fence {
-        GDS_MLX5_DV_PEER_FENCE_OP_READ  = (1 << 0),
-        GDS_MLX5_DV_PEER_FENCE_OP_WRITE = (1 << 1),
-        GDS_MLX5_DV_PEER_FENCE_FROM_CPU = (1 << 2),
-        GDS_MLX5_DV_PEER_FENCE_FROM_HCA = (1 << 3),
-        GDS_MLX5_DV_PEER_FENCE_MEM_SYS  = (1 << 4),
-        GDS_MLX5_DV_PEER_FENCE_MEM_PEER = (1 << 5),
-} gds_mlx5_dv_peer_fence_t;
-
-typedef struct gds_mlx5_dv_peer_op_wr {
-        struct gds_mlx5_dv_peer_op_wr *next;
-        gds_mlx5_dv_peer_op_t type;
-        union {
-                struct {
-                        uint64_t fence_flags; /* from gds_mlx5_dv_peer_fence_t */
-                } fence;
-
-                struct {
-                        uint32_t        data;
-                        uint64_t        target_id;
-                        size_t          offset;
-                } dword_va; /* Use for all operations targeting dword */
-
-                struct {
-                        uint64_t        data;
-                        uint64_t        target_id;
-                        size_t          offset;
-                } qword_va; /* Use for all operations targeting qword */
-
-                struct {
-                        void           *src;
-                        uint64_t        target_id;
-                        size_t          offset;
-                        size_t          len;
-                } copy_op;
-        } wr;
-        uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
-} gds_mlx5_dv_peer_op_wr_t;
-
 typedef struct gds_mlx5_dv_peer_commit {
         /* IN/OUT - linked list of empty/filled descriptors */
-        gds_mlx5_dv_peer_op_wr_t *storage;
+        gds_peer_op_wr_t *storage;
         /* IN/OUT - number of allocated/filled descriptors */
         uint32_t entries;
         /* OUT - identifier used in gds_mlx5_dv_rollback_qp to rollback WQEs set */
@@ -227,7 +174,7 @@ typedef struct gds_mlx5_dv_peer_commit {
 
 typedef struct gds_mlx5_dv_send_request {
         gds_mlx5_dv_peer_commit_t commit;
-        gds_mlx5_dv_peer_op_wr_t wr[GDS_SEND_INFO_MAX_OPS];
+        gds_peer_op_wr_t wr[GDS_SEND_INFO_MAX_OPS];
         uint8_t pad1[32];
 } gds_mlx5_dv_send_request_t;
 static_assert(sizeof(gds_mlx5_dv_send_request_t) % 64 == 0, "gds_mlx5_dv_send_request_t must be 64-byte aligned.");

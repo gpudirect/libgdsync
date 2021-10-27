@@ -1267,7 +1267,7 @@ out:
 
 //-----------------------------------------------------------------------------
 
-static void gds_mlx5_dv_init_ops(gds_mlx5_dv_peer_op_wr *op, int count)
+static void gds_mlx5_dv_init_ops(gds_peer_op_wr_t *op, int count)
 {
         int i = count;
         while (--i)
@@ -1412,27 +1412,27 @@ out:
 
 static int gds_mlx5_dv_peer_commit_qp(gds_mlx5_dv_qp_t *mdqp, gds_mlx5_dv_peer_commit_t *commit)
 {
-        gds_mlx5_dv_peer_op_wr_t *wr = commit->storage;
+        gds_peer_op_wr_t *wr = commit->storage;
         int entries = 3;
 
         if (commit->entries < entries)
                 return ENOSPC;
 
-        wr->type = GDS_MLX5_DV_PEER_OP_STORE_DWORD;
+        wr->type = GDS_PEER_OP_STORE_DWORD;
         wr->wr.dword_va.data = htonl(mdqp->sq_wq.head & 0xffff);
         wr->wr.dword_va.target_id = mdqp->dbr_va_id;
         wr->wr.dword_va.offset = sizeof(uint32_t) * MLX5_SND_DBR;
         wr = wr->next;
 
-        wr->type = GDS_MLX5_DV_PEER_OP_FENCE;
-        wr->wr.fence.fence_flags = GDS_MLX5_DV_PEER_FENCE_OP_WRITE | GDS_MLX5_DV_PEER_FENCE_FROM_HCA;
+        wr->type = GDS_PEER_OP_FENCE;
+        wr->wr.fence.fence_flags = GDS_PEER_FENCE_OP_WRITE | GDS_PEER_FENCE_FROM_HCA;
         if (mdqp->dbr_buf->mem_type == GDS_MEMORY_GPU)
-                wr->wr.fence.fence_flags |= GDS_MLX5_DV_PEER_FENCE_MEM_PEER;
+                wr->wr.fence.fence_flags |= GDS_PEER_FENCE_MEM_PEER;
         else
-                wr->wr.fence.fence_flags |= GDS_MLX5_DV_PEER_FENCE_MEM_SYS;
+                wr->wr.fence.fence_flags |= GDS_PEER_FENCE_MEM_SYS;
         wr = wr->next;
 
-        wr->type = GDS_MLX5_DV_PEER_OP_STORE_QWORD;
+        wr->type = GDS_PEER_OP_STORE_QWORD;
         wr->wr.qword_va.data = *(__be64 *)mdqp->peer_ctrl_seg;
         wr->wr.qword_va.target_id = mdqp->bf_va_id;
         wr->wr.qword_va.offset = 0;
@@ -1492,6 +1492,20 @@ uint32_t gds_mlx5_dv_get_num_send_request_entries(gds_send_request_t *_request) 
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_dv_post_send_ops(gds_peer *peer, gds_send_request_t *_request, gds_op_list_t &ops)
+{
+        gds_mlx5_dv_send_request_t *request;
+
+        assert(peer);
+        assert(_request);
+
+        request = to_gds_mdv_send_request(_request);
+        return gds_post_ops(peer, request->commit.entries, request->commit.storage, ops, 0);
+}
+
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1511,10 +1525,10 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->init_send_info = gds_mlx5_dv_init_send_info;
         t->prepare_send = gds_mlx5_dv_prepare_send;
         t->get_num_send_request_entries = gds_mlx5_dv_get_num_send_request_entries;
+        t->post_send_ops = gds_mlx5_dv_post_send_ops;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
-        t->post_send_ops = gds_mlx5_exp_post_send_ops;
         t->post_send_ops_on_cpu = gds_mlx5_exp_post_send_ops_on_cpu;
         t->get_send_descs = gds_mlx5_exp_get_send_descs;
 
