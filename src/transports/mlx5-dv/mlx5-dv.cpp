@@ -1503,6 +1503,17 @@ int gds_mlx5_dv_post_send_ops(gds_peer *peer, gds_send_request_t *_request, gds_
         return gds_post_ops(peer, request->commit.entries, request->commit.storage, ops, 0);
 }
 
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_dv_post_send_ops_on_cpu(gds_send_request_t *_request, int flags)
+{
+        gds_mlx5_dv_send_request_t *request;
+
+        assert(_request);
+
+        request = to_gds_mdv_send_request(_request);
+        return gds_post_ops_on_cpu(request->commit.entries, request->commit.storage, flags);
+}
 
 //-----------------------------------------------------------------------------
 
@@ -1526,10 +1537,10 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->prepare_send = gds_mlx5_dv_prepare_send;
         t->get_num_send_request_entries = gds_mlx5_dv_get_num_send_request_entries;
         t->post_send_ops = gds_mlx5_dv_post_send_ops;
+        t->post_send_ops_on_cpu = gds_mlx5_dv_post_send_ops_on_cpu;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
-        t->post_send_ops_on_cpu = gds_mlx5_exp_post_send_ops_on_cpu;
         t->get_send_descs = gds_mlx5_exp_get_send_descs;
 
         t->init_wait_request = gds_mlx5_exp_init_wait_request;
