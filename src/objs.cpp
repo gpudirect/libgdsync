@@ -39,7 +39,6 @@
 using namespace std;
 
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
 #include <gdrapi.h>
 
 #include "gdsync.h"
@@ -51,14 +50,14 @@ using namespace std;
 
 //-----------------------------------------------------------------------------
 
-gds_buf *gds_peer::alloc(size_t sz, uint32_t alignment)
+gds_buf *gds_peer::alloc(size_t sz, uint32_t alignment, gds_memory_type_t mem_type)
 {
         // TODO: support alignment
         // TODO: handle exception here
-        gds_buf *buf = new gds_buf(this, sz);
+        gds_buf *buf = new gds_buf(this, sz, mem_type);
         if (!buf)
                 return buf;
-        int ret = gds_peer_malloc(gpu_id, 0, &buf->addr, &buf->peer_addr, buf->length, &buf->handle);
+        int ret = gds_peer_malloc(gpu_id, 0, &buf->addr, &buf->peer_addr, buf->length, mem_type, &buf->handle);
         if (ret) {
                 delete buf;
                 buf = NULL;
@@ -71,24 +70,30 @@ gds_buf *gds_peer::buf_alloc_cq(size_t length, uint32_t dir, uint32_t alignment,
 {
         gds_buf *buf = NULL;
         switch (dir) {
-        case (IBV_EXP_PEER_DIRECTION_FROM_HCA|IBV_EXP_PEER_DIRECTION_TO_PEER|IBV_EXP_PEER_DIRECTION_TO_CPU):
-                // CQ buf
-                if (GDS_ALLOC_CQ_ON_GPU == (flags & GDS_ALLOC_CQ_MASK)) {
-                        gds_dbg("allocating CQ on GPU mem\n");
-                        buf = alloc(length, alignment);
-                } else {
-                        gds_dbg("allocating CQ on Host mem\n");
-                }
-                break;
-        case (IBV_EXP_PEER_DIRECTION_FROM_PEER|IBV_EXP_PEER_DIRECTION_TO_CPU):
+        case (GDS_PEER_DIRECTION_FROM_HCA|GDS_PEER_DIRECTION_TO_PEER|GDS_PEER_DIRECTION_TO_CPU):
+		// CQ dbrec
+		if (GDS_ALLOC_CQ_DBREC_ON_GPU == (flags & GDS_ALLOC_CQ_DBREC_MASK)) {
+			gds_dbg("allocating CQ DBREC on GPU mem\n");
+			buf = alloc(length, alignment, GDS_MEMORY_GPU);
+		}
+
+		// CQ buf
+		if (GDS_ALLOC_CQ_ON_GPU == (flags & GDS_ALLOC_CQ_MASK)) {
+			gds_dbg("allocating CQ buf on GPU mem\n");
+			buf = alloc(length, alignment, GDS_MEMORY_GPU);
+		}
+		break;
+        case (GDS_PEER_DIRECTION_FROM_PEER|GDS_PEER_DIRECTION_TO_CPU):
                 // CQ peer buf, helper buffer
                 // on SYSMEM for the near future
                 // GPU does a store to the 'busy' field as part of the peek_cq task
                 // CPU polls on that field
                 gds_dbg("allocating CQ peer buf on Host mem\n");
+		buf = alloc(length, alignment, GDS_MEMORY_HOST);
                 break;
-        case (IBV_EXP_PEER_DIRECTION_FROM_PEER|IBV_EXP_PEER_DIRECTION_TO_HCA):
+        case (GDS_PEER_DIRECTION_FROM_PEER|GDS_PEER_DIRECTION_TO_HCA):
                 gds_dbg("allocating CQ dbrec on Host mem\n");
+		buf = alloc(length, alignment, GDS_MEMORY_HOST);
                 break;
         default:
                 gds_err("unexpected dir 0x%x\n", dir);
@@ -101,15 +106,23 @@ gds_buf *gds_peer::buf_alloc_wq(size_t length, uint32_t dir, uint32_t alignment,
 {
         gds_buf *buf = NULL;
         switch (dir) {
-        case IBV_EXP_PEER_DIRECTION_FROM_PEER|IBV_EXP_PEER_DIRECTION_TO_HCA:
-                // dbrec
-                if (GDS_ALLOC_DBREC_ON_GPU == (flags & GDS_ALLOC_DBREC_MASK)) {
-                        gds_dbg("allocating DBREC on GPU mem\n");
-                        buf = alloc(length, alignment);
-                } else {
-                        gds_dbg("allocating DBREC on Host mem\n");
-                }
-                break;
+        case GDS_PEER_DIRECTION_FROM_PEER|GDS_PEER_DIRECTION_TO_HCA:
+		// dbrec
+		if (GDS_ALLOC_WQ_DBREC_ON_GPU == (flags & GDS_ALLOC_WQ_DBREC_MASK)) {
+			gds_dbg("allocating WQ DBREC on GPU mem\n");
+			buf = alloc(length, alignment, GDS_MEMORY_GPU);
+		} else {
+			gds_dbg("allocating WQ DBREC on Host mem\n");
+		}
+
+		// WQ
+		if (GDS_ALLOC_WQ_ON_GPU == (flags & GDS_ALLOC_WQ_MASK)) {
+			gds_dbg("allocating WQ buf on GPU mem\n");
+			buf = alloc(length, alignment, GDS_MEMORY_GPU);
+		} else {
+			gds_dbg("allocating WQ buf on Host mem\n");
+		}
+		break;
         default:
                 gds_err("unexpected dir=%08x\n", dir);
                 break;

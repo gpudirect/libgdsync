@@ -14,7 +14,6 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
-#include <infiniband/verbs_exp.h>
 #include <gdsync.h>
 #include <gdsync/tools.h>
 #include <gdsync/device.cuh>

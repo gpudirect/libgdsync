@@ -27,9 +27,18 @@
 
 #pragma once
 
+#include <stdio.h>
 #include <cuda.h>
-#include <infiniband/verbs_exp.h>
 
+#undef BEGIN_C_DECLS
+#undef END_C_DECLS
+#ifdef __cplusplus
+# define BEGIN_C_DECLS extern "C" {
+# define END_C_DECLS }
+#else
+# define BEGIN_C_DECLS
+# define END_C_DECLS
+#endif
 
 #ifdef USE_PROFILE
 #include <cuda_profiler_api.h>

@@ -32,6 +32,9 @@
 
 #pragma once
 
+#include "gdsync.h"
+#include "gdsync/mlx5.h"
+
 // from libmlx5/src/doorbell.h
 
 /*
@@ -75,6 +78,8 @@ static inline void gds_bf_copy(uint64_t *dest, uint64_t *src, size_t n_bytes)
 		n_bytes -= 8 * sizeof(*dest);
 	}
 }
+
+int gds_mlx5_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const size_t n_ops, const gds_peer_op_wr_t *op);
 
 
 /*

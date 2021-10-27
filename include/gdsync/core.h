@@ -40,42 +40,40 @@
           ((((v) & 0x0000ffffU) >> 0 ) >= (unsigned)GDS_API_MINOR_VERSION) )
 
 typedef enum gds_param {
-    GDS_PARAM_VERSION,
-    GDS_NUM_PARAMS
+        GDS_PARAM_VERSION,
+        GDS_NUM_PARAMS
 } gds_param_t;
 
 int gds_query_param(gds_param_t param, int *value);
 
 enum gds_create_qp_flags {
-    GDS_CREATE_QP_DEFAULT      = 0,
-    GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
-    GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
-    GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
-    GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
+        GDS_CREATE_QP_DEFAULT      = 0,
+        GDS_CREATE_QP_WQ_ON_GPU    = 1<<0,
+        GDS_CREATE_QP_TX_CQ_ON_GPU = 1<<1,
+        GDS_CREATE_QP_RX_CQ_ON_GPU = 1<<2,
+        GDS_CREATE_QP_WQ_DBREC_ON_GPU = 1<<5,
 };
 
-typedef struct ibv_exp_qp_init_attr gds_qp_init_attr_t;
-typedef struct ibv_exp_send_wr gds_send_wr;
+typedef struct ibv_qp_init_attr gds_qp_init_attr_t;
+typedef struct ibv_send_wr gds_send_wr;
 
-struct gds_cq {
+typedef struct gds_cq {
         struct ibv_cq *cq;
         uint32_t curr_offset;
-};
+} gds_cq_t;
 
-struct gds_qp {
+typedef struct gds_qp {
         struct ibv_qp *qp;
-        struct gds_cq send_cq;
-        struct gds_cq recv_cq;
-        struct ibv_exp_res_domain * res_domain;
+        struct gds_cq *send_cq;
+        struct gds_cq *recv_cq;
         struct ibv_context *dev_context;
-};
+} gds_qp_t;
 
 /* \brief: Create a peer-enabled QP attached to the specified GPU id.
  *
  * Peer QPs require dedicated send and recv CQs, e.g. cannot (easily)
  * use SRQ.
  */
-
 struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
                              gds_qp_init_attr_t *qp_init_attr,
                              int gpu_id, int flags);
@@ -85,6 +83,12 @@ struct gds_qp *gds_create_qp(struct ibv_pd *pd, struct ibv_context *context,
  * The associated CQs are destroyed as well.
  */
 int gds_destroy_qp(struct gds_qp *qp);
+
+/* \brief: Modify a peer-enabled QP
+ *
+ * Similar to ibv_modify_qp.
+ */
+int gds_modify_qp(gds_qp_t *gqp, struct ibv_qp_attr *attr, int attr_mask);
 
 /* \brief: CPU-synchronous post send for peer QPs
  *
@@ -97,7 +101,8 @@ int gds_post_send(struct gds_qp *qp, gds_send_wr *wr, gds_send_wr **bad_wr);
 /* \brief: CPU-synchronous post recv for peer QPs
  *
  * Notes:
- * - there is no GPU-synchronous version of this because there is not a use case for it.
+ * - There is no GPU-synchronous version of this because there is not a use case for it.
+ * - It is required for portability. For example, ibv_post_recv does not work with dv transport.
  */
 int gds_post_recv(struct gds_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
 
@@ -153,9 +158,11 @@ enum {
  */
 
 typedef struct gds_send_request {
-        struct ibv_exp_peer_commit commit;
-        struct peer_op_wr wr[GDS_SEND_INFO_MAX_OPS];
+        uint8_t reserved0[32];
+        uint8_t reserved1[56 * GDS_SEND_INFO_MAX_OPS];
+        uint8_t pad0[32];
 } gds_send_request_t;
+static_assert(sizeof(gds_send_request_t) % 64 == 0, "gds_send_request_t must be 64-byte aligned.");
 
 int gds_prepare_send(struct gds_qp *qp, gds_send_wr *p_ewr, gds_send_wr **bad_ewr, gds_send_request_t *request);
 int gds_stream_post_send(CUstream stream, gds_send_request_t *request);
@@ -167,9 +174,11 @@ int gds_stream_post_send_all(CUstream stream, int count, gds_send_request_t *req
  */
 
 typedef struct gds_wait_request {
-        struct ibv_exp_peer_peek peek;
-        struct peer_op_wr wr[GDS_WAIT_INFO_MAX_OPS];
+        uint8_t reserved0[40];
+        uint8_t reserved1[56 * GDS_WAIT_INFO_MAX_OPS];
+        uint8_t pad0[24];
 } gds_wait_request_t;
+static_assert(sizeof(gds_wait_request_t) % 64 == 0, "gds_wait_request_t must be 64-byte aligned.");
 
 /**
  * Initializes a wait request out of the next heading CQE, which is kept in
