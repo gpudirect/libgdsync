@@ -23,107 +23,12 @@ static void gds_mlx5_exp_init_ops(struct peer_op_wr *op, int count)
 
 int gds_mlx5_exp_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_t *_request)
 {
-        int retcode = 0;
         const gds_mlx5_exp_send_request_t *request = to_gds_mexp_send_request(_request);
-        size_t n_ops = request->commit.entries;
-        peer_op_wr *op = request->commit.storage;
+        const size_t n_ops = request->commit.entries;
+        const struct peer_op_wr *op = request->commit.storage;
         size_t n = 0;
 
-        memset(mlx5_i, 0, sizeof(*mlx5_i));
-
-        for (; op && n < n_ops; op = op->next, ++n) {
-                switch(op->type) {
-                case GDS_PEER_OP_FENCE: {
-                        gds_dbg("OP_FENCE: fence_flags=%" PRIu64 "\n", op->wr.fence.fence_flags);
-                        uint32_t fence_op = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_OP_READ|GDS_PEER_FENCE_OP_WRITE));
-                        uint32_t fence_from = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_FROM_CPU|GDS_PEER_FENCE_FROM_HCA));
-                        uint32_t fence_mem = (op->wr.fence.fence_flags & (GDS_PEER_FENCE_MEM_SYS|GDS_PEER_FENCE_MEM_PEER));
-                        if (fence_op == GDS_PEER_FENCE_OP_READ) {
-                                gds_dbg("nothing to do for read fences\n");
-                                break;
-                        }
-                        if (fence_from != GDS_PEER_FENCE_FROM_HCA) {
-                                gds_err("unexpected from fence\n");
-                                retcode = EINVAL;
-                                break;
-                        }
-                        if (fence_mem == GDS_PEER_FENCE_MEM_PEER) {
-                                gds_dbg("using light membar\n");
-                                mlx5_i->membar = 1;
-                        }
-                        else if (fence_mem == GDS_PEER_FENCE_MEM_SYS) {
-                                gds_dbg("using heavy membar\n");
-                                mlx5_i->membar_full = 1;
-                        }
-                        else {
-                                gds_err("unsupported fence combination\n");
-                                retcode = EINVAL;
-                                break;
-                        }
-                        break;
-                }
-                case GDS_PEER_OP_STORE_DWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.dword_va.target_id)->dptr + 
-                                op->wr.dword_va.offset;
-                        uint32_t data = op->wr.dword_va.data;
-                        gds_dbg("OP_STORE_DWORD dev_ptr=%" PRIx64 " data=%08x\n", (uint64_t)dev_ptr, data);
-                        if (n != 0) {
-                                gds_err("store DWORD is not 1st op\n");
-                                retcode = EINVAL;
-                                break;
-                        }
-                        mlx5_i->dbrec_ptr = (uint32_t*)dev_ptr;
-                        mlx5_i->dbrec_value = data;
-                        break;
-                }
-                case GDS_PEER_OP_STORE_QWORD: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.qword_va.target_id)->dptr +
-                                op->wr.qword_va.offset;
-                        uint64_t data = op->wr.qword_va.data;
-                        gds_dbg("OP_STORE_QWORD dev_ptr=%" PRIx64 " data=%" PRIx64 "\n", (uint64_t)dev_ptr, (uint64_t)data);
-                        if (n != 2) {
-                                gds_err("store QWORD is not 3rd op\n");
-                                retcode = EINVAL;
-                                break;
-                        }
-                        mlx5_i->db_ptr = (uint64_t*)dev_ptr;
-                        mlx5_i->db_value = data;
-                        break;
-                }
-                case GDS_PEER_OP_COPY_BLOCK: {
-                        CUdeviceptr dev_ptr = range_from_id(op->wr.copy_op.target_id)->dptr +
-                                op->wr.copy_op.offset;
-                        size_t len = op->wr.copy_op.len;
-                        void *src = op->wr.copy_op.src;
-                        gds_dbg("send inline detected\n");
-                        if (len < 8 || len > 64) {
-                                gds_err("unexpected len %zu\n", len);
-                                retcode = EINVAL;
-                                break;
-                        }
-                        mlx5_i->db_ptr = (uint64_t*)dev_ptr;
-                        mlx5_i->db_value = *(uint64_t*)src; 
-                        break;
-                }
-                case GDS_PEER_OP_POLL_AND_DWORD:
-                case GDS_PEER_OP_POLL_GEQ_DWORD:
-                case GDS_PEER_OP_POLL_NOR_DWORD: {
-                        gds_err("unexpected polling op in send request\n");
-                        retcode = EINVAL;
-                        break;
-                }
-                default:
-                        gds_err("undefined peer op type %d\n", op->type);
-                        retcode = EINVAL;
-                        break;
-                }
-
-                if (retcode) {
-                        gds_err("error in fill func at entry n=%zu\n", n);
-                        break;
-                }
-        }
-        return retcode;
+        return gds_mlx5_get_send_descs(mlx5_i, n_ops, (const gds_peer_op_wr_t *)op);
 }
 
 //-----------------------------------------------------------------------------

@@ -1517,6 +1517,18 @@ int gds_mlx5_dv_post_send_ops_on_cpu(gds_send_request_t *_request, int flags)
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_dv_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_request_t *_request)
+{
+        const gds_mlx5_dv_send_request_t *request = to_gds_mdv_send_request(_request);
+        const size_t n_ops = request->commit.entries;
+        const gds_peer_op_wr_t *op = request->commit.storage;
+        size_t n = 0;
+
+        return gds_mlx5_get_send_descs(mlx5_i, n_ops, op);
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1538,10 +1550,10 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->get_num_send_request_entries = gds_mlx5_dv_get_num_send_request_entries;
         t->post_send_ops = gds_mlx5_dv_post_send_ops;
         t->post_send_ops_on_cpu = gds_mlx5_dv_post_send_ops_on_cpu;
+        t->get_send_descs = gds_mlx5_dv_get_send_descs;
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
-        t->get_send_descs = gds_mlx5_exp_get_send_descs;
 
         t->init_wait_request = gds_mlx5_exp_init_wait_request;
         t->dump_wait_request = gds_mlx5_exp_dump_wait_request;

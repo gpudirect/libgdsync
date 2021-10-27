@@ -194,6 +194,10 @@ static inline gds_mlx5_dv_send_request_t *to_gds_mdv_send_request(gds_send_reque
         return (gds_mlx5_dv_send_request_t *)(gsreq);
 }
 
+static inline const gds_mlx5_dv_send_request_t *to_gds_mdv_send_request(const gds_send_request_t *gsreq) {
+        return (const gds_mlx5_dv_send_request_t *)(gsreq);
+}
+
 //-----------------------------------------------------------------------------
 
 /*
