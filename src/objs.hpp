@@ -32,7 +32,7 @@ static const size_t max_gpus = 16;
 /**
  * Compatible with enum ibv_exp_peer_op
  */
-enum gds_peer_op {
+typedef enum gds_peer_op {
     GDS_PEER_OP_RESERVED1   = 1,
 
     GDS_PEER_OP_FENCE       = 0,
@@ -44,7 +44,7 @@ enum gds_peer_op {
     GDS_PEER_OP_POLL_AND_DWORD  = 12,
     GDS_PEER_OP_POLL_NOR_DWORD  = 13,
     GDS_PEER_OP_POLL_GEQ_DWORD  = 14,
-};      
+} gds_peer_op_t;      
     
 /**
  * Compatible with enum ibv_exp_peer_op_caps
@@ -66,14 +66,14 @@ enum gds_peer_op_caps {
 /**
  * Compatible with enum ibv_exp_peer_fence
  */
-enum gds_peer_fence {
+typedef enum gds_peer_fence {
         GDS_PEER_FENCE_OP_READ      = (1 << 0), 
         GDS_PEER_FENCE_OP_WRITE     = (1 << 1), 
         GDS_PEER_FENCE_FROM_CPU     = (1 << 2), 
         GDS_PEER_FENCE_FROM_HCA     = (1 << 3), 
         GDS_PEER_FENCE_MEM_SYS      = (1 << 4), 
         GDS_PEER_FENCE_MEM_PEER     = (1 << 5), 
-};
+} gds_peer_fence_t;
 
 /**
  * Indicate HW entities supposed to access memory buffer:
@@ -279,6 +279,37 @@ static inline gds_peer *peer_from_id(uint64_t id)
         assert(id);
         return reinterpret_cast<gds_peer *>(id);
 }
+
+typedef struct gds_peer_op_wr {
+        struct gds_peer_op_wr *next;
+        gds_peer_op_t type;
+        union {
+                struct {
+                        uint64_t fence_flags; /* from gds_peer_fence_t */
+                } fence;
+
+                struct {
+                        uint32_t        data;
+                        uint64_t        target_id;
+                        size_t          offset;
+                } dword_va; /* Use for all operations targeting dword */
+
+                struct {
+                        uint64_t        data;
+                        uint64_t        target_id;
+                        size_t          offset;
+                } qword_va; /* Use for all operations targeting qword */
+
+                struct {
+                        void           *src;
+                        uint64_t        target_id;
+                        size_t          offset;
+                        size_t          len;
+                } copy_op;
+        } wr;
+        uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
+} gds_peer_op_wr_t;
+
 
 /*
  * Local variables:
