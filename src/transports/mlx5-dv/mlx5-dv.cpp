@@ -1371,7 +1371,7 @@ static int gds_mlx5_dv_post_wrs(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_sen
                         dv_obj.ah.out = &mah;
 
                         status = mlx5dv_init_obj(&dv_obj, MLX5DV_OBJ_AH);
-                        if (!status) {
+                        if (status) {
                                 gds_err("Error in mlx5dv_init_obj for MLX5DV_OBJ_AH.\n");
                                 goto out;
                         }
@@ -1462,7 +1462,6 @@ int gds_mlx5_dv_prepare_send(gds_qp_t *gqp, gds_send_wr *p_ewr,
 
         ret = gds_mlx5_dv_post_wrs(mdqp, p_ewr, bad_ewr);
         if (ret) {
-
                 if (ret == ENOMEM) {
                         // out of space error can happen too often to report
                         gds_dbg("ENOMEM error %d in gds_mlx5_dv_post_wrs\n", ret);
