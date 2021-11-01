@@ -1646,6 +1646,15 @@ int gds_mlx5_dv_prepare_wait_cq(gds_cq_t *gcq, gds_wait_request_t *_request, int
 
 //-----------------------------------------------------------------------------
 
+uint32_t gds_mlx5_dv_get_num_wait_request_entries(gds_wait_request_t *_request) {
+        gds_mlx5_dv_wait_request_t *request;
+        assert(_request);
+        request = to_gds_mdv_wait_request(_request);
+        return request->peek.entries;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1670,6 +1679,7 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->get_send_descs = gds_mlx5_dv_get_send_descs;
 
         t->init_wait_request = gds_mlx5_dv_init_wait_request;
+        t->get_num_wait_request_entries = gds_mlx5_dv_get_num_wait_request_entries;
 
         t->prepare_wait_cq = gds_mlx5_dv_prepare_wait_cq;
 
@@ -1681,7 +1691,6 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->stream_post_wait_descriptor = gds_mlx5_exp_stream_post_wait_descriptor;
         t->post_wait_descriptor = gds_mlx5_exp_post_wait_descriptor;
         t->get_wait_descs = gds_mlx5_exp_get_wait_descs;
-        t->get_num_wait_request_entries = gds_mlx5_exp_get_num_wait_request_entries;
 
         t->append_wait_cq = gds_mlx5_exp_append_wait_cq;
         t->abort_wait_cq = gds_mlx5_exp_abort_wait_cq;
