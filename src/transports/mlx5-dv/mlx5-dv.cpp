@@ -1546,6 +1546,106 @@ void gds_mlx5_dv_init_wait_request(gds_wait_request_t *_request, uint32_t offset
 
 //-----------------------------------------------------------------------------
 
+static int gds_mlx5_dv_peer_peek_cq(gds_mlx5_dv_cq_t *mdcq, gds_mlx5_dv_peer_peek_t *peek)
+{
+        int ret = 0;
+
+        gds_peer_attr *peer_attr;
+        gds_peer_op_wr_t *wr;
+        int n, cur_own;
+        void *cqe;
+        struct mlx5_cqe64 *cqe64;
+        gds_mlx5_dv_peek_entry_t *tmp;
+
+        if (peek->entries < 2) {
+                gds_err("not enough entries in gds_mlx5_dv_peek_entry.\n");
+                ret = EINVAL;
+                goto out;
+        }
+
+        assert(mdcq);
+        assert(peek);
+        assert(mdcq->cq_peer);
+        assert(mdcq->cq_peer->peer_attr);
+
+        peer_attr = (gds_peer_attr *)mdcq->cq_peer->peer_attr;
+
+        wr = peek->storage;
+        n = peek->offset;
+
+        cqe = (char *)mdcq->dvcq.buf + (n & (mdcq->dvcq.cqe_cnt - 1)) * mdcq->dvcq.cqe_size;
+        cur_own = n & mdcq->dvcq.cqe_cnt;
+        cqe64 = (struct mlx5_cqe64 *)((mdcq->dvcq.cqe_size == 64) ? cqe : (char *)cqe + 64);
+
+        if (cur_own) {
+                wr->type = GDS_PEER_OP_POLL_AND_DWORD;
+                wr->wr.dword_va.data = htonl(MLX5_CQE_OWNER_MASK);
+        }
+        else if (peer_attr->caps & GDS_PEER_OP_POLL_NOR_DWORD_CAP) {
+                wr->type = GDS_PEER_OP_POLL_NOR_DWORD;
+                wr->wr.dword_va.data = ~htonl(MLX5_CQE_OWNER_MASK);
+        }
+        else if (peer_attr->caps & GDS_PEER_OP_POLL_GEQ_DWORD_CAP) {
+                wr->type = GDS_PEER_OP_POLL_GEQ_DWORD;
+                wr->wr.dword_va.data = 0;
+        }
+        wr->wr.dword_va.target_id = mdcq->cq_peer->buf.va_id;
+        wr->wr.dword_va.offset = (uintptr_t)&cqe64->wqe_counter - (uintptr_t)mdcq->dvcq.buf;
+        wr = wr->next;
+
+        tmp = mdcq->cq_peer->pdata.peek_free;
+        if (!tmp) {
+                ret = ENOMEM;
+                goto out;
+        }
+        mdcq->cq_peer->pdata.peek_free = GDS_MLX5_DV_PEEK_ENTRY(mdcq, tmp->next);
+        tmp->busy = 1;
+        wmb();
+        tmp->next = GDS_MLX5_DV_PEEK_ENTRY_N(mdcq, mdcq->cq_peer->pdata.peek_table[n & (mdcq->dvcq.cqe_cnt - 1)]);
+        mdcq->cq_peer->pdata.peek_table[n & (mdcq->dvcq.cqe_cnt - 1)] = tmp;
+
+        wr->type = GDS_PEER_OP_STORE_DWORD;
+        wr->wr.dword_va.data = 0;
+        wr->wr.dword_va.target_id = mdcq->cq_peer->pdata.va_id;
+        wr->wr.dword_va.offset = (uintptr_t)&tmp->busy - (uintptr_t)mdcq->cq_peer->pdata.gbuf->addr;
+
+        peek->entries = 2;
+        peek->peek_id = (uintptr_t)tmp;
+
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_dv_prepare_wait_cq(gds_cq_t *gcq, gds_wait_request_t *_request, int flags)
+{
+        int retcode = 0;
+        gds_mlx5_dv_cq_t *mdcq;
+        gds_mlx5_dv_wait_request_t *request;
+
+        assert(gcq);
+        assert(_request);
+
+        mdcq = to_gds_mdv_cq(gcq);
+        request = to_gds_mdv_wait_request(_request);
+
+        retcode = gds_mlx5_dv_peer_peek_cq(mdcq, &request->peek);
+        if (retcode == ENOSPC) {
+                // TODO: handle too few entries
+                gds_err("not enough ops in peer_peek_cq\n");
+                goto out;
+        } else if (retcode) {
+                gds_err("error %d in peer_peek_cq\n", retcode);
+                goto out;
+        }
+        //gds_dump_wait_request(request, 1);
+        out:
+	       return retcode;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1571,6 +1671,8 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 
         t->init_wait_request = gds_mlx5_dv_init_wait_request;
 
+        t->prepare_wait_cq = gds_mlx5_dv_prepare_wait_cq;
+
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
@@ -1581,7 +1683,6 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->get_wait_descs = gds_mlx5_exp_get_wait_descs;
         t->get_num_wait_request_entries = gds_mlx5_exp_get_num_wait_request_entries;
 
-        t->prepare_wait_cq = gds_mlx5_exp_prepare_wait_cq;
         t->append_wait_cq = gds_mlx5_exp_append_wait_cq;
         t->abort_wait_cq = gds_mlx5_exp_abort_wait_cq;
         #endif

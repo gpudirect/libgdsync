@@ -51,12 +51,12 @@
 
 #define GDS_MLX5_DV_ROLLBACK_ID_PARITY_MASK (1ULL << 63)
 #define GDS_MLX5_DV_LAST_PEEK_ENTRY (-1U)
-#define GDS_MLX5_DV_PEEK_ENTRY(mcq, n) \
+#define GDS_MLX5_DV_PEEK_ENTRY(mdcq, n) \
         (n == GDS_MLX5_DV_LAST_PEEK_ENTRY ? NULL : \
-         ((struct gds_mlx5_dv_peek_entry *)mcq->cq_peer->pdata.gbuf->addr) + n)
-#define GDS_MLX5_DV_PEEK_ENTRY_N(mcq, pe) \
+         ((struct gds_mlx5_dv_peek_entry *)mdcq->cq_peer->pdata.gbuf->addr) + n)
+#define GDS_MLX5_DV_PEEK_ENTRY_N(mdcq, pe) \
         (pe == NULL ? GDS_MLX5_DV_LAST_PEEK_ENTRY : \
-         ((pe - (struct gds_mlx5_dv_peek_entry *)mcq->cq_peer->pdata.gbuf->addr)))
+         ((pe - (struct gds_mlx5_dv_peek_entry *)mdcq->cq_peer->pdata.gbuf->addr)))
 
 enum {
         GDS_MLX5_DV_QPC_ST_RC   = 0x0,
