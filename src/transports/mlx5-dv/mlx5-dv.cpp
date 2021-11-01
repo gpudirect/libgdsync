@@ -1529,6 +1529,23 @@ int gds_mlx5_dv_get_send_descs(gds_mlx5_send_info_t *mlx5_i, const gds_send_requ
 
 //-----------------------------------------------------------------------------
 
+void gds_mlx5_dv_init_wait_request(gds_wait_request_t *_request, uint32_t offset)
+{
+        gds_mlx5_dv_wait_request_t *request;
+
+        assert(_request);
+        request = to_gds_mdv_wait_request(_request);
+
+        gds_dbg("wait_request=%p offset=%08x\n", request, offset);
+        request->peek.storage = request->wr;
+        request->peek.entries = sizeof(request->wr)/sizeof(request->wr[0]);
+        request->peek.whence = GDS_MLX5_DV_PEER_PEEK_ABSOLUTE;
+        request->peek.offset = offset;
+        gds_mlx5_dv_init_ops(request->peek.storage, request->peek.entries);
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1551,11 +1568,13 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->post_send_ops = gds_mlx5_dv_post_send_ops;
         t->post_send_ops_on_cpu = gds_mlx5_dv_post_send_ops_on_cpu;
         t->get_send_descs = gds_mlx5_dv_get_send_descs;
+
+        t->init_wait_request = gds_mlx5_dv_init_wait_request;
+
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
 
-        t->init_wait_request = gds_mlx5_exp_init_wait_request;
         t->dump_wait_request = gds_mlx5_exp_dump_wait_request;
         t->stream_post_wait_descriptor = gds_mlx5_exp_stream_post_wait_descriptor;
         t->post_wait_descriptor = gds_mlx5_exp_post_wait_descriptor;

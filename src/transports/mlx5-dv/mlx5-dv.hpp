@@ -76,6 +76,11 @@ enum {
         GDS_MLX5_DV_RECV_WQE_SHIFT = 6,
 };
 
+enum {
+        GDS_MLX5_DV_PEER_PEEK_ABSOLUTE,
+        GDS_MLX5_DV_PEER_PEEK_RELATIVE
+};
+
 typedef struct gds_mlx5_dv_peek_entry {
         uint32_t busy;
         uint32_t next;
@@ -172,6 +177,26 @@ typedef struct gds_mlx5_dv_peer_commit {
         uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
 } gds_mlx5_dv_peer_commit_t;
 
+typedef struct gds_mlx5_dv_peer_peek {
+        /* IN/OUT - linked list of empty/filled descriptors */
+        gds_peer_op_wr_t *storage;
+        /* IN/OUT - number of allocated/filled descriptors */
+        uint32_t entries;
+        /* IN - Which CQ entry does the peer want to peek for
+         * completion. According to "whence" directive entry
+         * chosen as follows:
+         * GDS_MLX5_DV_PEER_PEEK_ABSOLUTE -
+         *	"offset" is absolute index of entry wrapped to 32-bit
+         * GDS_MLX5_DV_PEER_PEEK_RELATIVE -
+         *      "offset" is relative to current poll_cq location.
+         */
+        uint32_t whence;
+        uint32_t offset;
+        /* OUT - identifier used in gds_mlx5_dv_peer_ack_peek_cq to advance CQ */
+        uint64_t peek_id;
+        uint32_t comp_mask; /* Reserved for future expensions, must be 0 */
+} gds_mlx5_dv_peer_peek_t;
+
 typedef struct gds_mlx5_dv_send_request {
         gds_mlx5_dv_peer_commit_t commit;
         gds_peer_op_wr_t wr[GDS_SEND_INFO_MAX_OPS];
@@ -179,6 +204,14 @@ typedef struct gds_mlx5_dv_send_request {
 } gds_mlx5_dv_send_request_t;
 static_assert(sizeof(gds_mlx5_dv_send_request_t) % 64 == 0, "gds_mlx5_dv_send_request_t must be 64-byte aligned.");
 static_assert(sizeof(gds_mlx5_dv_send_request_t) <= sizeof(gds_send_request_t), "The size of gds_mlx5_dv_send_request_t must be less than or equal to that of gds_send_request_t.");
+
+typedef struct gds_mlx5_dv_wait_request {
+        gds_mlx5_dv_peer_peek_t peek;
+        gds_peer_op_wr_t wr[GDS_WAIT_INFO_MAX_OPS];
+        uint8_t pad1[24];
+} gds_mlx5_dv_wait_request_t;
+static_assert(sizeof(gds_mlx5_dv_wait_request_t) % 64 == 0, "gds_mlx5_dv_wait_request_t must be 64-byte aligned.");
+static_assert(sizeof(gds_mlx5_dv_wait_request_t) <= sizeof(gds_wait_request_t), "The size of gds_mlx5_dv_wait_request_t must be less than or equal to that of gds_wait_request_t.");
 
 //-----------------------------------------------------------------------------
 
@@ -196,6 +229,14 @@ static inline gds_mlx5_dv_send_request_t *to_gds_mdv_send_request(gds_send_reque
 
 static inline const gds_mlx5_dv_send_request_t *to_gds_mdv_send_request(const gds_send_request_t *gsreq) {
         return (const gds_mlx5_dv_send_request_t *)(gsreq);
+}
+
+static inline gds_mlx5_dv_wait_request_t *to_gds_mdv_wait_request(gds_wait_request_t *gwreq) {
+        return (gds_mlx5_dv_wait_request_t *)(gwreq);
+}
+
+static inline const gds_mlx5_dv_wait_request_t *to_gds_mdv_wait_request(const gds_wait_request_t *gwreq) {
+        return (const gds_mlx5_dv_wait_request_t *)to_gds_mdv_wait_request((const gds_wait_request_t *)gwreq);
 }
 
 //-----------------------------------------------------------------------------
