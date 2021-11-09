@@ -204,13 +204,13 @@ int gds_stream_post_wait_cq_all(CUstream stream, int count, gds_wait_request_t *
 /**
  * \brief CPU-synchronously enable polling on request
  *
- * Unblock calls to ibv_poll_cq. CPU will do what is necessary to make the corresponding
+ * Unblock calls to gds_poll_cq. CPU will do what is necessary to make the corresponding
  * CQE poll-able.
  *
  */
 int gds_post_wait_cq(struct gds_cq *cq, gds_wait_request_t *request, int flags);
 
-
+int gds_poll_cq(struct gds_cq *cq, int num_entries, struct ibv_wc *wc);
 
 /**
  * Represents the condition operation for wait operations on memory words

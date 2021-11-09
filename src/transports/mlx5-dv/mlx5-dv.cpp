@@ -1655,6 +1655,25 @@ uint32_t gds_mlx5_dv_get_num_wait_request_entries(gds_wait_request_t *_request) 
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_dv_stream_post_wait_descriptor(gds_peer *peer, gds_wait_request_t *_request, gds_op_list_t &params, int flags)
+{
+        int ret = 0;
+        gds_mlx5_dv_wait_request_t *request;
+
+        assert(peer);
+        assert(_request);
+
+        request = to_gds_mdv_wait_request(_request);
+
+        ret = gds_post_ops(peer, request->peek.entries, request->peek.storage, params, flags);
+        if (ret)
+                gds_err("error %d in gds_post_ops\n", ret);
+
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1680,6 +1699,7 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 
         t->init_wait_request = gds_mlx5_dv_init_wait_request;
         t->get_num_wait_request_entries = gds_mlx5_dv_get_num_wait_request_entries;
+        t->stream_post_wait_descriptor = gds_mlx5_dv_stream_post_wait_descriptor;
 
         t->prepare_wait_cq = gds_mlx5_dv_prepare_wait_cq;
 
@@ -1688,7 +1708,6 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 
 
         t->dump_wait_request = gds_mlx5_exp_dump_wait_request;
-        t->stream_post_wait_descriptor = gds_mlx5_exp_stream_post_wait_descriptor;
         t->post_wait_descriptor = gds_mlx5_exp_post_wait_descriptor;
         t->get_wait_descs = gds_mlx5_exp_get_wait_descs;
 

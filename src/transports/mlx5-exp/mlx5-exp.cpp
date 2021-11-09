@@ -761,6 +761,17 @@ int gds_mlx5_exp_post_recv(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_rec
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_exp_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
+{
+        assert(gcq);
+        assert(gcq->cq);
+        assert(wc);
+
+        return ibv_poll_cq(gcq->cq, num_entries, wc);
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_exp_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -795,6 +806,8 @@ int gds_transport_mlx5_exp_init(gds_transport_t **transport)
         t->prepare_wait_cq = gds_mlx5_exp_prepare_wait_cq;
         t->append_wait_cq = gds_mlx5_exp_append_wait_cq;
         t->abort_wait_cq = gds_mlx5_exp_abort_wait_cq;
+
+        t->poll_cq = gds_mlx5_exp_poll_cq;
 
         *transport = t;
 

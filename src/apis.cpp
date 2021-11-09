@@ -758,6 +758,13 @@ out:
 
 //-----------------------------------------------------------------------------
 
+int gds_poll_cq(struct gds_cq *cq, int num_entries, struct ibv_wc *wc)
+{
+        return gds_main_transport->poll_cq(cq, num_entries, wc);
+}
+
+//-----------------------------------------------------------------------------
+
 /*
  * Local variables:
  *  c-indent-level: 8
