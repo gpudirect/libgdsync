@@ -396,7 +396,7 @@ static int poll_send_cq(struct pingpong_context *ctx)
         struct ibv_wc wc[max_batch_len];
         int ne, i;
 
-        ne = gds_poll_cq(ctx->tx_cq, max_batch_len, wc);
+        ne = gds_poll_cq(ctx->gds_qp->send_cq, max_batch_len, wc);
         if (ne < 0) {
                 gpu_err("poll TX CQ failed %d\n", ne);
                 return 1;
@@ -436,7 +436,7 @@ static int poll_recv_cq(struct pingpong_context *ctx)
         int ne = 0;
         int i;
 
-        ne = gds_poll_cq(ctx->rx_cq, max_batch_len, wc);
+        ne = gds_poll_cq(ctx->gds_qp->recv_cq, max_batch_len, wc);
         if (ne < 0) {
                 gpu_err("poll RX CQ failed %d\n", ne);
                 return 1;
