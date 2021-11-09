@@ -532,7 +532,6 @@ static int pp_wait_cq(struct pingpong_context *ctx, int is_client)
 
 static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream *p_gpu_stream)
 {
-        int ret = 0;
 	struct ibv_sge list = {
 		.addr	= (uintptr_t) ctx->txbuf,
 		.length = ctx->size,
@@ -569,7 +568,6 @@ static int pp_post_gpu_send(struct pingpong_context *ctx, uint32_t qpn, CUstream
 
 static int pp_prepare_gpu_send(struct pingpong_context *ctx, uint32_t qpn, gds_send_request_t *req)
 {
-        int ret = 0;
 	struct ibv_sge list = {
 		.addr	= (uintptr_t) ctx->txbuf,
 		.length = ctx->size,
@@ -919,7 +917,6 @@ int main(int argc, char *argv[])
         int                      peersync = 1;
         int                      peersync_gpu_cq = 0;
         int                      peersync_gpu_dbrec = 0;
-        int                      warmup = 10;
         int                      consume_rx_cqe = 0;
 	int                      gds_qp_type = 1;
         int                      sched_mode = CU_CTX_SCHED_AUTO;
