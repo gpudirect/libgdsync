@@ -758,9 +758,18 @@ out:
 
 //-----------------------------------------------------------------------------
 
-int gds_poll_cq(struct gds_cq *cq, int num_entries, struct ibv_wc *wc)
+int gds_poll_cq(struct gds_cq *gcq, int num_entries, struct ibv_wc *wc)
 {
-        return gds_main_transport->poll_cq(cq, num_entries, wc);
+        if (!gcq)
+                return EINVAL;
+
+        if (num_entries < 0)
+                return EINVAL;
+
+        if (num_entries > 0 && !wc)
+                return EINVAL;
+
+        return gds_main_transport->poll_cq(gcq, num_entries, wc);
 }
 
 //-----------------------------------------------------------------------------

@@ -765,7 +765,6 @@ int gds_mlx5_exp_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
 {
         assert(gcq);
         assert(gcq->cq);
-        assert(wc);
 
         return ibv_poll_cq(gcq->cq, num_entries, wc);
 }

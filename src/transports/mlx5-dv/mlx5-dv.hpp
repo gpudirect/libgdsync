@@ -112,6 +112,7 @@ typedef struct gds_mlx5_dv_cq_peer {
 
 typedef struct gds_mlx5_dv_wq {
         uint64_t       *wrid;
+        enum ibv_wc_opcode *opcode;
         void           *buf;    // SQ and RQ point to different regions.
         __be32         *dbrec;
         unsigned int    cnt;
@@ -119,8 +120,16 @@ typedef struct gds_mlx5_dv_wq {
         uint64_t        tail;
 } gds_mlx5_dv_wq_t;
 
+typedef enum {
+        GDS_MLX5_DV_CQ_TYPE_UNKNOWN = 0,
+        GDS_MLX5_DV_CQ_TYPE_TX,
+        GDS_MLX5_DV_CQ_TYPE_RX
+} gds_mlx5_dv_cq_type_t;
+
 typedef struct gds_mlx5_dv_cq {
         gds_cq_t                        gcq;
+        gds_mlx5_dv_cq_type_t           cq_type;
+        struct gds_mlx5_dv_qp          *mdqp;
         uint32_t                        cons_index;
         struct mlx5dv_cq                dvcq;
         gds_mlx5_dv_wq_t               *wq;

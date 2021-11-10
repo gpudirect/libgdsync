@@ -507,6 +507,9 @@ int gds_mlx5_dv_create_qp(
         uint64_t *sq_wrid = NULL;
         uint64_t *rq_wrid = NULL;
 
+        enum ibv_wc_opcode *sq_opcode = NULL;
+        enum ibv_wc_opcode *rq_opcode = NULL;
+
         gds_mlx5_dv_qp_type_t gmlx_qpt = GDS_MLX5_DV_QP_TYPE_UNKNOWN;
 
         assert(pd);
@@ -631,12 +634,26 @@ int gds_mlx5_dv_create_qp(
                         status = ENOMEM;
                         goto out;
                 }
+
+                sq_opcode = (enum ibv_wc_opcode *)malloc(sizeof(enum ibv_wc_opcode) * max_tx);
+                if (!sq_opcode) {
+                        gds_err("Error in malloc for sq_opcode\n");
+                        status = ENOMEM;
+                        goto out;
+                }
         }
 
         if (max_rx > 0) {
                 rq_wrid = (uint64_t *)malloc(sizeof(uint64_t) * max_rx);
                 if (!rq_wrid) {
                         gds_err("Error in malloc for rq_wrid\n");
+                        status = ENOMEM;
+                        goto out;
+                }
+
+                rq_opcode = (enum ibv_wc_opcode *)malloc(sizeof(enum ibv_wc_opcode) * max_rx);
+                if (!rq_opcode) {
+                        gds_err("Error in malloc for rq_opcode\n");
                         status = ENOMEM;
                         goto out;
                 }
@@ -753,16 +770,22 @@ int gds_mlx5_dv_create_qp(
         mdqp->sq_buf_offset = sq_buf_offset;
 
         mdqp->sq_wq.wrid = sq_wrid;
+        mdqp->sq_wq.opcode = sq_opcode;
         mdqp->sq_wq.buf = (void *)((uintptr_t)wq_buf->addr + sq_buf_offset);
         mdqp->sq_wq.cnt = max_tx;
         mdqp->sq_wq.dbrec = (__be32 *)((uintptr_t)dbr_buf->addr + sizeof(__be32));
         tx_mcq->wq = &mdqp->sq_wq;
+        tx_mcq->cq_type = GDS_MLX5_DV_CQ_TYPE_TX;
+        tx_mcq->mdqp = mdqp;
 
         mdqp->rq_wq.wrid = rq_wrid;
+        mdqp->rq_wq.opcode = rq_opcode;
         mdqp->rq_wq.buf = wq_buf->addr;
         mdqp->rq_wq.cnt = max_rx;
         mdqp->rq_wq.dbrec = (__be32 *)dbr_buf->addr;
         rx_mcq->wq = &mdqp->rq_wq;
+        rx_mcq->cq_type = GDS_MLX5_DV_CQ_TYPE_RX;
+        rx_mcq->mdqp = mdqp;
 
         mdqp->peer_attr = peer_attr;
 
@@ -806,6 +829,12 @@ out:
 
                 if (wq_buf)
                         peer->free(wq_buf);
+
+                if (rq_opcode)
+                        free(rq_opcode);
+
+                if (sq_opcode)
+                        free(sq_opcode);
 
                 if (rq_wrid)
                         free(rq_wrid);
@@ -1191,6 +1220,12 @@ int gds_mlx5_dv_destroy_qp(gds_qp_t *gqp)
                 }
         }
 
+        if (mdqp->rq_wq.opcode)
+                free(mdqp->rq_wq.opcode);
+
+        if (mdqp->sq_wq.opcode)
+                free(mdqp->sq_wq.opcode);
+
         if (mdqp->rq_wq.wrid)
                 free(mdqp->rq_wq.wrid);
 
@@ -1249,6 +1284,7 @@ int gds_mlx5_dv_post_recv(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_recv
                 seg = (struct mlx5_wqe_data_seg *)((uintptr_t)mdqp->rq_wq.buf + (idx << GDS_MLX5_DV_RECV_WQE_SHIFT));
                 mlx5dv_set_data_seg(seg, curr_wr->sg_list->length, curr_wr->sg_list->lkey, curr_wr->sg_list->addr);
                 mdqp->rq_wq.wrid[idx] = curr_wr->wr_id;
+                mdqp->rq_wq.opcode[idx] = IBV_WC_RECV;
 
                 ++head;
                 
@@ -1271,8 +1307,8 @@ static void gds_mlx5_dv_init_ops(gds_peer_op_wr_t *op, int count)
 {
         int i = count;
         while (--i)
-                op[i-1].next = &op[i];
-        op[count-1].next = NULL;
+                op[i - 1].next = &op[i];
+        op[count - 1].next = NULL;
 }
 
 //-----------------------------------------------------------------------------
@@ -1392,6 +1428,7 @@ static int gds_mlx5_dv_post_wrs(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_sen
                 mlx5dv_set_data_seg(data_seg, curr_wr->sg_list->length, curr_wr->sg_list->lkey, curr_wr->sg_list->addr);
 
                 mdqp->sq_wq.wrid[idx] = curr_wr->wr_id;
+                mdqp->sq_wq.opcode[idx] = IBV_WC_SEND;
                 ++head;
                 curr_wr = wr->next;
         }
@@ -1674,6 +1711,101 @@ int gds_mlx5_dv_stream_post_wait_descriptor(gds_peer *peer, gds_wait_request_t *
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_dv_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
+{
+        bool has_err = false;
+
+        unsigned int idx;
+        int cnt;
+
+        uint32_t ncqes;
+        uint32_t cons_index;
+
+        void *cqe;
+        struct mlx5_cqe64 *cqe64;
+
+        uint16_t wqe_ctr;
+        int wqe_ctr_idx;
+
+        gds_mlx5_dv_cq_t *mdcq;
+
+        assert(gcq);
+        assert(num_entries >= 0);
+
+        mdcq = to_gds_mdv_cq(gcq);
+
+        assert(mdcq->mdqp);
+        assert(mdcq->wq);
+        assert(mdcq->cq_peer);
+        assert(mdcq->cq_type != GDS_MLX5_DV_CQ_TYPE_UNKNOWN);
+
+        ncqes = mdcq->dvcq.cqe_cnt;
+        cons_index = mdcq->cons_index;
+
+        for (cnt = 0; cnt < num_entries; ++cnt) {
+                idx = cons_index & (mdcq->dvcq.cqe_cnt - 1);
+                while (mdcq->cq_peer->pdata.peek_table[idx]) {
+                        gds_mlx5_dv_peek_entry_t *tmp;
+                        if (READ_ONCE(mdcq->cq_peer->pdata.peek_table[idx]->busy)) {
+                                //printf("idx=%u %s busy\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
+                                goto out;
+                        }
+                        //printf("idx=%u %s ok\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
+                        tmp = mdcq->cq_peer->pdata.peek_table[idx];
+                        mdcq->cq_peer->pdata.peek_table[idx] = GDS_MLX5_DV_PEEK_ENTRY(mdcq, tmp->next);
+                        tmp->next = GDS_MLX5_DV_PEEK_ENTRY_N(mdcq, mdcq->cq_peer->pdata.peek_free);
+                        mdcq->cq_peer->pdata.peek_free = tmp;
+                }
+                cqe = (void *)((uintptr_t)mdcq->dvcq.buf + cons_index * mdcq->dvcq.cqe_size);
+                cqe64 = (mdcq->dvcq.cqe_size == 64) ? (struct mlx5_cqe64 *)cqe : (struct mlx5_cqe64 *)((uintptr_t)cqe + 64);
+
+                uint8_t opown = READ_ONCE(cqe64->op_own); 
+                uint8_t opcode = opown >> 4;
+
+                if ((opcode != MLX5_CQE_INVALID) && !((opown & MLX5_CQE_OWNER_MASK) ^ !!(cons_index & ncqes))) {
+                        if (opcode == MLX5_CQE_REQ_ERR || opcode == MLX5_CQE_RESP_ERR) {
+                                gds_err("got completion with err: syndrome=%#x, vendor_err_synd=%#x, wqe_counter=%u\n", 
+                                        ((struct mlx5_err_cqe *)cqe64)->syndrome,
+                                        ((struct mlx5_err_cqe *)cqe64)->vendor_err_synd,
+                                        ((struct mlx5_err_cqe *)cqe64)->wqe_counter
+                                );
+                                has_err = true;
+                                goto out;
+                        }
+
+                        wqe_ctr = be16toh(cqe64->wqe_counter);
+                        wqe_ctr_idx = wqe_ctr & (mdcq->wq->cnt - 1);
+
+                        wc[cnt].wr_id = mdcq->wq->wrid[wqe_ctr_idx];
+                        wc[cnt].status = IBV_WC_SUCCESS; // TODO: Fill in the right value.
+                        wc[cnt].opcode = mdcq->wq->opcode[wqe_ctr_idx];
+                        wc[cnt].vendor_err = 0; // TODO: Fill in the right value.
+                        wc[cnt].byte_len = be32toh(cqe64->byte_cnt);
+                        wc[cnt].imm_data = be32toh(cqe64->imm_inval_pkey);
+                        wc[cnt].qp_num = mdcq->mdqp->gqp.qp->qp_num;
+                        wc[cnt].src_qp = be32toh(cqe64->flags_rqpn) & 0x00ffffff;
+                        wc[cnt].wc_flags = 0;   // TODO: Fill in the right value.
+                        wc[cnt].pkey_index = be32toh(cqe64->imm_inval_pkey);
+                        wc[cnt].slid = be16toh(cqe64->slid);
+                        wc[cnt].sl = (be16toh(cqe64->flags_rqpn) >> 24) & 0x0f;
+                        wc[cnt].dlid_path_bits = 0; // TODO: Fill in the right value.
+
+                        if (mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX && mdcq->mdqp->qp_type == GDS_MLX5_DV_QP_TYPE_UD)
+                                mdcq->wq->tail += 2;
+                        else
+                                ++mdcq->wq->tail;
+
+                        ++cons_index;
+                }
+        }
+
+out:
+        mdcq->cons_index = cons_index;
+        return has_err ? -1 : cnt;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1702,6 +1834,8 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->stream_post_wait_descriptor = gds_mlx5_dv_stream_post_wait_descriptor;
 
         t->prepare_wait_cq = gds_mlx5_dv_prepare_wait_cq;
+
+        t->poll_cq = gds_mlx5_dv_poll_cq;
 
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
