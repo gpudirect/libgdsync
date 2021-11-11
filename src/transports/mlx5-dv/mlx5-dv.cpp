@@ -741,6 +741,7 @@ int gds_mlx5_dv_create_qp(
         DEVX_SET(qpc, qpc, user_index, 0);
         DEVX_SET(qpc, qpc, page_offset, 0);
         DEVX_SET(qpc, qpc, log_rq_size, GDS_ILOG2_OR0(max_rx));
+        DEVX_SET(qpc, qpc, log_rq_stride, 0);   // Recv WQE stride is set to 16 bytes
 
         devx_obj = mlx5dv_devx_obj_create(context, cmd_in, sizeof(cmd_in), cmd_out, sizeof(cmd_out));
         if (!devx_obj) {
@@ -1281,7 +1282,7 @@ int gds_mlx5_dv_post_recv(gds_qp_t *gqp, struct ibv_recv_wr *wr, struct ibv_recv
                         goto out;
                 }
                 idx = head & (cnt - 1);
-                seg = (struct mlx5_wqe_data_seg *)((uintptr_t)mdqp->rq_wq.buf + (idx << GDS_MLX5_DV_RECV_WQE_SHIFT));
+                seg = (struct mlx5_wqe_data_seg *)((uintptr_t)mdqp->rq_wq.buf + (idx * sizeof(struct mlx5_wqe_data_seg)));
                 mlx5dv_set_data_seg(seg, curr_wr->sg_list->length, curr_wr->sg_list->lkey, curr_wr->sg_list->addr);
                 mdqp->rq_wq.wrid[idx] = curr_wr->wr_id;
                 mdqp->rq_wq.opcode[idx] = IBV_WC_RECV;
@@ -1454,6 +1455,8 @@ static int gds_mlx5_dv_peer_commit_qp(gds_mlx5_dv_qp_t *mdqp, gds_mlx5_dv_peer_c
 
         if (commit->entries < entries)
                 return ENOSPC;
+
+        assert(mdqp->peer_ctrl_seg);
 
         wr->type = GDS_PEER_OP_STORE_DWORD;
         wr->wr.dword_va.data = htonl(mdqp->sq_wq.head & 0xffff);
@@ -1716,7 +1719,7 @@ int gds_mlx5_dv_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
         bool has_err = false;
 
         unsigned int idx;
-        int cnt;
+        int cnt = 0;
 
         uint32_t ncqes;
         uint32_t cons_index;
@@ -1725,7 +1728,7 @@ int gds_mlx5_dv_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
         struct mlx5_cqe64 *cqe64;
 
         uint16_t wqe_ctr;
-        int wqe_ctr_idx;
+        uint16_t wqe_ctr_idx;
 
         gds_mlx5_dv_cq_t *mdcq;
 
@@ -1742,15 +1745,15 @@ int gds_mlx5_dv_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
         ncqes = mdcq->dvcq.cqe_cnt;
         cons_index = mdcq->cons_index;
 
-        for (cnt = 0; cnt < num_entries; ++cnt) {
+        while (cnt < num_entries) {
                 idx = cons_index & (mdcq->dvcq.cqe_cnt - 1);
                 while (mdcq->cq_peer->pdata.peek_table[idx]) {
                         gds_mlx5_dv_peek_entry_t *tmp;
                         if (READ_ONCE(mdcq->cq_peer->pdata.peek_table[idx]->busy)) {
-                                //printf("idx=%u %s busy\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
+                                //printf("==> poll_cq: idx=%u %s busy\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
                                 goto out;
                         }
-                        //printf("idx=%u %s ok\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
+                        //printf("==> poll_cq: idx=%u %s ok\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
                         tmp = mdcq->cq_peer->pdata.peek_table[idx];
                         mdcq->cq_peer->pdata.peek_table[idx] = GDS_MLX5_DV_PEEK_ENTRY(mdcq, tmp->next);
                         tmp->next = GDS_MLX5_DV_PEEK_ENTRY_N(mdcq, mdcq->cq_peer->pdata.peek_free);
@@ -1764,7 +1767,9 @@ int gds_mlx5_dv_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
 
                 if ((opcode != MLX5_CQE_INVALID) && !((opown & MLX5_CQE_OWNER_MASK) ^ !!(cons_index & ncqes))) {
                         if (opcode == MLX5_CQE_REQ_ERR || opcode == MLX5_CQE_RESP_ERR) {
-                                gds_err("got completion with err: syndrome=%#x, vendor_err_synd=%#x, wqe_counter=%u\n", 
+                                gds_err("got completion with err: idx=%u, cq_type=%s, syndrome=%#x, vendor_err_synd=%#x, wqe_counter=%u\n", 
+                                        idx,
+                                        mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx",
                                         ((struct mlx5_err_cqe *)cqe64)->syndrome,
                                         ((struct mlx5_err_cqe *)cqe64)->vendor_err_synd,
                                         ((struct mlx5_err_cqe *)cqe64)->wqe_counter
@@ -1796,7 +1801,10 @@ int gds_mlx5_dv_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
                                 ++mdcq->wq->tail;
 
                         ++cons_index;
+                        ++cnt;
                 }
+                else
+                        break;
         }
 
 out:
