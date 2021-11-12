@@ -1815,6 +1815,23 @@ out:
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_dv_post_wait_descriptor(gds_wait_request_t *_request, int flags)
+{
+        int ret = 0;
+        gds_mlx5_dv_wait_request_t *request;
+
+        assert(_request);
+        request = to_gds_mdv_wait_request(_request);
+
+        ret = gds_post_ops_on_cpu(request->peek.entries, request->peek.storage, flags);
+        if (ret)
+                gds_err("error %d in gds_post_ops_on_cpu\n", ret);
+
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1845,13 +1862,13 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->prepare_wait_cq = gds_mlx5_dv_prepare_wait_cq;
 
         t->poll_cq = gds_mlx5_dv_poll_cq;
+        t->post_wait_descriptor = gds_mlx5_dv_post_wait_descriptor;
 
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
 
 
         t->dump_wait_request = gds_mlx5_exp_dump_wait_request;
-        t->post_wait_descriptor = gds_mlx5_exp_post_wait_descriptor;
         t->get_wait_descs = gds_mlx5_exp_get_wait_descs;
 
         t->append_wait_cq = gds_mlx5_exp_append_wait_cq;
