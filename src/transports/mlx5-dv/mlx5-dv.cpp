@@ -1482,6 +1482,8 @@ static int gds_mlx5_dv_peer_commit_qp(gds_mlx5_dv_qp_t *mdqp, gds_mlx5_dv_peer_c
 
         mdqp->peer_ctrl_seg = NULL;
         commit->entries = entries;
+        commit->rollback_id = mdqp->sq_wq.rollback_id;
+        mdqp->sq_wq.rollback_id = mdqp->sq_wq.head;
 
         return 0;
 }
@@ -1965,6 +1967,27 @@ int gds_mlx5_dv_abort_wait_cq(gds_cq_t *gcq, gds_wait_request_t *_request)
         request = to_gds_mdv_wait_request(_request);
 
         ((gds_mlx5_dv_peek_entry_t *)((uintptr_t)request->peek.peek_id))->busy = 0;
+
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+int gds_mlx5_dv_rollback_qp(gds_qp_t *gqp, gds_send_request_t *_request)
+{
+        gds_mlx5_dv_send_request_t *request;
+        gds_mlx5_dv_qp_t *mdqp;
+
+        assert(gqp);
+        assert(_request);
+
+        mdqp = to_gds_mdv_qp(gqp);
+        request = to_gds_mdv_send_request(_request);
+
+        gds_warn("Need to rollback WQE %lx\n", request->commit.rollback_id);
+
+        mdqp->sq_wq.head = request->commit.rollback_id;
+        mdqp->sq_wq.rollback_id = request->commit.rollback_id;
 
         return 0;
 }

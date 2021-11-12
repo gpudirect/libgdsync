@@ -118,6 +118,7 @@ typedef struct gds_mlx5_dv_wq {
         unsigned int    cnt;
         uint64_t        head;
         uint64_t        tail;
+        uint64_t        rollback_id;
 } gds_mlx5_dv_wq_t;
 
 typedef enum {
