@@ -1956,6 +1956,21 @@ void gds_mlx5_dv_dump_wait_request(gds_wait_request_t *_request, size_t idx)
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_dv_abort_wait_cq(gds_cq_t *gcq, gds_wait_request_t *_request)
+{
+        gds_mlx5_dv_wait_request_t *request;
+
+        assert(_request);
+
+        request = to_gds_mdv_wait_request(_request);
+
+        ((gds_mlx5_dv_peek_entry_t *)((uintptr_t)request->peek.peek_id))->busy = 0;
+
+        return 0;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1988,15 +2003,12 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 
         t->prepare_wait_cq = gds_mlx5_dv_prepare_wait_cq;
         t->append_wait_cq = gds_mlx5_dv_append_wait_cq;
+        t->abort_wait_cq = gds_mlx5_dv_abort_wait_cq;
 
         t->poll_cq = gds_mlx5_dv_poll_cq;
 
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
-
-
-
-        t->abort_wait_cq = gds_mlx5_exp_abort_wait_cq;
         #endif
 
         *transport = t;
