@@ -911,6 +911,9 @@ static int gds_mlx5_dv_modify_qp_rst2init(gds_mlx5_dv_qp_t *mdqp, struct ibv_qp_
         DEVX_SET(qpc, qpc, primary_address_path.vhca_port_num, attr->port_num);
         DEVX_SET(qpc, qpc, primary_address_path.pkey_index, attr->pkey_index);
 
+        if (attr_mask & IBV_QP_QKEY)
+                DEVX_SET(qpc, qpc, q_key, attr->qkey);
+
         if (attr_mask & IBV_QP_ACCESS_FLAGS) {
                 DEVX_SET(qpc, qpc, rwe, !!(attr->qp_access_flags & IBV_ACCESS_REMOTE_WRITE));
                 DEVX_SET(qpc, qpc, rre, !!(attr->qp_access_flags & IBV_ACCESS_REMOTE_READ));
@@ -1414,7 +1417,7 @@ static int gds_mlx5_dv_post_wrs(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_sen
                         }
                         memcpy(&datagram_seg->av, mah.av, sizeof(datagram_seg->av));
                         datagram_seg->av.key.qkey.qkey = htobe32(curr_wr->wr.ud.remote_qkey);
-                        datagram_seg->av.dqp_dct = htobe32(curr_wr->wr.ud.remote_qpn);
+                        datagram_seg->av.dqp_dct = htobe32(((uint32_t)1 << 31) | curr_wr->wr.ud.remote_qpn);
 
                         seg += sizeof(struct mlx5_wqe_datagram_seg);
 
@@ -1650,6 +1653,7 @@ static int gds_mlx5_dv_peer_peek_cq(gds_mlx5_dv_cq_t *mdcq, gds_mlx5_dv_peer_pee
         wr->wr.dword_va.offset = (uintptr_t)&tmp->busy - (uintptr_t)mdcq->cq_peer->pdata.gbuf->addr;
 
         peek->entries = 2;
+
         peek->peek_id = (uintptr_t)tmp;
 
 out:
@@ -1749,11 +1753,8 @@ int gds_mlx5_dv_poll_cq(gds_cq_t *gcq, int num_entries, struct ibv_wc *wc)
                 idx = cons_index & (mdcq->dvcq.cqe_cnt - 1);
                 while (mdcq->cq_peer->pdata.peek_table[idx]) {
                         gds_mlx5_dv_peek_entry_t *tmp;
-                        if (READ_ONCE(mdcq->cq_peer->pdata.peek_table[idx]->busy)) {
-                                //printf("==> poll_cq: idx=%u %s busy\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
+                        if (READ_ONCE(mdcq->cq_peer->pdata.peek_table[idx]->busy))
                                 goto out;
-                        }
-                        //printf("==> poll_cq: idx=%u %s ok\n", idx, mdcq->cq_type == GDS_MLX5_DV_CQ_TYPE_TX ? "tx" : "rx");
                         tmp = mdcq->cq_peer->pdata.peek_table[idx];
                         mdcq->cq_peer->pdata.peek_table[idx] = GDS_MLX5_DV_PEEK_ENTRY(mdcq, tmp->next);
                         tmp->next = GDS_MLX5_DV_PEEK_ENTRY_N(mdcq, mdcq->cq_peer->pdata.peek_free);
