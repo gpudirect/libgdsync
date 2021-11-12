@@ -588,7 +588,7 @@ int gds_mlx5_exp_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_req
         size_t n_ops = request->peek.entries;
         peer_op_wr *op = request->peek.storage;
 
-        status = gds_mlx5_get_wait_descs(mlx5_i, (gds_peer_op_wr_t)op, n_ops);
+        status = gds_mlx5_get_wait_descs(mlx5_i, (gds_peer_op_wr_t *)op, n_ops);
         if (status)
                 gds_err("error in gds_mlx5_get_wait_descs\n");
         
