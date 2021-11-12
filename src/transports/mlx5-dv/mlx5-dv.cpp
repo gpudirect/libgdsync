@@ -1849,6 +1849,39 @@ int gds_mlx5_dv_get_wait_descs(gds_mlx5_wait_info_t *mlx5_i, const gds_wait_requ
 
 //-----------------------------------------------------------------------------
 
+int gds_mlx5_dv_append_wait_cq(gds_wait_request_t *_request, uint32_t *dw, uint32_t val)
+{
+        int ret = 0;
+        unsigned int MAX_NUM_ENTRIES;
+        unsigned int n;
+        gds_peer_op_wr_t *wr;
+        gds_mlx5_dv_wait_request_t *request;
+
+        assert(_request);
+
+        request = to_gds_mdv_wait_request(_request);
+        MAX_NUM_ENTRIES = sizeof(request->wr) / sizeof(request->wr[0]);
+        n = request->peek.entries;
+        wr = request->peek.storage;
+
+        if (n + 1 > MAX_NUM_ENTRIES) {
+            gds_err("no space left to stuff a poke\n");
+            ret = ENOMEM;
+            goto out;
+        }
+
+        // at least 1 op
+        assert(n);
+        assert(wr);
+
+        ret = gds_append_wait_cq(wr, &request->peek.entries, dw, val);
+
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 {
         int status = 0;
@@ -1875,12 +1908,12 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
         t->init_wait_request = gds_mlx5_dv_init_wait_request;
         t->get_num_wait_request_entries = gds_mlx5_dv_get_num_wait_request_entries;
         t->stream_post_wait_descriptor = gds_mlx5_dv_stream_post_wait_descriptor;
-
         t->prepare_wait_cq = gds_mlx5_dv_prepare_wait_cq;
-
-        t->poll_cq = gds_mlx5_dv_poll_cq;
         t->post_wait_descriptor = gds_mlx5_dv_post_wait_descriptor;
         t->get_wait_descs = gds_mlx5_dv_get_wait_descs;
+        t->append_wait_cq = gds_mlx5_dv_append_wait_cq;
+
+        t->poll_cq = gds_mlx5_dv_poll_cq;
 
         #if 0
         t->rollback_qp = gds_mlx5_exp_rollback_qp;
@@ -1888,7 +1921,6 @@ int gds_transport_mlx5_dv_init(gds_transport_t **transport)
 
         t->dump_wait_request = gds_mlx5_exp_dump_wait_request;
 
-        t->append_wait_cq = gds_mlx5_exp_append_wait_cq;
         t->abort_wait_cq = gds_mlx5_exp_abort_wait_cq;
         #endif
 

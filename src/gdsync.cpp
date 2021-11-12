@@ -1719,6 +1719,37 @@ int gds_query_param(gds_param_t param, int *value)
 
 //-----------------------------------------------------------------------------
 
+int gds_append_wait_cq(gds_peer_op_wr_t *wr, uint32_t *entries, uint32_t *dw, uint32_t val)
+{
+        int ret = 0;
+        uint32_t n = *entries;
+
+        assert(wr);
+        assert(entries);
+
+        n = *entries;
+
+        // at least 1 op
+        assert(n > 0);
+
+        for (; n; --n) 
+                wr = wr->next;
+
+        assert(wr);
+
+        wr->type = GDS_PEER_OP_STORE_DWORD;
+        wr->wr.dword_va.data = val;
+        wr->wr.dword_va.target_id = 0; // direct mapping, offset IS the address
+        wr->wr.dword_va.offset = (ptrdiff_t)(dw-(uint32_t*)0);
+
+        ++(*entries);
+
+out:
+        return ret;
+}
+
+//-----------------------------------------------------------------------------
+
 /*
  * Local variables:
  *  c-indent-level: 8

@@ -281,6 +281,7 @@ enum gds_post_ops_flags {
 struct gds_peer_op_wr;
 int gds_post_ops(gds_peer *peer, size_t n_ops, struct gds_peer_op_wr *op, gds_op_list_t &ops, int post_flags);
 int gds_post_ops_on_cpu(size_t n_ops, struct gds_peer_op_wr *op, int post_flags);
+int gds_append_wait_cq(struct gds_peer_op_wr *wr, uint32_t *entries, uint32_t *dw, uint32_t val);
 
 struct gds_peer;
 gds_peer *peer_from_stream(CUstream stream);

@@ -495,8 +495,8 @@ int gds_mlx5_exp_prepare_wait_cq(gds_cq_t *gcq, gds_wait_request_t *_request, in
 int gds_mlx5_exp_append_wait_cq(gds_wait_request_t *_request, uint32_t *dw, uint32_t val)
 {
         int ret = 0;
-        unsigned MAX_NUM_ENTRIES;
-        unsigned n;
+        unsigned int MAX_NUM_ENTRIES;
+        unsigned int n;
         struct peer_op_wr *wr;
         gds_mlx5_exp_wait_request_t *request;
 
@@ -517,17 +517,7 @@ int gds_mlx5_exp_append_wait_cq(gds_wait_request_t *_request, uint32_t *dw, uint
         assert(n);
         assert(wr);
 
-        for (; n; --n) 
-                wr = wr->next;
-
-        assert(wr);
-
-        wr->type = IBV_EXP_PEER_OP_STORE_DWORD;
-        wr->wr.dword_va.data = val;
-        wr->wr.dword_va.target_id = 0; // direct mapping, offset IS the address
-        wr->wr.dword_va.offset = (ptrdiff_t)(dw-(uint32_t*)0);
-
-        ++request->peek.entries;
+        ret = gds_append_wait_cq((gds_peer_op_wr_t *)wr, &request->peek.entries, dw, val);
 
 out:
         return ret;
