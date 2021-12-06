@@ -1424,7 +1424,7 @@ static int gds_mlx5_dv_post_wrs(gds_mlx5_dv_qp_t *mdqp, gds_send_wr *wr, gds_sen
                         ++head;
 
                         // Wrap around
-                        if (head & (cnt - 1))
+                        if (head & (cnt - 1) == 0)
                                 seg = (uintptr_t)mdqp->sq_wq.buf;
                 }
 
