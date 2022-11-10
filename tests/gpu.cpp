@@ -29,7 +29,6 @@
 #include <assert.h>
 
 #include <cuda_runtime_api.h>
-#include <infiniband/verbs_exp.h>
 
 #include "gdrapi.h"
 #include "gdsync.h"
